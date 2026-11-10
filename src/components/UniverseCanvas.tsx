@@ -31,6 +31,7 @@ import {
 import {
   createDetailedSatellite3DGroup,
   createInstancedAsteroidShaderMaterial,
+  createRealistic3DGalaxyGroup,
   getSoftCircleParticleTexture,
   populateRealisticAsteroidBeltGroup,
   populateSaturnRing3DAsteroidFragments,
@@ -123,6 +124,24 @@ const REAL_PLANET_TEXTURE_URLS: Record<
   },
   neptune: {
     diffuse: '/textures/neptune_2k.jpg',
+  },
+  ceres: {
+    diffuse: '/textures/moon_4k.jpg',
+  },
+  pluto: {
+    diffuse: '/textures/mercury_4k.jpg',
+  },
+  haumea: {
+    diffuse: '/textures/moon_4k.jpg',
+  },
+  makemake: {
+    diffuse: '/textures/mars_4k.jpg',
+  },
+  eris: {
+    diffuse: '/textures/moon_4k.jpg',
+  },
+  sedna: {
+    diffuse: '/textures/mars_4k.jpg',
   },
 };
 
@@ -490,6 +509,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       saturnRingShaderMat?: THREE.ShaderMaterial;
       saturnBouldersGroup?: THREE.Group;
       saturnBoulderShaderMat?: THREE.ShaderMaterial;
+      galaxyVolumetricGroup?: THREE.Group;
       enceladusPlumePoints?: THREE.Points;
       interiorCutawayGroup: THREE.Group;
       orbitLine: THREE.Line;
@@ -520,11 +540,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       rootGroup.add(tiltGroup);
 
       let surfaceMaterial: THREE.ShaderMaterial;
-      if (body.id === 'sun') {
+      if (body.id === 'sun' || body.category === 'galaxy') {
         surfaceMaterial = createSunShaderMaterial();
       } else {
         surfaceMaterial = createPlanetSurfaceMaterial(
-          body.shaderType === 'sun' ? 'mercury' : body.shaderType,
+          body.shaderType === 'sun' || body.shaderType === 'galaxy' ? 'mercury' : body.shaderType,
           body.primaryColorHex,
           body.secondaryColorHex,
           body.atmosphereColorHex
@@ -575,9 +595,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       if (body.id === 'jupiter') spinMesh.scale.set(1, 0.935, 1);
       if (body.id === 'saturn') spinMesh.scale.set(1, 0.902, 1);
+      if (body.id === 'haumea') spinMesh.scale.set(1.42, 0.72, 0.96);
+      if (body.category === 'galaxy') spinMesh.scale.setScalar(0.18);
 
       tiltGroup.add(spinMesh);
       clickableMeshes.push(spinMesh);
+
+      let galaxyVolumetricGroup: THREE.Group | undefined;
+      if (body.category === 'galaxy') {
+        galaxyVolumetricGroup = createRealistic3DGalaxyGroup(body);
+        tiltGroup.add(galaxyVolumetricGroup);
+      }
 
       // SUN SPECIAL FEATURES: Volumetric Corona + 3D Magnetic Prominence Loops + Solar Storm CME Particles
       let atmosphereMesh: THREE.Mesh | undefined;
@@ -705,13 +733,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(saturnBouldersGroup);
       }
 
-      if (body.id === 'uranus' || body.id === 'neptune') {
-        const uRingGeo = new THREE.RingGeometry(1.38, body.id === 'uranus' ? 1.95 : 1.78, 96);
+      if (body.id === 'uranus' || body.id === 'neptune' || body.id === 'haumea') {
+        const uRingGeo = new THREE.RingGeometry(
+          body.id === 'haumea' ? 1.55 : 1.38,
+          body.id === 'uranus' ? 1.95 : body.id === 'haumea' ? 1.82 : 1.78,
+          96
+        );
         const uRingMat = new THREE.MeshBasicMaterial({
-          color: body.id === 'uranus' ? '#67e8f9' : '#60a5fa',
+          color: body.id === 'uranus' ? '#67e8f9' : body.id === 'haumea' ? '#e2e8f0' : '#60a5fa',
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: body.id === 'uranus' ? 0.24 : 0.14,
+          opacity: body.id === 'uranus' ? 0.24 : body.id === 'haumea' ? 0.35 : 0.14,
         });
         const uRingMesh = new THREE.Mesh(uRingGeo, uRingMat);
         uRingMesh.rotation.x = Math.PI / 2;
@@ -835,6 +867,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         saturnRingShaderMesh,
         saturnRingShaderMat,
         saturnBouldersGroup,
+        galaxyVolumetricGroup,
         enceladusPlumePoints,
         interiorCutawayGroup,
         orbitLine,
@@ -1090,8 +1123,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
 
         // Update shaders
-        if (body.id === 'sun') {
+        if (body.id === 'sun' || body.category === 'galaxy') {
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
+          if (node.galaxyVolumetricGroup) {
+            node.galaxyVolumetricGroup.rotation.y = clockTime * 0.032;
+          }
           if (node.atmosphereMesh) {
             (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = clockTime;
           }
@@ -1335,7 +1371,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const desiredDist = Math.max(0.25, targetRadius * mult);
 
           let offsetDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-          if (st.saturnRingDiveMode && st.selectedBodyId === 'saturn') {
+          if (selectedBody.category === 'galaxy') {
+            offsetDir = new THREE.Vector3(0.55, 0.52, 0.65).normalize();
+          } else if (st.saturnRingDiveMode && st.selectedBodyId === 'saturn') {
             offsetDir = new THREE.Vector3(0.92, 0.06, 0.38).normalize();
           } else if (st.selectedSatelliteId && st.selectedBodyId === 'earth') {
             const focusedSat = st.propagatedSatellites.find(

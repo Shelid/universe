@@ -1,10 +1,13 @@
 import { CelestialBodyData, ScaleMode } from '../types/astronomy';
 import { SUN_AND_PLANETS } from './solarSystemPlanets';
 import { MOONS_AND_DWARF_PLANETS } from './solarSystemMoonsAndDwarfs';
+import { COSMIC_GALAXIES, MISSING_DWARF_PLANETS_AND_WORLDS } from './galaxiesData';
 
 export const ALL_CELESTIAL_BODIES: CelestialBodyData[] = [
   ...SUN_AND_PLANETS,
   ...MOONS_AND_DWARF_PLANETS,
+  ...MISSING_DWARF_PLANETS_AND_WORLDS,
+  ...COSMIC_GALAXIES,
 ];
 
 export const CELESTIAL_BODIES_BY_ID: Record<string, CelestialBodyData> = Object.fromEntries(
@@ -25,6 +28,9 @@ export const J2000_EPOCH_MS = Date.UTC(2000, 0, 1, 12, 0, 0); // 2000-01-01T12:0
  * Returns the visual radius in 3D scene units for a given body and ScaleMode.
  */
 export function getScaledRadius(body: CelestialBodyData, scaleMode: ScaleMode): number {
+  if (body.category === 'galaxy') {
+    return body.visualRadiusExploration;
+  }
   switch (scaleMode) {
     case 'EXPLORATION':
       return body.visualRadiusExploration;
@@ -48,6 +54,7 @@ export function getScaledRadius(body: CelestialBodyData, scaleMode: ScaleMode): 
  */
 export function getScaledOrbitalRadius(body: CelestialBodyData, scaleMode: ScaleMode): number {
   if (body.id === 'sun') return 0;
+  if (body.category === 'galaxy') return body.explorationDistanceUnits;
 
   if (body.category === 'moon' && body.parentId) {
     const parent = getCelestialBody(body.parentId);
@@ -150,7 +157,7 @@ export function generateKeplerianOrbitCurvePoints(
   scaleMode: ScaleMode,
   segments = 180
 ): [number, number, number][] {
-  if (body.id === 'sun') return [];
+  if (body.id === 'sun' || body.category === 'galaxy') return [];
 
   const a = getScaledOrbitalRadius(body, scaleMode);
   const {

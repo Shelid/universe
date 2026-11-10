@@ -143,22 +143,22 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
   ];
 
   return (
-    <aside className="w-full sm:w-[430px] md:w-[465px] max-h-[calc(100vh-5.5rem)] bg-slate-950/82 backdrop-blur-2xl border border-white/12 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden z-30">
+    <aside className="w-full sm:w-[430px] md:w-[465px] max-h-[calc(100dvh-9rem)] sm:max-h-[calc(100vh-5.5rem)] bg-slate-950/92 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden z-30">
       {/* Header Banner */}
-      <div className="p-4 border-b border-white/10 bg-gradient-to-r from-slate-900/95 via-slate-900/80 to-slate-950/90 relative">
+      <div className="p-3.5 sm:p-4 border-b border-white/10 bg-gradient-to-r from-slate-900/95 via-slate-900/80 to-slate-950/90 relative">
         <div className="flex items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span
-                className="w-2.5 h-2.5 rounded-full shadow-sm"
+                className="w-2.5 h-2.5 rounded-full shadow-sm shrink-0"
                 style={{ backgroundColor: body.orbitColorHex }}
               />
-              <span className="text-[10px] font-mono uppercase tracking-widest text-sky-400">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-sky-400 truncate">
                 {body.ClassificationLabel}
               </span>
             </div>
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-2xl font-display font-bold text-white tracking-tight">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <h2 className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight">
                 {body.name}
               </h2>
               <span className="text-xs font-mono text-slate-400">({body.englishName})</span>
@@ -167,10 +167,11 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-            title="Minimizar Painel Científico"
+            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-rose-500/25 border border-white/15 text-slate-200 hover:text-white text-xs font-medium transition-colors"
+            title="Fechar Painel Científico"
           >
             <X className="w-4 h-4" />
+            <span>Fechar</span>
           </button>
         </div>
 

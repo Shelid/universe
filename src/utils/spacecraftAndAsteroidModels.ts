@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PropagatedSatellite } from '../types/astronomy';
+import { CelestialBodyData, PropagatedSatellite } from '../types/astronomy';
 
 /**
  * Generates a soft circular radial glow sprite texture so THREE.Points NEVER render as flat squares ("quadradinhos").
@@ -981,7 +981,7 @@ export function populateRealisticAsteroidBeltGroup(
 }
 
 /**
- * Populates Saturn's Rings with 4,200 sculpted 3D Asteroid & Crystalline Ice-Rock Fragments
+ * Populates Saturn's Rings with 1,200 sculpted 3D Asteroid & Crystalline Ice-Rock Fragments
  * across all 6 geological archetypes, respecting the C Ring, B Ring, Cassini Division, A Ring, and Encke Gap.
  */
 export function populateSaturnRing3DAsteroidFragments(
@@ -1078,4 +1078,200 @@ export function populateSaturnRing3DAsteroidFragments(
   });
 
   return instancedMeshes;
+}
+
+/**
+ * Builds a realistic, scientific 3D Volumetric Galaxy Group (Spiral, Barred Spiral, Elliptical, Sombrero Ring, or Irregular)
+ * normalized to radius = 1.0 (scaled by the parent rootGroup in UniverseCanvas).
+ */
+export function createRealistic3DGalaxyGroup(body: CelestialBodyData): THREE.Group {
+  const galaxyGroup = new THREE.Group();
+  const softSprite = getSoftCircleParticleTexture();
+
+  const starCount = 3800;
+  const positions = new Float32Array(starCount * 3);
+  const colors = new Float32Array(starCount * 3);
+
+  const cCore = new THREE.Color('#fff7ed');
+  const cBulge = new THREE.Color(body.secondaryColorHex || '#fbbf24');
+  const cArm = new THREE.Color(body.primaryColorHex || '#60a5fa');
+  const cHII = new THREE.Color(body.atmosphereColorHex || '#f472b6');
+  const tempColor = new THREE.Color();
+
+  const isElliptical = body.subType === 'galaxy_elliptical';
+  const isIrregular = body.subType === 'galaxy_irregular';
+  const isBarred = body.subType === 'galaxy_barred';
+  const isSombrero = body.id === 'sombrero-galaxy';
+  const isWhirlpool = body.id === 'whirlpool-galaxy';
+
+  const armCount = body.id === 'milky-way' ? 4 : 2;
+  const spiralWinding = isWhirlpool ? 4.4 : body.id === 'triangulum' ? 2.6 : 3.6;
+
+  for (let i = 0; i < starCount; i++) {
+    let x = 0;
+    let y = 0;
+    let z = 0;
+
+    if (isElliptical) {
+      // 3D De Vaucouleurs spheroidal distribution for M87 supergiant elliptical galaxy
+      const r = Math.pow(Math.random(), 1.65) * 0.95;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      x = r * Math.sin(phi) * Math.cos(theta) * 1.12;
+      y = r * Math.cos(phi) * 0.86;
+      z = r * Math.sin(phi) * Math.sin(theta);
+
+      tempColor.copy(cCore).lerp(cBulge, Math.min(1.0, r * 1.35));
+    } else if (isSombrero) {
+      // Sombrero Galaxy (M104): Huge luminous spheroidal bulge + crisp outer equatorial ring
+      if (i < starCount * 0.42) {
+        const r = Math.pow(Math.random(), 1.6) * 0.58;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        x = r * Math.sin(phi) * Math.cos(theta);
+        y = r * Math.cos(phi) * 0.62;
+        z = r * Math.sin(phi) * Math.sin(theta);
+        tempColor.copy(cCore).lerp(cBulge, r * 1.4);
+      } else {
+        // Prominent symmetrical outer ring + thin disk
+        const isOuterRing = Math.random() < 0.68;
+        const r = isOuterRing
+          ? 0.76 + (Math.random() - 0.5) * 0.18
+          : 0.22 + Math.random() * 0.54;
+        const theta = Math.random() * Math.PI * 2;
+        x = Math.cos(theta) * r;
+        z = Math.sin(theta) * r;
+        y = (Math.random() - 0.5) * 0.032;
+        if (isOuterRing && i % 6 === 0) {
+          tempColor.copy(cHII);
+        } else {
+          tempColor.copy(cBulge).lerp(cArm, 0.45);
+        }
+      }
+    } else if (isIrregular) {
+      // Large Magellanic Cloud: Off-center stellar bar + single sweeping spiral arm + 30 Doradus Tarantula Nebula knot
+      if (i < starCount * 0.45) {
+        // Off-center stellar bar
+        x = (Math.random() - 0.5) * 0.85;
+        z = (Math.random() - 0.5) * 0.28 + x * 0.22;
+        y = (Math.random() - 0.5) * 0.08;
+        tempColor.copy(cCore).lerp(cArm, 0.5);
+      } else if (i < starCount * 0.62) {
+        // 30 Doradus (Tarantula Nebula) super-bright H-II star-forming complex
+        const rKnot = Math.pow(Math.random(), 1.4) * 0.24;
+        const a = Math.random() * Math.PI * 2;
+        x = 0.34 + Math.cos(a) * rKnot;
+        z = 0.18 + Math.sin(a) * rKnot;
+        y = (Math.random() - 0.5) * 0.09;
+        tempColor.copy(i % 2 === 0 ? cHII : cCore);
+      } else {
+        // Irregular sweeping arm & stellar cloud
+        const r = 0.15 + Math.random() * 0.85;
+        const angle = r * 2.8 + (Math.random() - 0.5) * 1.45;
+        x = Math.cos(angle) * r;
+        z = Math.sin(angle) * r;
+        y = (Math.random() - 0.5) * 0.12;
+        tempColor.copy(cArm).lerp(cHII, Math.random() * 0.45);
+      }
+    } else {
+      // Spiral & Barred Spiral Galaxies (Milky Way, Andromeda M31, Triangulum M33, Whirlpool M51)
+      if (isWhirlpool && i > starCount * 0.88) {
+        // Companion dwarf galaxy NGC 5195 at the tip of M51's spiral arm!
+        const rComp = Math.pow(Math.random(), 1.5) * 0.22;
+        const a = Math.random() * Math.PI * 2;
+        x = 0.82 + Math.cos(a) * rComp;
+        z = 0.46 + Math.sin(a) * rComp;
+        y = (Math.random() - 0.5) * 0.07;
+        tempColor.copy(cCore).lerp(new THREE.Color('#fbbf24'), 0.65);
+      } else if (i < starCount * 0.22) {
+        // Central Galactic Bulge & Bar
+        const rBulge = Math.pow(Math.random(), 1.6) * 0.28;
+        const a = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const barStretch = isBarred ? 1.65 : 1.05;
+        x = rBulge * Math.sin(phi) * Math.cos(a) * barStretch;
+        y = rBulge * Math.cos(phi) * 0.48;
+        z = rBulge * Math.sin(phi) * Math.sin(a) * (isBarred ? 0.68 : 1.0);
+        tempColor.copy(cCore).lerp(cBulge, rBulge / 0.28);
+      } else {
+        // Logarithmic Spiral Arms with H-II Nebulae & OB Associations
+        const r = 0.14 + Math.pow(Math.random(), 0.92) * 0.88;
+        const armIndex = i % armCount;
+        const armBaseAngle = (armIndex / armCount) * Math.PI * 2;
+        const scatter = (Math.random() + Math.random() - 1.0) * (0.28 + r * 0.26);
+        const theta = armBaseAngle + r * spiralWinding + scatter;
+
+        x = Math.cos(theta) * r;
+        z = Math.sin(theta) * r;
+        const diskThickness = 0.055 * (1.0 - r * 0.55);
+        y = (Math.random() + Math.random() - 1.0) * diskThickness;
+
+        // Color distribution along spiral arms
+        const isNebulaKnot = Math.abs(scatter) < 0.09 && i % 5 === 0;
+        if (isNebulaKnot) {
+          tempColor.copy(cHII);
+        } else {
+          tempColor.copy(cBulge).lerp(cArm, Math.min(1.0, (r - 0.1) * 1.25));
+        }
+      }
+    }
+
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+
+    colors[i * 3] = tempColor.r;
+    colors[i * 3 + 1] = tempColor.g;
+    colors[i * 3 + 2] = tempColor.b;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    map: softSprite,
+    size: 0.68,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.92,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+
+  const galaxyPoints = new THREE.Points(geo, mat);
+  galaxyGroup.add(galaxyPoints);
+
+  // Special feature for Messier 87: 3D Relativistic Blue Synchrotron Plasma Jet from M87* Black Hole!
+  if (body.id === 'm87-galaxy') {
+    const jetCurve = new THREE.LineCurve3(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0.85, 0.92, 0.35)
+    );
+    const jetGeo = new THREE.TubeGeometry(jetCurve, 24, 0.018, 12, false);
+    const jetMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+    });
+    const jetMesh = new THREE.Mesh(jetGeo, jetMat);
+    galaxyGroup.add(jetMesh);
+
+    const counterJetCurve = new THREE.LineCurve3(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(-0.42, -0.46, -0.18)
+    );
+    const counterJetGeo = new THREE.TubeGeometry(counterJetCurve, 16, 0.01, 10, false);
+    const counterJetMat = new THREE.MeshBasicMaterial({
+      color: '#60a5fa',
+      transparent: true,
+      opacity: 0.35,
+      blending: THREE.AdditiveBlending,
+    });
+    galaxyGroup.add(new THREE.Mesh(counterJetGeo, counterJetMat));
+  }
+
+  return galaxyGroup;
 }

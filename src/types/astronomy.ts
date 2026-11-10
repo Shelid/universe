@@ -1,4 +1,4 @@
-export type BodyCategory = 'star' | 'planet' | 'dwarf_planet' | 'moon';
+export type BodyCategory = 'star' | 'planet' | 'dwarf_planet' | 'moon' | 'galaxy';
 
 export type PlanetSubType =
   | 'g2v_main_sequence'
@@ -6,7 +6,11 @@ export type PlanetSubType =
   | 'gas_giant'
   | 'ice_giant'
   | 'dwarf_planet'
-  | 'natural_satellite';
+  | 'natural_satellite'
+  | 'galaxy_spiral'
+  | 'galaxy_barred'
+  | 'galaxy_elliptical'
+  | 'galaxy_irregular';
 
 export type EpistemicCertainty =
   | 'DIRECT_MEASUREMENT'
@@ -197,7 +201,8 @@ export interface CelestialBodyData {
     | 'moon_rocky'
     | 'moon_icy'
     | 'moon_volcanic'
-    | 'moon_titan';
+    | 'moon_titan'
+    | 'galaxy';
 
   // Orbital mechanics
   orbit: KeplerianElements;
