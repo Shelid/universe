@@ -1,0 +1,365 @@
+import { ScaleMode, SpaceMission } from '../types/astronomy';
+
+export const SPACE_MISSIONS: SpaceMission[] = [
+  {
+    id: 'voyager-1',
+    name: 'Voyager 1',
+    agency: 'NASA / Jet Propulsion Laboratory (JPL)',
+    launchDate: '5 de setembro de 1977',
+    status: 'EXTENDED_INTERSTELLAR',
+    statusLabel: 'Ativa no Espaço Interestelar (>164 UA)',
+    targetBodyIds: ['jupiter', 'saturn', 'io', 'titan'],
+    primaryTargetName: 'Júpiter, Saturno, Titã & Espaço Interestelar',
+    missionType: 'flyby',
+    objective:
+      'Explorar os sistemas de Júpiter e Saturno (incluindo sobrevoo raso de Titã) e tornar-se o primeiro artefato humano a cruzar a Heliopausa rumo ao meio interestelar.',
+    keyDiscoveries: [
+      'Descobriu os anéis tênues de Júpiter e os primeiros vulcões ativos fora da Terra na lua Io (março de 1979).',
+      'Analisou a densa atmosfera rica em nitrogênio e metano de Titã (novembro de 1980), desviando sua trajetória para fora do plano da eclíptica.',
+      'Tirou o famoso retrato "Pálido Ponto Azul" (Pale Blue Dot) da Terra a 6 bilhões de km em 14 de fevereiro de 1990.',
+      'Cruzou a Heliopausa em 25 de agosto de 2012 (a 121 UA do Sol), medindo diretamente a densidade do plasma interestelar.',
+    ],
+    instruments: [
+      'ISS (Imaging Science System)',
+      'IRIS (Infrared Interferometer Spectrometer)',
+      'MAG (Triaxial Fluxgate Magnetometer)',
+      'PWS (Plasma Wave Subsystem)',
+      'CRS (Cosmic Ray System)',
+    ],
+    currentDistanceFromSunAU: 165.4,
+    colorHex: '#38bdf8',
+    trajectoryPointsAU: [
+      { dateIso: '1977-09-05', label: 'Lançamento (Terra)', positionAU: [1.0, 0.0, 0.0] },
+      { dateIso: '1979-03-05', label: 'Encontro com Júpiter (Assistência Gravitacional)', positionAU: [-3.9, 0.05, 3.4] },
+      { dateIso: '1980-11-12', label: 'Encontro com Saturno & Titã', positionAU: [-9.1, 0.3, 2.8] },
+      { dateIso: '1990-02-14', label: 'Retrato Pálido Ponto Azul (40 UA)', positionAU: [-28.0, 14.0, 25.0] },
+      { dateIso: '2012-08-25', label: 'Travessia da Heliopausa (121 UA)', positionAU: [-85.0, 68.0, 52.0] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA00452/PIA00452~orig.jpg',
+    imageCredit: 'NASA / JPL — Pale Blue Dot (Terra vista pela Voyager 1 a 40 UA)',
+    sourceReference: 'NASA JPL Voyager Mission Status & SPICE Ephemeris',
+  },
+  {
+    id: 'voyager-2',
+    name: 'Voyager 2',
+    agency: 'NASA / Jet Propulsion Laboratory (JPL)',
+    launchDate: '20 de agosto de 1977',
+    status: 'EXTENDED_INTERSTELLAR',
+    statusLabel: 'Ativa no Espaço Interestelar (>137 UA)',
+    targetBodyIds: ['jupiter', 'saturn', 'uranus', 'neptune', 'europa', 'triton'],
+    primaryTargetName: 'Grand Tour: Júpiter, Saturno, Urano e Netuno',
+    missionType: 'flyby',
+    objective:
+      'Aproveitar um alinhamento planetário raro (que ocorre apenas uma vez a cada 176 anos) para visitar todos os quatro planetas gigantes do Sistema Solar.',
+    keyDiscoveries: [
+      'Única espaçonave da história humana a visitar Urano (janeiro de 1986) e Netuno (agosto de 1989).',
+      'Descobriu 11 novas luas em Urano e 6 em Netuno, além de medir seus campos magnéticos inclinados e deslocados.',
+      'Descobriu a Grande Mancha Escura e ventos supersônicos de 2.100 km/h em Netuno.',
+      'Fotografou gêiseres criovulcânicos de nitrogênio ativos na superfície gelada de Tritão a 38 K.',
+      'Cruzou a Heliopausa em 5 de novembro de 2018 com seu instrumento de plasma (PLS) ativo.',
+    ],
+    instruments: [
+      'ISS (Câmeras Grande-Angular e Ângulo Estreito)',
+      'PLS (Plasma Science Experiment)',
+      'LECP (Low-Energy Charged Particles)',
+      'UVS (Ultraviolet Spectrometer)',
+    ],
+    currentDistanceFromSunAU: 138.1,
+    colorHex: '#22d3ee',
+    trajectoryPointsAU: [
+      { dateIso: '1977-08-20', label: 'Lançamento (Terra)', positionAU: [0.9, 0.0, -0.4] },
+      { dateIso: '1979-07-09', label: 'Encontro com Júpiter', positionAU: [-4.1, 0.0, 3.2] },
+      { dateIso: '1981-08-25', label: 'Encontro com Saturno', positionAU: [-9.4, 0.1, 1.8] },
+      { dateIso: '1986-01-24', label: 'Encontro Histórico com Urano', positionAU: [-4.5, -0.2, -18.6] },
+      { dateIso: '1989-08-25', label: 'Encontro com Netuno & Tritão', positionAU: [4.8, -0.8, -29.7] },
+      { dateIso: '2018-11-05', label: 'Saída para o Espaço Interestelar (119 UA)', positionAU: [32.0, -58.0, -98.0] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA01492/PIA01492~orig.jpg',
+    imageCredit: 'NASA / JPL — Netuno fotografado pela Voyager 2 em 1989',
+    sourceReference: 'NASA JPL Voyager Grand Tour Archive',
+  },
+  {
+    id: 'cassini-huygens',
+    name: 'Cassini-Huygens',
+    agency: 'NASA / ESA (Agência Espacial Europeia) / ASI (Itália)',
+    launchDate: '15 de outubro de 1997',
+    status: 'COMPLETED',
+    statusLabel: 'Missão Concluída (Grand Finale em Saturno — 15/09/2017)',
+    targetBodyIds: ['saturn', 'titan', 'enceladus', 'venus', 'jupiter'],
+    primaryTargetName: 'Sistema de Saturno, Anéis, Titã e Encélado',
+    missionType: 'orbiter',
+    objective:
+      'Estudar em órbita durante 13 anos o planeta Saturno, a estrutura dinâmica de seus anéis, sua magnetosfera e suas luas geladas, além de pousar a sonda Huygens na superfície de Titã.',
+    keyDiscoveries: [
+      'Pousou com sucesso a sonda europeia Huygens em Titã em 14 de janeiro de 2005, revelando rios e mares de metano e etano líquidos.',
+      'Descobriu gêiseres ativos no Polo Sul de Encélado e voou através das plumas, comprovando um oceano global subterrâneo com atividade hidrotermal.',
+      'Descobriu sete novas luas e mapeou ondas gravitacionais nos anéis de Saturno (kronossismologia), revelando o núcleo difuso do planeta.',
+      'No "Grand Finale" (2017), realizou 22 mergulhos audaciosos pelo espaço de 2.000 km entre Saturno e o Anel D antes de se vaporizar na atmosfera para proteger Encélado e Titã de contaminação biológica.',
+    ],
+    instruments: [
+      'ISS (Imaging Science Subsystem)',
+      'RADAR (Synthetic Aperture Radar)',
+      'INMS (Ion and Neutral Mass Spectrometer)',
+      'CDA (Cosmic Dust Analyzer)',
+      'VIMS (Visible and Infrared Mapping Spectrometer)',
+      'Módulo de Pouso ESA Huygens',
+    ],
+    currentDistanceFromSunAU: 9.58,
+    colorHex: '#eab308',
+    trajectoryPointsAU: [
+      { dateIso: '1997-10-15', label: 'Lançamento (Terra)', positionAU: [0.95, 0.0, 0.3] },
+      { dateIso: '1998-04-26', label: 'Assistência Gravitacional em Vênus', positionAU: [-0.6, 0.0, -0.4] },
+      { dateIso: '2000-12-30', label: 'Sobrevoo de Júpiter', positionAU: [2.8, 0.0, 4.4] },
+      { dateIso: '2004-07-01', label: 'Inserção Orbital em Saturno (13 anos em órbita)', positionAU: [-2.1, 0.3, 9.3] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA21046/PIA21046~orig.jpg',
+    imageCredit: 'NASA / JPL-Caltech / Space Science Institute',
+    sourceReference: 'NASA / ESA Cassini-Huygens Archive (PDS)',
+  },
+  {
+    id: 'new-horizons',
+    name: 'New Horizons',
+    agency: 'NASA / Johns Hopkins APL / Southwest Research Institute (SwRI)',
+    launchDate: '19 de janeiro de 2006',
+    status: 'ACTIVE',
+    statusLabel: 'Ativa no Cinturão de Kuiper (~60 UA)',
+    targetBodyIds: ['pluto', 'jupiter', 'io'],
+    primaryTargetName: 'Sistema de Plutão-Caronte & Cinturão de Kuiper (Arrokoth)',
+    missionType: 'flyby',
+    objective:
+      'Realizar o primeiro reconhecimento científico do planeta anão Plutão, de suas cinco luas (Caronte, Nix, Hidra, Cérbero e Estige) e de objetos primordiais do Cinturão de Kuiper.',
+    keyDiscoveries: [
+      'Revelou a geleira de nitrogênio em convecção ativa de Sputnik Planitia ("o coração de Plutão") e montanhas de gelo de água de 4 km.',
+      'Fotografou a atmosfera azulada estratificada em mais de 20 camadas de névoa de Plutão.',
+      'Em 1º de janeiro de 2019, realizou o encontro planetário mais distante da história (a 43,4 UA) com o objeto binário de contato 486958 Arrokoth, confirmando modelos de formação suave de planetesimais.',
+    ],
+    instruments: [
+      'LORRI (Long Range Reconnaissance Imager)',
+      'Ralph (MVIC & LEISA)',
+      'Alice (UV Imaging Spectrometer)',
+      'REX (Radio Science Experiment)',
+      'SWAP & PEPSSI (Plasma Sensors)',
+    ],
+    currentDistanceFromSunAU: 60.2,
+    colorHex: '#a855f7',
+    trajectoryPointsAU: [
+      { dateIso: '2006-01-19', label: 'Lançamento Direto em Alta Velocidade (16,26 km/s)', positionAU: [-0.5, 0.0, 0.86] },
+      { dateIso: '2007-02-28', label: 'Assistência Gravitacional em Júpiter', positionAU: [-2.2, 0.05, -4.8] },
+      { dateIso: '2015-07-14', label: 'Sobrevoo Histórico de Plutão (12.500 km)', positionAU: [8.4, 1.2, -31.8] },
+      { dateIso: '2019-01-01', label: 'Encontro com Arrokoth no Cinturão de Kuiper (43,4 UA)', positionAU: [12.5, 1.6, -41.5] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA19952/PIA19952~orig.jpg',
+    imageCredit: 'NASA / JHUAPL / SwRI — Plutão pela New Horizons',
+    sourceReference: 'NASA New Horizons Mission Archive',
+  },
+  {
+    id: 'juno',
+    name: 'Juno',
+    agency: 'NASA / JPL / Southwest Research Institute (SwRI)',
+    launchDate: '5 de agosto de 2011',
+    status: 'ACTIVE',
+    statusLabel: 'Ativa em Órbita Polar de Júpiter',
+    targetBodyIds: ['jupiter', 'ganymede', 'europa', 'io'],
+    primaryTargetName: 'Interior Profundo, Atmosfera Polar e Luas de Júpiter',
+    missionType: 'orbiter',
+    objective:
+      'Investigar a origem e evolução de Júpiter sob suas densas nuvens: mapear seu campo gravitacional e magnético, medir a abundância de água profunda e explorar os polos pela primeira vez.',
+    keyDiscoveries: [
+      'Descobriu que o núcleo de Júpiter não é pequeno e compacto, mas sim um "núcleo diluído" (fuzzy core) que se estende por quase metade do raio do planeta.',
+      'Revelou aglomerados geométricos de ciclones gigantes nos polos norte (8 ciclones ao redor de 1 central) e sul de Júpiter.',
+      'Realizou sobrevoos rasos de Ganimedes (2021), Europa (2022) e Io (2023–2024) na missão estendida.',
+    ],
+    instruments: [
+      'MWR (Microwave Radiometer)',
+      'JIRAM (Jovian Infrared Auroral Mapper)',
+      'MAG (Fluxgate Magnetometer)',
+      'Gravity Science (Banda X e Ka)',
+      'JunoCam (Câmera Óptica Cidadã)',
+    ],
+    currentDistanceFromSunAU: 5.2,
+    colorHex: '#f59e0b',
+    trajectoryPointsAU: [
+      { dateIso: '2011-08-05', label: 'Lançamento (Terra)', positionAU: [0.6, 0.0, -0.8] },
+      { dateIso: '2013-10-09', label: 'Assistência Gravitacional na Terra', positionAU: [0.95, 0.0, 0.3] },
+      { dateIso: '2016-07-04', label: 'Inserção em Órbita Polar de Júpiter', positionAU: [-5.1, 0.1, 1.2] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA22946/PIA22946~orig.jpg',
+    imageCredit: 'NASA / JPL-Caltech / SwRI / MSSS',
+    sourceReference: 'NASA Juno Mission Archive / PDS',
+  },
+  {
+    id: 'perseverance',
+    name: 'Perseverance & Helicóptero Ingenuity',
+    agency: 'NASA / Jet Propulsion Laboratory (JPL)',
+    launchDate: '30 de julho de 2020 (Pouso: 18 de fevereiro de 2021)',
+    status: 'ACTIVE',
+    statusLabel: 'Ativo na Cratera Jezero, Marte',
+    targetBodyIds: ['mars'],
+    primaryTargetName: 'Cratera Jezero, Marte',
+    missionType: 'rover',
+    objective:
+      'Buscar sinais de vida microbiana antiga (bioassinaturas) no antigo delta fluvial da Cratera Jezero, coletar e selar tubos de amostras de rocha para futuro retorno à Terra e testar tecnologias para exploração humana.',
+    keyDiscoveries: [
+      'Confirmou que a Cratera Jezero abrigou um lago calmo alimentado por um rio e posteriormente inundado por cheias torrenciais há ~3,7 bilhões de anos.',
+      'O experimento MOXIE produziu oxigênio respirável (O₂) diretamente a partir do CO₂ da atmosfera de Marte pela primeira vez na história.',
+      'O helicóptero Ingenuity realizou 72 voos motorizados controlados na tênue atmosfera marciana — o primeiro voo aerodinâmico em outro planeta.',
+      'Em julho de 2024, encontrou a rocha "Cheyava Falls" contendo moléculas orgânicas e manchas minerais ("leopard spots") associadas na Terra a reações microbianas.',
+    ],
+    instruments: [
+      'Mastcam-Z (Câmeras Estereoscópicas com Zoom)',
+      'SuperCam (Espectroscopia Laser LIBS/Raman)',
+      'PIXL (Fluorescência de Raios X de Microfoco)',
+      'SHERLOC (Espectrômetro UV Raman para Orgânicos)',
+      'RIMFAX (Radar de Penetração no Solo)',
+      'MOXIE (Produção In-Situ de Oxigênio)',
+    ],
+    currentDistanceFromSunAU: 1.52,
+    colorHex: '#ef4444',
+    trajectoryPointsAU: [
+      { dateIso: '2020-07-30', label: 'Lançamento (Cabo Canaveral)', positionAU: [0.6, 0.0, -0.8] },
+      { dateIso: '2021-02-18', label: 'Pouso Sky Crane na Cratera Jezero (18,38° N, 77,58° E)', positionAU: [-0.4, 0.03, 1.5] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA24420/PIA24420~orig.jpg',
+    imageCredit: 'NASA / JPL-Caltech — Descida do Rover Perseverance em Marte',
+    sourceReference: 'NASA Mars 2020 Analyst’s Notebook',
+  },
+  {
+    id: 'curiosity',
+    name: 'Curiosity (Mars Science Laboratory)',
+    agency: 'NASA / Jet Propulsion Laboratory (JPL)',
+    launchDate: '26 de novembro de 2011 (Pouso: 6 de agosto de 2012)',
+    status: 'ACTIVE',
+    statusLabel: 'Ativo na Cratera Gale / Monte Sharp, Marte',
+    targetBodyIds: ['mars'],
+    primaryTargetName: 'Cratera Gale & Aeolis Mons (Monte Sharp), Marte',
+    missionType: 'rover',
+    objective:
+      'Investigar se Marte já ofereceu condições ambientais favoráveis ao desenvolvimento de vida microbiana (água líquida com pH neutro, fontes de energia química e elementos CHNOPS).',
+    keyDiscoveries: [
+      'Comprovou já no primeiro ano que a Cratera Gale abrigou lagos e riachos de água doce com baixa salinidade e pH neutro por milhões de anos.',
+      'Detectou moléculas orgânicas complexas (tiofenos, benzeno, tolueno) preservadas em argilitos lacustres de 3,5 bilhões de anos.',
+      'Mediu variações sazonais nos níveis de metano de fundo na atmosfera marciana e documentou a transição climática de argilas (ambiente úmido) para sulfatos (ambiente mais árido) ao subir o Monte Sharp.',
+    ],
+    instruments: [
+      'SAM (Sample Analysis at Mars — Cromatógrafo e Espectrômetro de Massa)',
+      'CheMin (Difração de Raios X Mineralógica)',
+      'ChemCam (Ablação a Laser)',
+      'Mastcam & MAHLI',
+      'RAD (Radiation Assessment Detector)',
+    ],
+    currentDistanceFromSunAU: 1.52,
+    colorHex: '#f97316',
+    trajectoryPointsAU: [
+      { dateIso: '2011-11-26', label: 'Lançamento (Terra)', positionAU: [0.4, 0.0, 0.9] },
+      { dateIso: '2012-08-06', label: 'Pouso na Cratera Gale (4,58° S, 137,44° E)', positionAU: [-1.1, -0.02, -1.1] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/PIA19807/PIA19807~orig.jpg',
+    imageCredit: 'NASA / JPL-Caltech / MSSS — Autorretrato do Curiosity no Monte Sharp',
+    sourceReference: 'NASA MSL Science Team / PDS',
+  },
+  {
+    id: 'jwst',
+    name: 'Telescópio Espacial James Webb (JWST)',
+    agency: 'NASA / ESA (Europa) / CSA (Canadá)',
+    launchDate: '25 de dezembro de 2021',
+    status: 'ACTIVE',
+    statusLabel: 'Ativo no Ponto de Lagrange Sol-Terra L2 (1,5 milhão de km da Terra)',
+    targetBodyIds: ['earth', 'jupiter', 'saturn', 'uranus', 'neptune', 'europa', 'enceladus', 'titan'],
+    primaryTargetName: 'Ponto L2 Sol-Terra (Observação do Universo Primordial & Sistema Solar)',
+    missionType: 'space_telescope',
+    objective:
+      'O maior e mais potente telescópio espacial infravermelho já construído (espelho segmentado de berílio banhado a ouro de 6,5 m), projetado para observar as primeiras galáxias do Universo, berçários estelares, atmosferas de exoplanetas e corpos do Sistema Solar.',
+    keyDiscoveries: [
+      'No Sistema Solar, detectou dióxido de carbono endógeno na superfície de Europa (2023) e mapeou uma pluma de vapor d’água de quase 10.000 km saindo de Encélado.',
+      'Capturou imagens infravermelhas de altíssima nitidez dos sistemas de anéis e luas de Júpiter, Urano e Netuno, além de nuvens em Titã.',
+      'Descobriu as galáxias mais distantes e antigas já confirmadas espectroscopicamente (como JADES-GS-z14-0, apenas 290 milhões de anos após o Big Bang) e detectou CO₂, H₂O, SO₂ e CH₄ em atmosferas de exoplanetas.',
+    ],
+    instruments: [
+      'NIRCam (Near-Infrared Camera)',
+      'NIRSpec (Near-Infrared Spectrograph)',
+      'MIRI (Mid-Infrared Instrument — resfriado a 6,7 K)',
+      'NIRISS / FGS (Near-Infrared Imager and Slitless Spectrograph)',
+    ],
+    currentDistanceFromSunAU: 1.01,
+    colorHex: '#fbbf24',
+    trajectoryPointsAU: [
+      { dateIso: '2021-12-25', label: 'Lançamento Ariane 5 (Kourou)', positionAU: [0.0, 0.0, 1.0] },
+      { dateIso: '2022-01-24', label: 'Órbita Halo no Ponto de Lagrange L2 (1,01 UA)', positionAU: [0.0, 0.02, 1.01] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/weic2216a/weic2216a~orig.jpg',
+    imageCredit: 'NASA / ESA / CSA / STScI — Pilares da Criação pelo JWST',
+    sourceReference: 'STScI MAST Archive / NASA JWST',
+  },
+  {
+    id: 'parker-solar-probe',
+    name: 'Parker Solar Probe',
+    agency: 'NASA / Johns Hopkins Applied Physics Laboratory (JHUAPL)',
+    launchDate: '12 de agosto de 2018',
+    status: 'ACTIVE',
+    statusLabel: 'Ativa em Órbita Heliocêntrica Rasante ao Sol (Periélio a 0,046 UA)',
+    targetBodyIds: ['sun', 'venus', 'mercury'],
+    primaryTargetName: 'Coroa Solar & Vênus (7 Assistências Gravitacionais)',
+    missionType: 'solar_probe',
+    objective:
+      'Aproximar-se a menos de 9 raios solares (~6,16 milhões de km) da fotosfera para "tocar o Sol", desvendar o mistério do aquecimento coronal a milhões de graus e a origem da aceleração supersônica do vento solar.',
+    keyDiscoveries: [
+      'Tornou-se o objeto mais veloz já construído pela humanidade, atingindo ~692.000 km/h (192 km/s — 0,064% da velocidade da luz!) no periélio.',
+      'Descobriu "switchbacks" magnéticos (inversões rápidas em zigue-zague do campo magnético solar) que aceleram o vento solar.',
+      'Em 28 de abril de 2021, cruzou a superfície crítica de Alfvén pela primeira vez na história, entrando na coroa solar magnetizada.',
+      'Durante os sobrevoos de Vênus, sua câmera WISPR conseguiu enxergar o brilho térmico da superfície incandescente de Vênus através das nuvens no lado noturno!',
+    ],
+    instruments: [
+      'FIELDS (Campos Elétricos e Magnéticos)',
+      'WISPR (Wide-Field Imager for Solar Probe)',
+      'SWEAP (Solar Wind Electrons Alphas and Protons)',
+      'IS☉IS (Integrated Science Investigation of the Sun)',
+      'Escudo Térmico de Compósito de Carbono (TPS)',
+    ],
+    currentDistanceFromSunAU: 0.046,
+    colorHex: '#fb923c',
+    trajectoryPointsAU: [
+      { dateIso: '2018-08-12', label: 'Lançamento (Terra)', positionAU: [0.8, 0.0, -0.6] },
+      { dateIso: '2018-10-03', label: '1ª Assistência Gravitacional em Vênus', positionAU: [0.5, 0.0, -0.5] },
+      { dateIso: '2021-04-28', label: 'Entrada Histórica na Coroa Solar (Superfície de Alfvén)', positionAU: [0.06, 0.0, 0.02] },
+      { dateIso: '2024-12-24', label: 'Periélio Mais Próximo (6,16 milhões de km / 192 km/s)', positionAU: [-0.046, 0.0, 0.0] },
+    ],
+    imageUrl: 'https://images-assets.nasa.gov/image/GSFC_20171208_Archive_e001435/GSFC_20171208_Archive_e001435~orig.jpg',
+    imageCredit: 'NASA / JHUAPL / Naval Research Laboratory',
+    sourceReference: 'NASA Parker Solar Probe Gateway (JHUAPL)',
+  },
+];
+
+/**
+ * Converts a mission's AU trajectory points into 3D scene coordinates according to the active ScaleMode.
+ */
+export function getMissionTrajectoryScenePoints(
+  mission: SpaceMission,
+  scaleMode: ScaleMode
+): [number, number, number][] {
+  return mission.trajectoryPointsAU.map((wp) => {
+    const [xAU, yAU, zAU] = wp.positionAU;
+    const rAU = Math.sqrt(xAU * xAU + yAU * yAU + zAU * zAU);
+    if (rAU === 0) return [0, 0, 0];
+
+    let targetR = rAU;
+    if (scaleMode === 'EXPLORATION' || scaleMode === 'TRUE_SIZES') {
+      // Map AU smoothly to exploration orbital units: 1 AU ~ 30, 5.2 AU ~ 56, 9.58 AU ~ 74, 30 AU ~ 110, >40 AU ~ 135+
+      if (rAU <= 1.0) {
+        targetR = 8.0 + rAU * 22.0;
+      } else if (rAU <= 10.0) {
+        targetR = 30.0 + Math.pow((rAU - 1.0) / 9.0, 0.72) * 44.0;
+      } else if (rAU <= 40.0) {
+        targetR = 74.0 + ((rAU - 10.0) / 30.0) * 52.0;
+      } else {
+        targetR = 126.0 + Math.log10(1 + (rAU - 40.0) / 20.0) * 42.0;
+      }
+    } else if (scaleMode === 'PROPORTIONAL_DISTANCES') {
+      targetR = 8.0 + rAU * 18.0;
+    } else {
+      targetR = rAU * 149.59787;
+    }
+
+    const scale = targetR / rAU;
+    return [xAU * scale, yAU * scale, zAU * scale];
+  });
+}
