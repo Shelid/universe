@@ -779,7 +779,6 @@ export function createInstancedAsteroidShaderMaterial(
       uIsIceBoulder: { value: isSaturnRingIce ? 1.0 : 0.0 },
     },
     vertexShader: /* glsl */ `
-      attribute vec3 instanceColor;
       varying vec3 vNormal;
       varying vec3 vWorldPos;
       varying vec3 vLocalPos;
@@ -795,10 +794,23 @@ export function createInstancedAsteroidShaderMaterial(
           vInstanceColor = vec3(0.75, 0.72, 0.68);
         #endif
 
-        mat4 instModel = modelMatrix * instanceMatrix;
+        #ifdef USE_INSTANCING
+          mat4 instModel = modelMatrix * instanceMatrix;
+          mat3 im = mat3(instanceMatrix);
+          vec3 instNormal = normal / vec3(
+            max(dot(im[0], im[0]), 0.0001),
+            max(dot(im[1], im[1]), 0.0001),
+            max(dot(im[2], im[2]), 0.0001)
+          );
+          instNormal = im * instNormal;
+          vNormal = normalize(mat3(modelMatrix) * instNormal);
+        #else
+          mat4 instModel = modelMatrix;
+          vNormal = normalize(mat3(modelMatrix) * normal);
+        #endif
+
         vec4 worldPos = instModel * vec4(position, 1.0);
         vWorldPos = worldPos.xyz;
-        vNormal = normalize(mat3(instModel) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
@@ -817,34 +829,35 @@ export function createInstancedAsteroidShaderMaterial(
 
       void main() {
         vec3 texSample = texture2D(uCraterMap, vUv * 2.0).rgb;
-        vec3 texDetail = texture2D(uCraterMap, vUv * 5.0 + vec2(0.37, 0.61)).rgb;
+        vec3 texDetail = texture2D(uCraterMap, vUv * 5.5 + vec2(0.37, 0.61)).rgb;
 
         vec3 N = normalize(vNormal);
         vec3 L = normalize(uSunPosition - vWorldPos);
         vec3 V = normalize(cameraPosition - vWorldPos);
         vec3 H = normalize(L + V);
 
-        // Perturb normal slightly from 4K crater texture luminance for crisp micro-facets
+        // Perturb normal from 4K crater texture luminance for crisp micro-facets and deep craters
         float microRelief = dot(texDetail, vec3(0.333)) - 0.5;
-        float NdotL = dot(N, L) + microRelief * 0.25;
+        float NdotL = dot(N, L) + microRelief * 0.32;
         float NdotV = max(dot(N, V), 0.05);
 
         // Lommel-Seeliger rocky asteroid reflectance
         float mu0 = max(NdotL, 0.0);
-        float lommel = (mu0 / (mu0 + NdotV * 0.58)) * 1.42;
-        float dayLight = mix(mu0, lommel, 0.6) * smoothstep(-0.12, 0.14, NdotL);
+        float lommel = (mu0 / (mu0 + NdotV * 0.52)) * 1.48;
+        float dayLight = mix(mu0, lommel, 0.65) * smoothstep(-0.14, 0.12, NdotL);
 
-        // Combine mineralogical instance color with 4K NASA crater texture
-        float rockDetail = mix(0.55, 1.35, dot(texSample, vec3(0.333)));
+        // Combine mineralogical instance color with 4K NASA crater texture & local 3D depth shading
+        float craterCavity = clamp((length(vLocalPos) - 0.72) / 0.55, 0.45, 1.18);
+        float rockDetail = mix(0.48, 1.42, dot(texSample, vec3(0.333))) * craterCavity;
         vec3 baseAlbedo = vInstanceColor * rockDetail;
 
         // Warm sunlit highlight on sun-facing crags + cool slate-blue cosmic fill on shadowed facets
-        vec3 warmSunTint = uIsIceBoulder > 0.5 ? vec3(1.02, 0.99, 0.94) : vec3(1.12, 0.96, 0.82);
-        vec3 coolSpaceAmbient = uIsIceBoulder > 0.5 ? vec3(0.14, 0.22, 0.34) : vec3(0.11, 0.16, 0.24);
+        vec3 warmSunTint = uIsIceBoulder > 0.5 ? vec3(1.15, 1.06, 0.96) : vec3(1.25, 1.02, 0.82);
+        vec3 coolSpaceAmbient = uIsIceBoulder > 0.5 ? vec3(0.20, 0.30, 0.46) : vec3(0.16, 0.23, 0.35);
 
-        // Rim backlight / crystalline glint
-        float rim = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.6);
-        float spec = pow(max(dot(N, H), 0.0), uIsIceBoulder > 0.5 ? 42.0 : 18.0) * (uIsIceBoulder > 0.5 ? 0.38 : 0.12) * dayLight;
+        // Rim backlight / crystalline glint so every 3D rock silhouette stands out against space
+        float rim = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.4);
+        float spec = pow(max(dot(N, H), 0.0), uIsIceBoulder > 0.5 ? 36.0 : 16.0) * (uIsIceBoulder > 0.5 ? 0.42 : 0.16) * dayLight;
 
         // Optional planetary shadow (for Saturn's ring boulders)
         float shadowFactor = 1.0;
@@ -860,7 +873,7 @@ export function createInstancedAsteroidShaderMaterial(
 
         vec3 litAsteroid =
           baseAlbedo * (coolSpaceAmbient + warmSunTint * dayLight * shadowFactor) +
-          vec3(0.45, 0.65, 0.92) * rim * 0.18 +
+          vec3(0.50, 0.70, 0.96) * rim * 0.24 +
           vec3(1.0, 0.96, 0.88) * spec * shadowFactor;
 
         gl_FragColor = vec4(litAsteroid, 1.0);
@@ -872,7 +885,7 @@ export function createInstancedAsteroidShaderMaterial(
 /**
  * Populates a realistic 3D Asteroid Belt or Kuiper Belt using all 6 sculpted 3D asteroid archetypes
  * with varied sizes (power-law distribution from giant hero boulders to small fragments), varied non-uniform
- * proportions, varied orientations, and a soft circular zodiacal dust halo.
+ * proportions, and varied 3D orientations (100% solid 3D meshes, zero faint point-light clouds).
  */
 export function populateRealisticAsteroidBeltGroup(
   targetGroup: THREE.Group,
@@ -894,9 +907,10 @@ export function populateRealisticAsteroidBeltGroup(
 
   geometries.forEach((geo, archIdx) => {
     const mesh = new THREE.InstancedMesh(geo, asteroidMat, countPerArchetype);
+    mesh.frustumCulled = false;
 
     for (let i = 0; i < countPerArchetype; i++) {
-      // Radial distribution with subtle Kirkwood resonance clustering
+      // Radial distribution
       const radialT = Math.random();
       const radius = innerRadius + radialT * (outerRadius - innerRadius);
       const angle = Math.random() * Math.PI * 2;
@@ -911,20 +925,20 @@ export function populateRealisticAsteroidBeltGroup(
         Math.random() * Math.PI * 2
       );
 
-      // Power-law size variation: mostly small/medium rocks + ~12% large craggy hero boulders!
+      // Power-law size variation: small fragments, medium craggy rocks, and large hero planetesimals!
       const sizeRoll = Math.random();
       const powerFactor =
-        sizeRoll > 0.92
-          ? 0.72 + Math.random() * 0.55 // Giant hero planetesimals
-          : sizeRoll > 0.65
-            ? 0.35 + Math.random() * 0.37 // Medium boulders
-            : 0.12 + Math.random() * 0.24; // Smaller fragments
+        sizeRoll > 0.88
+          ? 0.74 + Math.random() * 0.56 // Giant hero planetesimals
+          : sizeRoll > 0.52
+            ? 0.38 + Math.random() * 0.36 // Medium boulders
+            : 0.16 + Math.random() * 0.22; // Smaller rocky fragments
 
       const baseScale = baseScaleMin + powerFactor * (baseScaleMax - baseScaleMin);
       dummy.scale.set(
-        baseScale * (0.75 + Math.random() * 0.55),
-        baseScale * (0.70 + Math.random() * 0.55),
-        baseScale * (0.75 + Math.random() * 0.55)
+        baseScale * (0.75 + Math.random() * 0.58),
+        baseScale * (0.68 + Math.random() * 0.55),
+        baseScale * (0.75 + Math.random() * 0.58)
       );
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
@@ -935,23 +949,23 @@ export function populateRealisticAsteroidBeltGroup(
       const typeRoll = (i + archIdx) % 10;
       if (isKuiperBelt) {
         if (typeRoll < 5) {
-          color.setHSL(0.58, 0.22 + Math.random() * 0.15, 0.52 + Math.random() * 0.22);
+          color.setHSL(0.58, 0.24 + Math.random() * 0.15, 0.56 + Math.random() * 0.22);
         } else if (typeRoll < 8) {
-          color.setHSL(0.54, 0.12, 0.42 + Math.random() * 0.18);
+          color.setHSL(0.54, 0.14, 0.48 + Math.random() * 0.18);
         } else {
           // Reddish tholin KBO (like Arrokoth / Sedna)
-          color.setHSL(0.05, 0.38, 0.45 + Math.random() * 0.15);
+          color.setHSL(0.05, 0.38, 0.50 + Math.random() * 0.16);
         }
       } else {
-        if (typeRoll < 5) {
-          // C-type carbonaceous (cool dark slate-grey)
-          color.setHSL(0.6, 0.08 + Math.random() * 0.08, 0.36 + Math.random() * 0.18);
+        if (typeRoll < 4) {
+          // C-type carbonaceous (cool slate-grey rock)
+          color.setHSL(0.59, 0.12 + Math.random() * 0.08, 0.44 + Math.random() * 0.18);
         } else if (typeRoll < 8) {
           // S-type silicate stony (warm brownish-ochre rock)
-          color.setHSL(0.08, 0.24 + Math.random() * 0.14, 0.48 + Math.random() * 0.2);
+          color.setHSL(0.08, 0.28 + Math.random() * 0.14, 0.54 + Math.random() * 0.20);
         } else {
           // M-type metallic nickel-iron (bright warm bronze-silver)
-          color.setHSL(0.09, 0.16, 0.62 + Math.random() * 0.2);
+          color.setHSL(0.09, 0.18, 0.66 + Math.random() * 0.20);
         }
       }
       mesh.setColorAt(i, color);
@@ -963,30 +977,106 @@ export function populateRealisticAsteroidBeltGroup(
     instancedMeshes.push(mesh);
   });
 
-  // Add a subtle, soft circular micro-dust haze ring (using radial circle sprite — zero squares!)
-  const dustCount = 1200;
-  const dustPos = new Float32Array(dustCount * 3);
-  for (let i = 0; i < dustCount; i++) {
-    const r = innerRadius + Math.random() * (outerRadius - innerRadius);
-    const a = Math.random() * Math.PI * 2;
-    const y = (Math.random() - 0.5) * verticalSpread * 0.7;
-    dustPos[i * 3] = Math.cos(a) * r;
-    dustPos[i * 3 + 1] = y;
-    dustPos[i * 3 + 2] = Math.sin(a) * r;
-  }
-  const dustGeo = new THREE.BufferGeometry();
-  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-  const dustMat = new THREE.PointsMaterial({
-    map: getSoftCircleParticleTexture(),
-    color: isKuiperBelt ? '#7dd3fc' : '#cbd5e1',
-    size: isKuiperBelt ? 0.45 : 0.32,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
+  return instancedMeshes;
+}
+
+/**
+ * Populates Saturn's Rings with 4,200 sculpted 3D Asteroid & Crystalline Ice-Rock Fragments
+ * across all 6 geological archetypes, respecting the C Ring, B Ring, Cassini Division, A Ring, and Encke Gap.
+ */
+export function populateSaturnRing3DAsteroidFragments(
+  targetGroup: THREE.Group,
+  boulderShaderMat: THREE.ShaderMaterial,
+  innerR: number,
+  outerR: number,
+  totalFragments = 4200
+): THREE.InstancedMesh[] {
+  const geometries = getSculptedAsteroidGeometries();
+  const countPerArchetype = Math.floor(totalFragments / geometries.length);
+  const instancedMeshes: THREE.InstancedMesh[] = [];
+
+  const dummy = new THREE.Object3D();
+  const boulderColor = new THREE.Color();
+
+  geometries.forEach((geo, archIdx) => {
+    const mesh = new THREE.InstancedMesh(geo, boulderShaderMat, countPerArchetype);
+    mesh.frustumCulled = false;
+
+    for (let i = 0; i < countPerArchetype; i++) {
+      let t = Math.random();
+      // Respect Cassini Division (0.635 - 0.695) and Encke Gap (0.875)
+      if (t > 0.635 && t < 0.695 && Math.random() < 0.94) {
+        t = 0.28 + Math.random() * 0.34;
+      }
+      if (Math.abs(t - 0.875) < 0.014) {
+        t += 0.025;
+      }
+
+      const r = innerR + t * (outerR - innerR);
+      const theta = Math.random() * Math.PI * 2;
+      // Slight vertical ring thickness with multi-layer dispersion
+      const gaussY = (Math.random() + Math.random() - 1.0) * 0.024;
+
+      dummy.position.set(Math.cos(theta) * r, gaussY, Math.sin(theta) * r);
+      dummy.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
+      );
+
+      // Multi-scale 3D asteroid fragment distribution:
+      // Hero moonlets/boulders (~12%), medium craggy rocks (~38%), and smaller 3D fragments (~50%)
+      const sizeRoll = Math.random();
+      const baseScale =
+        sizeRoll > 0.88
+          ? 0.022 + Math.random() * 0.024 // Hero 3D ring boulders
+          : sizeRoll > 0.50
+            ? 0.011 + Math.random() * 0.011 // Medium 3D rocky/icy fragments
+            : 0.005 + Math.random() * 0.006; // Dense smaller 3D fragments
+
+      dummy.scale.set(
+        baseScale * (0.75 + Math.random() * 0.55),
+        baseScale * (0.65 + Math.random() * 0.52),
+        baseScale * (0.75 + Math.random() * 0.55)
+      );
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      // Ring composition color variation:
+      // C-Ring: darker carbonaceous rock-ice; B-Ring: bright crystalline ice + ochre silicate rocks; A-Ring: slate-ice & rock
+      const isCRing = t < 0.22;
+      const isBRing = t >= 0.22 && t <= 0.635;
+      const rockMix = (i + archIdx) % 5;
+
+      if (isCRing) {
+        boulderColor.setHSL(0.58, 0.16, 0.42 + Math.random() * 0.16);
+      } else if (isBRing) {
+        if (rockMix === 0) {
+          // Warm ochre-brown rocky fragment
+          boulderColor.setHSL(0.08, 0.30, 0.58 + Math.random() * 0.18);
+        } else if (rockMix === 1) {
+          // Cool slate-blue icy boulder
+          boulderColor.setHSL(0.58, 0.28, 0.66 + Math.random() * 0.18);
+        } else {
+          // Bright crystalline water-ice boulder
+          boulderColor.setHSL(0.10, 0.18, 0.78 + Math.random() * 0.18);
+        }
+      } else {
+        // A-Ring icy-slate and stony boulders
+        if (rockMix < 2) {
+          boulderColor.setHSL(0.57, 0.24, 0.60 + Math.random() * 0.18);
+        } else {
+          boulderColor.setHSL(0.09, 0.22, 0.64 + Math.random() * 0.20);
+        }
+      }
+      mesh.setColorAt(i, boulderColor);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    targetGroup.add(mesh);
+    instancedMeshes.push(mesh);
   });
-  const dustPoints = new THREE.Points(dustGeo, dustMat);
-  targetGroup.add(dustPoints);
 
   return instancedMeshes;
 }

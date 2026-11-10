@@ -31,9 +31,9 @@ import {
 import {
   createDetailedSatellite3DGroup,
   createInstancedAsteroidShaderMaterial,
-  getSculptedAsteroidGeometries,
   getSoftCircleParticleTexture,
   populateRealisticAsteroidBeltGroup,
+  populateSaturnRing3DAsteroidFragments,
 } from '../utils/spacecraftAndAsteroidModels';
 
 interface UniverseCanvasProps {
@@ -452,12 +452,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     populateRealisticAsteroidBeltGroup(
       mainAsteroidBelt,
       asteroidBeltShaderMat,
-      2100,
-      43.2,
-      52.4,
-      2.6,
-      0.06,
-      0.42,
+      3600,
+      43.0,
+      52.6,
+      2.8,
+      0.16,
+      0.88,
       false
     );
     beltGroup.add(mainAsteroidBelt);
@@ -466,12 +466,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     populateRealisticAsteroidBeltGroup(
       kuiperBelt,
       kuiperBeltShaderMat,
-      1400,
+      2400,
       113.0,
       137.0,
       6.8,
-      0.12,
-      0.65,
+      0.22,
+      1.05,
       true
     );
     beltGroup.add(kuiperBelt);
@@ -488,8 +488,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       solarStormParticles?: THREE.Points;
       saturnRingShaderMesh?: THREE.Mesh;
       saturnRingShaderMat?: THREE.ShaderMaterial;
-      saturnParticlePoints?: THREE.Points;
-      saturnBouldersInstanced?: THREE.InstancedMesh;
+      saturnBouldersGroup?: THREE.Group;
       saturnBoulderShaderMat?: THREE.ShaderMaterial;
       enceladusPlumePoints?: THREE.Points;
       interiorCutawayGroup: THREE.Group;
@@ -669,22 +668,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         populateRealisticAsteroidBeltGroup(
           ceresAsteroidCluster,
           asteroidBeltShaderMat,
-          660,
-          1.65,
-          5.8,
-          0.85,
-          0.025,
-          0.16,
+          960,
+          1.45,
+          7.6,
+          1.05,
+          0.035,
+          0.25,
           false
         );
         tiltGroup.add(ceresAsteroidCluster);
       }
 
-      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + 3D Sculpted Crystalline Ice Boulders + Soft Dust
+      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + 4,200 Sculpted 3D Asteroid & Crystalline Ice Fragments
       let saturnRingShaderMesh: THREE.Mesh | undefined;
       let saturnRingShaderMat: THREE.ShaderMaterial | undefined;
-      let saturnParticlePoints: THREE.Points | undefined;
-      let saturnBouldersInstanced: THREE.InstancedMesh | undefined;
+      let saturnBouldersGroup: THREE.Group | undefined;
 
       if (body.id === 'saturn') {
         const innerR = 1.18;
@@ -695,99 +693,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         saturnRingShaderMesh.rotation.x = Math.PI / 2;
         tiltGroup.add(saturnRingShaderMesh);
 
-        // 2,200 Sculpted 3D Crystalline Ice Boulders & Rock Fragments (with real 3D solar lighting & Saturn shadow!)
-        const boulderCount = 2200;
-        const sculptedBoulderGeo = getSculptedAsteroidGeometries()[3];
-        saturnBouldersInstanced = new THREE.InstancedMesh(
-          sculptedBoulderGeo,
+        // 4,200 Sculpted 3D Asteroid & Crystalline Ice-Rock Fragments across all 6 geological archetypes
+        saturnBouldersGroup = new THREE.Group();
+        populateSaturnRing3DAsteroidFragments(
+          saturnBouldersGroup,
           saturnBoulderShaderMat,
-          boulderCount
+          innerR,
+          outerR,
+          4200
         );
-        const dummy = new THREE.Object3D();
-        const boulderColor = new THREE.Color();
-
-        for (let i = 0; i < boulderCount; i++) {
-          let t = Math.random();
-          // Respect Cassini Division (0.635 - 0.695) and Encke Gap (0.875)
-          if (t > 0.635 && t < 0.695 && Math.random() < 0.94) {
-            t = 0.31 + Math.random() * 0.32;
-          }
-          if (Math.abs(t - 0.875) < 0.012) t += 0.022;
-
-          const r = innerR + t * (outerR - innerR);
-          const theta = Math.random() * Math.PI * 2;
-          const yOffset = (Math.random() - 0.5) * 0.016;
-
-          dummy.position.set(Math.cos(theta) * r, yOffset, Math.sin(theta) * r);
-          dummy.rotation.set(
-            Math.random() * Math.PI * 2,
-            Math.random() * Math.PI * 2,
-            Math.random() * Math.PI * 2
-          );
-          const scaleVar = (0.005 + Math.pow(Math.random(), 2.4) * 0.016);
-          dummy.scale.set(
-            scaleVar * (0.8 + Math.random() * 0.5),
-            scaleVar * (0.65 + Math.random() * 0.5),
-            scaleVar * (0.75 + Math.random() * 0.5)
-          );
-          dummy.updateMatrix();
-          saturnBouldersInstanced.setMatrixAt(i, dummy.matrix);
-
-          // Color variation from pure crystalline water ice to dusty ochre ice
-          const isBRing = t >= 0.305 && t <= 0.635;
-          boulderColor.setHSL(
-            0.1 + Math.random() * 0.04,
-            isBRing ? 0.22 : 0.32,
-            isBRing ? 0.84 + Math.random() * 0.15 : 0.66 + Math.random() * 0.2
-          );
-          saturnBouldersInstanced.setColorAt(i, boulderColor);
-        }
-        saturnBouldersInstanced.instanceMatrix.needsUpdate = true;
-        if (saturnBouldersInstanced.instanceColor) {
-          saturnBouldersInstanced.instanceColor.needsUpdate = true;
-        }
-        tiltGroup.add(saturnBouldersInstanced);
-
-        // 6,000 Shimmering Soft-Sprite Micro-Ice Dust Particles (Zero square pixels!)
-        const pCount = 6000;
-        const pPositions = new Float32Array(pCount * 3);
-        const pColors = new Float32Array(pCount * 3);
-
-        for (let i = 0; i < pCount; i++) {
-          let t = Math.random();
-          if (t > 0.635 && t < 0.695 && Math.random() < 0.92) {
-            t = 0.31 + Math.random() * 0.32;
-          }
-          if (Math.abs(t - 0.875) < 0.011 && Math.random() < 0.92) {
-            t += 0.022;
-          }
-          const r = innerR + t * (outerR - innerR);
-          const theta = Math.random() * Math.PI * 2;
-          const yThickness = (Math.random() - 0.5) * 0.01;
-
-          pPositions[i * 3] = Math.cos(theta) * r;
-          pPositions[i * 3 + 1] = yThickness;
-          pPositions[i * 3 + 2] = Math.sin(theta) * r;
-
-          const iceBright = t >= 0.305 && t <= 0.635 ? 0.96 : 0.78;
-          pColors[i * 3] = iceBright;
-          pColors[i * 3 + 1] = iceBright * 0.93;
-          pColors[i * 3 + 2] = iceBright * 0.82;
-        }
-
-        const pGeo = new THREE.BufferGeometry();
-        pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-        pGeo.setAttribute('color', new THREE.BufferAttribute(pColors, 3));
-        const pMat = new THREE.PointsMaterial({
-          map: softCircleSprite,
-          size: 0.032,
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.82,
-          depthWrite: false,
-        });
-        saturnParticlePoints = new THREE.Points(pGeo, pMat);
-        tiltGroup.add(saturnParticlePoints);
+        tiltGroup.add(saturnBouldersGroup);
       }
 
       if (body.id === 'uranus' || body.id === 'neptune') {
@@ -919,8 +834,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         solarStormParticles,
         saturnRingShaderMesh,
         saturnRingShaderMat,
-        saturnParticlePoints,
-        saturnBouldersInstanced,
+        saturnBouldersGroup,
         enceladusPlumePoints,
         interiorCutawayGroup,
         orbitLine,
@@ -1205,7 +1119,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         node.interiorCutawayGroup.visible = isCutaway;
 
-        // Saturn special rings shader, 3D sculpted ice boulders, and dust particles
+        // Saturn special rings shader and 4,200 sculpted 3D asteroid & ice boulders
         if (body.id === 'saturn') {
           if (node.saturnRingShaderMat) {
             node.saturnRingShaderMat.uniforms.uSunPosition.value.set(0, 0, 0);
@@ -1217,11 +1131,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           saturnBoulderShaderMat.uniforms.uSunPosition.value.set(0, 0, 0);
           saturnBoulderShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
           saturnBoulderShaderMat.uniforms.uPlanetRadius.value = radius;
-          if (node.saturnParticlePoints) {
-            node.saturnParticlePoints.rotation.y = clockTime * 0.018;
-          }
-          if (node.saturnBouldersInstanced) {
-            node.saturnBouldersInstanced.rotation.y = clockTime * 0.022;
+          if (node.saturnBouldersGroup) {
+            node.saturnBouldersGroup.rotation.y = clockTime * 0.028;
           }
         }
       });
