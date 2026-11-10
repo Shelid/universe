@@ -384,15 +384,15 @@ export function App() {
       />
 
       {/* 2. STREAMLINED SINGLE-ROW TOP BAR */}
-      <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-4 py-3 flex items-center justify-between gap-3">
+      <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
         {/* Left: Brand Identity + Zoom Level Pill */}
-        <div className="pointer-events-auto flex items-center gap-3 bg-slate-950/75 backdrop-blur-xl border border-white/10 px-3.5 py-2 rounded-2xl shadow-lg">
-          <div className="flex items-center gap-2 pr-2.5 border-r border-white/10">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-[0_0_15px_rgba(56,189,248,0.4)]">
-              <Orbit className="w-4 h-4 text-white" />
+        <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/85 backdrop-blur-xl border border-white/10 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl shadow-lg">
+          <div className="flex items-center gap-1.5 sm:gap-2 pr-2 sm:pr-2.5 sm:border-r border-white/10">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-[0_0_15px_rgba(56,189,248,0.4)] shrink-0">
+              <Orbit className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
             </div>
-            <span className="text-xs font-display font-bold tracking-wider text-white">
-              UNIVERSE EXPLORER
+            <span className="text-[11px] sm:text-xs font-display font-bold tracking-wider text-white truncate">
+              UNIVERSE<span className="hidden sm:inline"> EXPLORER</span>
             </span>
           </div>
 
@@ -435,18 +435,18 @@ export function App() {
         </div>
 
         {/* Right: Search + Missions + Layers Popover + Fullscreen */}
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
           {/* Search Omnibox */}
-          <div className="relative w-48 sm:w-64">
-            <div className="flex items-center bg-slate-950/75 backdrop-blur-xl border border-white/10 focus-within:border-sky-400 rounded-xl px-3 py-1.5 shadow-lg">
-              <Search className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
+          <div className="relative w-32 sm:w-64">
+            <div className="flex items-center bg-slate-950/85 backdrop-blur-xl border border-white/10 focus-within:border-sky-400 rounded-xl px-2 sm:px-3 py-1.5 shadow-lg">
+              <Search className="w-3.5 h-3.5 text-slate-400 mr-1.5 sm:mr-2 shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setTimeout(() => setIsSearchFocused(false), 180)}
-                placeholder="Buscar planeta, ISS, missão..."
+                placeholder="Buscar..."
                 className="w-full bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
               />
               {searchQuery && (

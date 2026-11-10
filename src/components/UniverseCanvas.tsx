@@ -596,7 +596,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (body.id === 'jupiter') spinMesh.scale.set(1, 0.935, 1);
       if (body.id === 'saturn') spinMesh.scale.set(1, 0.902, 1);
       if (body.id === 'haumea') spinMesh.scale.set(1.42, 0.72, 0.96);
-      if (body.category === 'galaxy') spinMesh.scale.setScalar(0.18);
+      if (body.category === 'galaxy') {
+        spinMesh.visible = false; // Hide planetary sphere inside galaxies — only show the realistic 3D volumetric starfield!
+        spinMesh.scale.setScalar(0.9);
+      }
 
       tiltGroup.add(spinMesh);
       clickableMeshes.push(spinMesh);
@@ -683,7 +686,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
         solarStormParticles = new THREE.Points(cmeGeo, cmeMat);
         tiltGroup.add(solarStormParticles);
-      } else if (body.atmosphere.hasAtmosphere) {
+      } else if (body.category !== 'galaxy' && body.atmosphere.hasAtmosphere) {
         const atmoMat = createAtmosphereHaloMaterial(body.atmosphereColorHex);
         atmosphereMesh = new THREE.Mesh(sphereGeometryHigh, atmoMat);
         atmosphereMesh.scale.setScalar(1.028);
@@ -851,6 +854,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         opacity: body.category === 'moon' ? 0.32 : 0.35,
       });
       const orbitLine = new THREE.Line(orbitGeo, orbitMat);
+      orbitLine.visible = body.id !== 'sun' && body.category !== 'galaxy';
       scene.add(orbitLine);
 
       scene.add(rootGroup);
@@ -1088,7 +1092,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           node.orbitLine.visible = showMoonOrbit;
         } else {
           node.orbitLine.position.set(0, 0, 0);
-          node.orbitLine.visible = st.showOrbits && body.id !== 'sun';
+          node.orbitLine.visible =
+            st.showOrbits && body.id !== 'sun' && body.category !== 'galaxy';
         }
 
         const radius = getScaledRadius(body, st.scaleMode);
@@ -1122,12 +1127,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           node.spinMesh.rotation.y = -0.35;
         }
 
-        // Update shaders
-        if (body.id === 'sun' || body.category === 'galaxy') {
+        // Update shaders & animations safely
+        if (body.id === 'sun') {
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
-          if (node.galaxyVolumetricGroup) {
-            node.galaxyVolumetricGroup.rotation.y = clockTime * 0.032;
-          }
           if (node.atmosphereMesh) {
             (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = clockTime;
           }
@@ -1138,13 +1140,24 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             node.solarStormParticles.rotation.y = clockTime * 0.025;
             node.solarStormParticles.rotation.z = Math.sin(clockTime * 0.2) * 0.05;
           }
+        } else if (body.category === 'galaxy') {
+          if (node.galaxyVolumetricGroup) {
+            node.galaxyVolumetricGroup.rotation.y = clockTime * 0.018;
+          }
         } else {
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
           node.surfaceMaterial.uniforms.uSunPosition.value.set(0, 0, 0);
-          node.surfaceMaterial.uniforms.uVenusRadarMode.value =
-            body.id === 'venus' && st.venusRadarMode ? 1.0 : 0.0;
-          node.surfaceMaterial.uniforms.uCutawayEnabled.value = isCutaway ? 1.0 : 0.0;
-          if (node.atmosphereMesh) {
+          if (node.surfaceMaterial.uniforms.uVenusRadarMode) {
+            node.surfaceMaterial.uniforms.uVenusRadarMode.value =
+              body.id === 'venus' && st.venusRadarMode ? 1.0 : 0.0;
+          }
+          if (node.surfaceMaterial.uniforms.uCutawayEnabled) {
+            node.surfaceMaterial.uniforms.uCutawayEnabled.value = isCutaway ? 1.0 : 0.0;
+          }
+          if (
+            node.atmosphereMesh &&
+            (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms?.uSunPosition
+          ) {
             (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uSunPosition.value.set(
               0,
               0,
