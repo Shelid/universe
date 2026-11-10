@@ -452,12 +452,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     populateRealisticAsteroidBeltGroup(
       mainAsteroidBelt,
       asteroidBeltShaderMat,
-      3600,
-      43.0,
-      52.6,
-      2.8,
-      0.16,
-      0.88,
+      1140,
+      43.2,
+      52.0,
+      0.85,
+      0.025,
+      0.125,
       false
     );
     beltGroup.add(mainAsteroidBelt);
@@ -466,12 +466,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     populateRealisticAsteroidBeltGroup(
       kuiperBelt,
       kuiperBeltShaderMat,
-      2400,
+      660,
       113.0,
-      137.0,
-      6.8,
-      0.22,
-      1.05,
+      136.0,
+      2.0,
+      0.04,
+      0.18,
       true
     );
     beltGroup.add(kuiperBelt);
@@ -662,24 +662,24 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(atmosphereMesh);
       }
 
-      // CERES SPECIAL FEATURE: Dense 3D Sculpted Asteroid Field Cluster surrounding Ceres in the Main Belt!
+      // CERES SPECIAL FEATURE: Local 3D Sculpted Asteroid Field Cluster surrounding Ceres in the Main Belt
       if (body.id === 'ceres') {
         const ceresAsteroidCluster = new THREE.Group();
         populateRealisticAsteroidBeltGroup(
           ceresAsteroidCluster,
           asteroidBeltShaderMat,
-          960,
-          1.45,
-          7.6,
-          1.05,
-          0.035,
-          0.25,
+          210,
+          1.5,
+          5.5,
+          0.45,
+          0.015,
+          0.075,
           false
         );
         tiltGroup.add(ceresAsteroidCluster);
       }
 
-      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + 4,200 Sculpted 3D Asteroid & Crystalline Ice Fragments
+      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + 1,200 Proportional Sculpted 3D Asteroid & Ice Fragments
       let saturnRingShaderMesh: THREE.Mesh | undefined;
       let saturnRingShaderMat: THREE.ShaderMaterial | undefined;
       let saturnBouldersGroup: THREE.Group | undefined;
@@ -693,14 +693,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         saturnRingShaderMesh.rotation.x = Math.PI / 2;
         tiltGroup.add(saturnRingShaderMesh);
 
-        // 4,200 Sculpted 3D Asteroid & Crystalline Ice-Rock Fragments across all 6 geological archetypes
+        // 1,200 Proportional Sculpted 3D Asteroid & Crystalline Ice-Rock Fragments across all 6 archetypes
         saturnBouldersGroup = new THREE.Group();
         populateSaturnRing3DAsteroidFragments(
           saturnBouldersGroup,
           saturnBoulderShaderMat,
           innerR,
           outerR,
-          4200
+          1200
         );
         tiltGroup.add(saturnBouldersGroup);
       }
