@@ -2077,3 +2077,4 @@ export const EXTRA_SOLAR_SYSTEM_BODIES: CelestialBodyData[] = [
     ],
   },
 ];
+
