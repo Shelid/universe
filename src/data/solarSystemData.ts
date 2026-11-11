@@ -2,11 +2,13 @@ import { CelestialBodyData, ScaleMode } from '../types/astronomy';
 import { SUN_AND_PLANETS } from './solarSystemPlanets';
 import { MOONS_AND_DWARF_PLANETS } from './solarSystemMoonsAndDwarfs';
 import { COSMIC_GALAXIES, MISSING_DWARF_PLANETS_AND_WORLDS } from './galaxiesData';
+import { EXTRA_SOLAR_SYSTEM_BODIES } from './extraSolarSystemBodies';
 
 export const ALL_CELESTIAL_BODIES: CelestialBodyData[] = [
   ...SUN_AND_PLANETS,
   ...MOONS_AND_DWARF_PLANETS,
   ...MISSING_DWARF_PLANETS_AND_WORLDS,
+  ...EXTRA_SOLAR_SYSTEM_BODIES,
   ...COSMIC_GALAXIES,
 ];
 
@@ -91,6 +93,29 @@ export function computeKeplerianPosition3D(
   scaleMode: ScaleMode
 ): [number, number, number] {
   if (body.id === 'sun') return [0, 0, 0];
+
+  // Galaxies occupy vast cosmological positions in the Local Group and Virgo Supercluster,
+  // rather than orbiting our single Sun on planetary Keplerian ellipses!
+  if (body.category === 'galaxy') {
+    switch (body.id) {
+      case 'milky-way':
+        return [0, 0, 0];
+      case 'large-magellanic-cloud':
+        return [140, -110, 85]; // LMC (163.000 ly)
+      case 'andromeda':
+        return [980, 420, -860]; // M31 (2,5 Milhões de ly)
+      case 'triangulum':
+        return [1120, 310, -720]; // M33 (2,7 Milhões de ly)
+      case 'whirlpool-galaxy':
+        return [-1680, 750, 1140]; // M51 (23 Milhões de ly)
+      case 'sombrero-galaxy':
+        return [1880, -690, 1480]; // M104 (31 Milhões de ly)
+      case 'm87-galaxy':
+        return [-2450, 1420, -1880]; // M87 no Aglomerado de Virgem (53 Milhões de ly)
+      default:
+        return [850, 250, 850];
+    }
+  }
 
   const daysSinceJ2000 = (timeMs - J2000_EPOCH_MS) / 86_400_000;
   const {

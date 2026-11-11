@@ -1,4 +1,11 @@
-export type BodyCategory = 'star' | 'planet' | 'dwarf_planet' | 'moon' | 'galaxy';
+export type BodyCategory =
+  | 'star'
+  | 'planet'
+  | 'dwarf_planet'
+  | 'moon'
+  | 'asteroid'
+  | 'comet'
+  | 'galaxy';
 
 export type PlanetSubType =
   | 'g2v_main_sequence'
@@ -7,6 +14,9 @@ export type PlanetSubType =
   | 'ice_giant'
   | 'dwarf_planet'
   | 'natural_satellite'
+  | 'asteroid'
+  | 'comet'
+  | 'kuiper_belt_object'
   | 'galaxy_spiral'
   | 'galaxy_barred'
   | 'galaxy_elliptical'
@@ -21,7 +31,8 @@ export type ZoomLevel =
   | 'SOLAR_SYSTEM'       // Nível 1: Sistema Solar
   | 'PLANETARY_APPROACH' // Nível 2: Aproximação do Planeta
   | 'ORBITAL_EXPLORATION'// Nível 3: Exploração Orbital (Luas, Sondas, Satélites)
-  | 'SURFACE_EXPLORATION'; // Nível 4: Exploração da Superfície
+  | 'SURFACE_EXPLORATION'// Nível 4: Exploração da Superfície
+  | 'COSMIC_GALAXY';     // Nível 5: Escala Galáctica & Universo Profundo
 
 export type ScaleMode =
   | 'EXPLORATION'            // Escala visual adaptada para exploração fluida

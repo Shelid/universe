@@ -65,7 +65,13 @@ const ZOOM_LEVEL_META: Record<ZoomLevel, { step: number; title: string }> = {
     step: 4,
     title: 'Nível 4 • Superfície & Relevo',
   },
+  COSMIC_GALAXY: {
+    step: 5,
+    title: 'Nível 5 • Escala Galáctica & Cosmos',
+  },
 };
+
+export type NavDockMode = 'PLANETS' | 'MOONS' | 'DWARFS' | 'ASTEROIDS_COMETS' | 'GALAXIES';
 
 export function App() {
   // Core Navigation & Selection State
@@ -75,7 +81,7 @@ export function App() {
   // Closed by default so the initial screen is clean, spacious, and cinematic!
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
   const [isQuickCardOpen, setIsQuickCardOpen] = useState<boolean>(true);
-  const [navDockMode, setNavDockMode] = useState<'SOLAR_SYSTEM' | 'GALAXIES'>('SOLAR_SYSTEM');
+  const [navDockMode, setNavDockMode] = useState<NavDockMode>('PLANETS');
   const [isLayersMenuOpen, setIsLayersMenuOpen] = useState<boolean>(false);
   const [cinematicTravelEnabled, setCinematicTravelEnabled] = useState<boolean>(true);
 
@@ -233,6 +239,19 @@ export function App() {
       setIsQuickCardOpen(true);
       if (targetBody.category === 'galaxy') {
         setNavDockMode('GALAXIES');
+        setZoomLevel('COSMIC_GALAXY');
+      } else if (targetBody.category === 'moon') {
+        setNavDockMode('MOONS');
+        setZoomLevel('ORBITAL_EXPLORATION');
+      } else if (targetBody.category === 'dwarf_planet') {
+        setNavDockMode('DWARFS');
+        setZoomLevel('PLANETARY_APPROACH');
+      } else if (targetBody.category === 'asteroid' || targetBody.category === 'comet') {
+        setNavDockMode('ASTEROIDS_COMETS');
+        setZoomLevel('PLANETARY_APPROACH');
+      } else {
+        setNavDockMode('PLANETS');
+        setZoomLevel('PLANETARY_APPROACH');
       }
     },
     [cinematicTravelEnabled, selectedBodyId]
@@ -257,11 +276,24 @@ export function App() {
         b.englishName.toLowerCase().includes(q) ||
         b.ClassificationLabel.toLowerCase().includes(q)
       ) {
+        const catLbl =
+          b.category === 'galaxy'
+            ? 'Galáxia'
+            : b.category === 'moon'
+            ? 'Lua'
+            : b.category === 'dwarf_planet'
+            ? 'Planeta Anão'
+            : b.category === 'asteroid'
+            ? 'Asteroide'
+            : b.category === 'comet'
+            ? 'Cometa'
+            : 'Planeta';
+
         results.push({
           id: `sr-body-${b.id}`,
           title: b.name,
           subtitle: b.ClassificationLabel,
-          categoryLabel: b.category === 'moon' ? 'Lua' : 'Astro',
+          categoryLabel: catLbl,
           onSelect: () => handleSelectBody(b.id, true),
         });
       }
@@ -332,15 +364,24 @@ export function App() {
 
   const zoomMeta = ZOOM_LEVEL_META[zoomLevel];
 
-  const mainNavBodies = useMemo(
-    () =>
-      ALL_CELESTIAL_BODIES.filter((b) =>
-        navDockMode === 'GALAXIES'
-          ? b.category === 'galaxy'
-          : b.category === 'star' || b.category === 'planet' || b.category === 'dwarf_planet'
-      ),
-    [navDockMode]
-  );
+  const mainNavBodies = useMemo(() => {
+    switch (navDockMode) {
+      case 'PLANETS':
+        return ALL_CELESTIAL_BODIES.filter(
+          (b) => b.category === 'star' || b.category === 'planet'
+        );
+      case 'MOONS':
+        return ALL_CELESTIAL_BODIES.filter((b) => b.category === 'moon');
+      case 'DWARFS':
+        return ALL_CELESTIAL_BODIES.filter((b) => b.category === 'dwarf_planet');
+      case 'ASTEROIDS_COMETS':
+        return ALL_CELESTIAL_BODIES.filter(
+          (b) => b.category === 'asteroid' || b.category === 'comet'
+        );
+      case 'GALAXIES':
+        return ALL_CELESTIAL_BODIES.filter((b) => b.category === 'galaxy');
+    }
+  }, [navDockMode]);
 
   return (
     <div className="relative w-screen h-screen bg-[#02040a] text-slate-100 overflow-hidden select-none font-sans">
@@ -398,7 +439,7 @@ export function App() {
 
           <div className="hidden sm:flex items-center gap-2">
             <div className="flex items-center gap-1">
-              {[1, 2, 3, 4].map((step) => (
+              {[1, 2, 3, 4, 5].map((step) => (
                 <span
                   key={step}
                   className={`w-1.5 h-1.5 rounded-full ${
@@ -434,8 +475,21 @@ export function App() {
           </div>
         </div>
 
-        {/* Right: Search + Missions + Layers Popover + Fullscreen */}
+        {/* Right: Scale Indicator (Cosmoscope Style) + Search + Missions + Layers Popover + Fullscreen */}
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
+          {navDockMode === 'GALAXIES' && (
+            <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-xl border border-indigo-500/40 px-2.5 py-1.5 rounded-xl shadow-lg text-indigo-300 font-mono text-[11px] animate-pulse">
+              <span className="text-indigo-400">↕</span>
+              <span>
+                {selectedBody.id === 'milky-way'
+                  ? '105.700 ly'
+                  : selectedBody.category === 'galaxy'
+                  ? `${selectedBody.meanRadiusKm.toLocaleString()} ly`
+                  : '157.377 ly'}
+              </span>
+            </div>
+          )}
+
           {/* Search Omnibox */}
           <div className="relative w-32 sm:w-64">
             <div className="flex items-center bg-slate-950/85 backdrop-blur-xl border border-white/10 focus-within:border-sky-400 rounded-xl px-2 sm:px-3 py-1.5 shadow-lg">
@@ -840,24 +894,59 @@ export function App() {
 
           {/* Mode Switcher (Sistema Solar vs Galáxias) + Planetary / Galactic Navigation Dock */}
           <div className="pointer-events-auto flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-xl border border-white/10 px-2.5 py-1.5 rounded-2xl shadow-xl overflow-x-auto max-w-full">
-            <div className="flex items-center bg-slate-900/90 p-0.5 rounded-xl border border-white/10 shrink-0 mr-1">
+            <div className="flex items-center bg-slate-900/90 p-0.5 rounded-xl border border-white/10 shrink-0 mr-1 gap-0.5">
               <button
-                onClick={() => setNavDockMode('SOLAR_SYSTEM')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                  navDockMode === 'SOLAR_SYSTEM'
+                onClick={() => setNavDockMode('PLANETS')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                  navDockMode === 'PLANETS'
                     ? 'bg-sky-500 text-slate-950 shadow'
                     : 'text-slate-300 hover:text-white'
                 }`}
+                title="Planetas Principais do Sistema Solar"
               >
-                🪐 Planetas ({ALL_CELESTIAL_BODIES.filter((b) => b.category === 'star' || b.category === 'planet' || b.category === 'dwarf_planet').length})
+                🪐 Planetas ({ALL_CELESTIAL_BODIES.filter((b) => b.category === 'star' || b.category === 'planet').length})
+              </button>
+              <button
+                onClick={() => setNavDockMode('MOONS')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                  navDockMode === 'MOONS'
+                    ? 'bg-amber-400 text-slate-950 shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+                title="Grandes Luas e Satélites Naturais"
+              >
+                🌕 Luas ({ALL_CELESTIAL_BODIES.filter((b) => b.category === 'moon').length})
+              </button>
+              <button
+                onClick={() => setNavDockMode('DWARFS')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                  navDockMode === 'DWARFS'
+                    ? 'bg-cyan-400 text-slate-950 shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+                title="Planetas Anões e Mundos Transnetunianos do Cinturão de Kuiper"
+              >
+                ❄️ Anões ({ALL_CELESTIAL_BODIES.filter((b) => b.category === 'dwarf_planet').length})
+              </button>
+              <button
+                onClick={() => setNavDockMode('ASTEROIDS_COMETS')}
+                className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                  navDockMode === 'ASTEROIDS_COMETS'
+                    ? 'bg-emerald-400 text-slate-950 shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+                title="Asteroides Notáveis, Cometas e Visitantes Interestelares"
+              >
+                ☄️ Asteroides ({ALL_CELESTIAL_BODIES.filter((b) => b.category === 'asteroid' || b.category === 'comet').length})
               </button>
               <button
                 onClick={() => setNavDockMode('GALAXIES')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
                   navDockMode === 'GALAXIES'
                     ? 'bg-indigo-500 text-white shadow'
                     : 'text-slate-300 hover:text-white'
                 }`}
+                title="Via Láctea e Galáxias do Universo Profundo"
               >
                 🌌 Galáxias ({ALL_CELESTIAL_BODIES.filter((b) => b.category === 'galaxy').length})
               </button>

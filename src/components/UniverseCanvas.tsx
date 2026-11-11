@@ -32,7 +32,10 @@ import {
   createDetailedSatellite3DGroup,
   createInstancedAsteroidShaderMaterial,
   createRealistic3DGalaxyGroup,
+  getCosmicNebulaCloudTexture,
   getSoftCircleParticleTexture,
+  getStarSpikeParticleTexture,
+  MILKY_WAY_LANDMARKS,
   populateRealisticAsteroidBeltGroup,
   populateSaturnRing3DAsteroidFragments,
 } from '../utils/spacecraftAndAsteroidModels';
@@ -75,7 +78,7 @@ interface ScreenLabel {
   y: number;
   visible: boolean;
   color: string;
-  kind: 'body' | 'moon' | 'satellite' | 'landmark';
+  kind: 'body' | 'moon' | 'satellite' | 'landmark' | 'galactic_landmark';
   payloadId: string;
 }
 
@@ -375,30 +378,36 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
     renderer.domElement.addEventListener('wheel', handleWheelInterrupt, { passive: true });
 
-    // DEEP SPACE ASTRONOMICAL STARFIELD & MILKY WAY
+    // DEEP SPACE ASTRONOMICAL ENVIRONMENT (38,000 Stars + Spiked Beacons + Volumetric Nebula Clouds)
     const starGroup = new THREE.Group();
     scene.add(starGroup);
 
-    const starCount = 9500;
+    const softCircleSprite = getSoftCircleParticleTexture();
+    const starSpikeSprite = getStarSpikeParticleTexture();
+    const nebulaCloudSprite = getCosmicNebulaCloudTexture();
+
+    // 1. DENSE MULTI-SPECTRAL FAR-FIELD STARFIELD (38,000 Stars)
+    const starCount = 38000;
     const starPositions = new Float32Array(starCount * 3);
     const starColors = new Float32Array(starCount * 3);
 
     const spectralPalette = [
-      new THREE.Color('#9bb0ff'),
-      new THREE.Color('#cad7ff'),
-      new THREE.Color('#f8f7ff'),
-      new THREE.Color('#fff4ea'),
-      new THREE.Color('#ffd2a1'),
-      new THREE.Color('#ffcc6f'),
+      new THREE.Color('#93c5fd'), // Class O (Luminous Blue)
+      new THREE.Color('#bfdbfe'), // Class B (Blue-White)
+      new THREE.Color('#ffffff'), // Class A (Pure White)
+      new THREE.Color('#fef3c7'), // Class F (Yellow-White)
+      new THREE.Color('#fde047'), // Class G (Solar Yellow)
+      new THREE.Color('#fed7aa'), // Class K (Orange Giant)
+      new THREE.Color('#fca5a5'), // Class M (Red Dwarf)
     ];
 
     for (let i = 0; i < starCount; i++) {
-      const r = 2000 + Math.random() * 2500;
-      const isGalacticBand = i < 3800;
+      const r = 2400 + Math.random() * 2600;
+      const isGalacticBand = i < 18000;
       const theta = Math.random() * Math.PI * 2;
       let phi: number;
       if (isGalacticBand) {
-        const spread = (Math.random() + Math.random() + Math.random() - 1.5) * 0.22;
+        const spread = (Math.random() + Math.random() + Math.random() - 1.5) * 0.28;
         phi = Math.PI / 2 + spread;
       } else {
         phi = Math.acos(2 * Math.random() - 1);
@@ -417,10 +426,93 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       starPositions[i * 3 + 2] = rz;
 
       const c = spectralPalette[Math.floor(Math.random() * spectralPalette.length)];
-      const brightness = isGalacticBand ? 0.32 + Math.random() * 0.65 : 0.45 + Math.random() * 0.55;
+      const magPow = Math.pow(Math.random(), 2.8);
+      const brightness = isGalacticBand ? 0.25 + magPow * 0.75 : 0.2 + magPow * 0.8;
       starColors[i * 3] = c.r * brightness;
       starColors[i * 3 + 1] = c.g * brightness;
       starColors[i * 3 + 2] = c.b * brightness;
+    }
+
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+    const starMaterial = new THREE.PointsMaterial({
+      map: softCircleSprite,
+      size: 2.2,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.94,
+      alphaTest: 0.02,
+      sizeAttenuation: false,
+    });
+    const starField = new THREE.Points(starGeometry, starMaterial);
+    starGroup.add(starField);
+
+    // 2. PROMINENT NAVIGATIONAL STARS WITH 4-POINT DIFFRACTION SPIKES (380 Beacons)
+    const spikeCount = 380;
+    const spikePositions = new Float32Array(spikeCount * 3);
+    const spikeColors = new Float32Array(spikeCount * 3);
+    for (let i = 0; i < spikeCount; i++) {
+      const r = 2100 + Math.random() * 1800;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      spikePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      spikePositions[i * 3 + 1] = r * Math.cos(phi);
+      spikePositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+      const c = spectralPalette[Math.floor(Math.random() * spectralPalette.length)];
+      spikeColors[i * 3] = c.r;
+      spikeColors[i * 3 + 1] = c.g;
+      spikeColors[i * 3 + 2] = c.b;
+    }
+    const spikeGeo = new THREE.BufferGeometry();
+    spikeGeo.setAttribute('position', new THREE.BufferAttribute(spikePositions, 3));
+    spikeGeo.setAttribute('color', new THREE.BufferAttribute(spikeColors, 3));
+    const spikeMat = new THREE.PointsMaterial({
+      map: starSpikeSprite,
+      size: 11.0,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: false,
+    });
+    starGroup.add(new THREE.Points(spikeGeo, spikeMat));
+
+    // 3. VOLUMETRIC DEEP-SPACE COSMIC NEBULA CLOUDS (Subtle Interstellar Gas & Dust)
+    const nebulaPalette = [
+      new THREE.Color('#0369a1'), // Deep Cyan Nebula
+      new THREE.Color('#1e1b4b'), // Cosmic Indigo
+      new THREE.Color('#4c0519'), // Magenta Interstellar Dust
+      new THREE.Color('#451a03'), // Amber Dust Extinction Cloud
+      new THREE.Color('#042f2e'), // Deep Teal Nebula
+    ];
+    for (let n = 0; n < 65; n++) {
+      const dist = 2800 + Math.random() * 1800;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const nebPos = new THREE.Vector3(
+        dist * Math.sin(phi) * Math.cos(theta),
+        dist * Math.cos(phi),
+        dist * Math.sin(phi) * Math.sin(theta)
+      );
+      const nebPlane = new THREE.PlaneGeometry(750 + Math.random() * 850, 750 + Math.random() * 850);
+      const nebColor = nebulaPalette[Math.floor(Math.random() * nebulaPalette.length)];
+      const nebMat = new THREE.MeshBasicMaterial({
+        map: nebulaCloudSprite,
+        color: nebColor,
+        transparent: true,
+        opacity: 0.12 + Math.random() * 0.12,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const nebMesh = new THREE.Mesh(nebPlane, nebMat);
+      nebMesh.position.copy(nebPos);
+      nebMesh.lookAt(0, 0, 0);
+      nebMesh.rotation.z = Math.random() * Math.PI * 2;
+      starGroup.add(nebMesh);
     }
 
     // REAL 3D SOLAR POINT LIGHT & EARTHSHINE AMBIENT FILL FOR PBR SPACECRAFT MODELS
@@ -430,23 +522,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     const spaceHemisphereLight = new THREE.HemisphereLight('#7dd3fc', '#1e293b', 0.95);
     scene.add(spaceHemisphereLight);
-
-    const softCircleSprite = getSoftCircleParticleTexture();
-
-    const starGeometry = new THREE.BufferGeometry();
-    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
-    const starMaterial = new THREE.PointsMaterial({
-      map: softCircleSprite,
-      size: 2.4,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.92,
-      alphaTest: 0.02,
-      sizeAttenuation: false,
-    });
-    const starField = new THREE.Points(starGeometry, starMaterial);
-    starGroup.add(starField);
 
     // REALISTIC 3D SCULPTED ASTEROID BELT & KUIPER BELT (6 Geological Archetypes + 4K Crater Regolith Shader)
     const beltGroup = new THREE.Group();
@@ -1608,6 +1683,40 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
+        // Show 3D Galactic Landmarks when viewing the Milky Way (Sagittarius A*, Solar System, Nebulae, Clusters)
+        if (st.showLabels && st.selectedBodyId === 'milky-way') {
+          const mwNode = bodyNodes['milky-way'];
+          const mwPos = bodyWorldPositions['milky-way'] || new THREE.Vector3(0, 0, 0);
+          const mwRadius = getScaledRadius(getCelestialBody('milky-way'), st.scaleMode);
+          const mwRotY = mwNode?.galaxyVolumetricGroup ? mwNode.galaxyVolumetricGroup.rotation.y : 0;
+
+          MILKY_WAY_LANDMARKS.forEach((lm) => {
+            const localVec = new THREE.Vector3(...lm.position3D).multiplyScalar(mwRadius);
+            localVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), mwRotY);
+            const lmWorld = mwPos.clone().add(localVec);
+            const proj = projectPoint(lmWorld);
+            if (
+              proj.visible &&
+              proj.x > 20 &&
+              proj.x < width - 20 &&
+              proj.y > 20 &&
+              proj.y < height - 20
+            ) {
+              nextLabels.push({
+                id: `lbl-mw-${lm.id}`,
+                name: lm.name,
+                subLabel: lm.distanceLy,
+                x: proj.x,
+                y: proj.y,
+                visible: true,
+                color: lm.colorHex,
+                kind: 'galactic_landmark',
+                payloadId: lm.id,
+              });
+            }
+          });
+        }
+
         setScreenLabels(nextLabels);
       }
 
@@ -1721,6 +1830,37 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                   ⌖ {lbl.name}
                 </div>
                 <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-0.5" />
+              </button>
+            );
+          }
+
+          if (lbl.kind === 'galactic_landmark') {
+            const isSolarSystemMarker = lbl.payloadId === 'solar-system-marker';
+            return (
+              <button
+                key={lbl.id}
+                onClick={() => {
+                  if (isSolarSystemMarker) {
+                    onSelectBody('earth', true);
+                  }
+                }}
+                style={{
+                  transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -120%)`,
+                }}
+                className={`pointer-events-auto absolute flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border backdrop-blur-md shadow-xl ${
+                  isSolarSystemMarker
+                    ? 'bg-sky-500/40 border-sky-300 text-white shadow-[0_0_20px_rgba(56,189,248,0.7)] animate-pulse z-30 cursor-pointer hover:bg-sky-500/60'
+                    : 'bg-slate-950/85 border-white/20 text-slate-100 hover:border-amber-400 z-20'
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: lbl.color, boxShadow: `0 0 8px ${lbl.color}` }}
+                />
+                <span className="font-semibold">{lbl.name}</span>
+                {lbl.subLabel && (
+                  <span className="text-[10px] text-sky-200/90 font-mono">({lbl.subLabel})</span>
+                )}
               </button>
             );
           }
