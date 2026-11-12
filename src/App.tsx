@@ -475,20 +475,8 @@ export function App() {
           </div>
         </div>
 
-        {/* Right: Scale Indicator (Cosmoscope Style) + Search + Missions + Layers Popover + Fullscreen */}
+        {/* Right: Search + Missions + Layers Popover + Fullscreen */}
         <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          {navDockMode === 'GALAXIES' && (
-            <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-xl border border-indigo-500/40 px-2.5 py-1.5 rounded-xl shadow-lg text-indigo-300 font-mono text-[11px] animate-pulse">
-              <span className="text-indigo-400">↕</span>
-              <span>
-                {selectedBody.id === 'milky-way'
-                  ? '105.700 ly'
-                  : selectedBody.category === 'galaxy'
-                  ? `${selectedBody.meanRadiusKm.toLocaleString()} ly`
-                  : '157.377 ly'}
-              </span>
-            </div>
-          )}
 
           {/* Search Omnibox */}
           <div className="relative w-32 sm:w-64">

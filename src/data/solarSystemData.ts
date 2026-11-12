@@ -31,7 +31,26 @@ export const J2000_EPOCH_MS = Date.UTC(2000, 0, 1, 12, 0, 0); // 2000-01-01T12:0
  */
 export function getScaledRadius(body: CelestialBodyData, scaleMode: ScaleMode): number {
   if (body.category === 'galaxy') {
-    return body.visualRadiusExploration;
+    // True Hierarchical Multi-Scale Galactic Radii:
+    // Milky Way has radius 1,800 units (diameter 3,600 units = 105,700 ly), completely encompassing the Solar System!
+    switch (body.id) {
+      case 'milky-way':
+        return 1800.0;
+      case 'large-magellanic-cloud':
+        return 380.0;
+      case 'andromeda':
+        return 2200.0;
+      case 'triangulum':
+        return 950.0;
+      case 'whirlpool-galaxy':
+        return 1350.0;
+      case 'sombrero-galaxy':
+        return 1450.0;
+      case 'm87-galaxy':
+        return 2600.0;
+      default:
+        return 1200.0;
+    }
   }
   switch (scaleMode) {
     case 'EXPLORATION':
@@ -94,26 +113,28 @@ export function computeKeplerianPosition3D(
 ): [number, number, number] {
   if (body.id === 'sun') return [0, 0, 0];
 
-  // Galaxies occupy vast cosmological positions in the Local Group and Virgo Supercluster,
-  // rather than orbiting our single Sun on planetary Keplerian ellipses!
+  // Galaxies occupy vast cosmological positions in the Local Group and Virgo Supercluster.
+  // Crucially, the Milky Way's center (Sagittarius A*) is offset to [+909.0, -21.6, -297.0]
+  // so that its Orion Arm Solar System landmark ([-0.505, 0.012, 0.165] * 1800) lands at [0, 0, 0] —
+  // the exact 3D position of our Sun and Solar System!
   if (body.category === 'galaxy') {
     switch (body.id) {
       case 'milky-way':
-        return [0, 0, 0];
+        return [909.0, -21.6, -297.0];
       case 'large-magellanic-cloud':
-        return [140, -110, 85]; // LMC (163.000 ly)
+        return [2450.0, -1180.0, 780.0]; // LMC (163.000 ly)
       case 'andromeda':
-        return [980, 420, -860]; // M31 (2,5 Milhões de ly)
+        return [7400.0, 2600.0, -5600.0]; // M31 (2,5 Milhões de ly)
       case 'triangulum':
-        return [1120, 310, -720]; // M33 (2,7 Milhões de ly)
+        return [8600.0, 1950.0, -4400.0]; // M33 (2,7 Milhões de ly)
       case 'whirlpool-galaxy':
-        return [-1680, 750, 1140]; // M51 (23 Milhões de ly)
+        return [-11800.0, 4800.0, 8200.0]; // M51 (23 Milhões de ly)
       case 'sombrero-galaxy':
-        return [1880, -690, 1480]; // M104 (31 Milhões de ly)
+        return [13600.0, -5200.0, 9800.0]; // M104 (31 Milhões de ly)
       case 'm87-galaxy':
-        return [-2450, 1420, -1880]; // M87 no Aglomerado de Virgem (53 Milhões de ly)
+        return [-17200.0, 8800.0, -12600.0]; // M87 no Aglomerado de Virgem (53 Milhões de ly)
       default:
-        return [850, 250, 850];
+        return [6500.0, 1500.0, 6500.0];
     }
   }
 

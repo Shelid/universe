@@ -934,3 +934,476 @@ export function createWarpTunnelShaderMaterial(): THREE.ShaderMaterial {
     `,
   });
 }
+
+/**
+ * 360° Deep Space & Interior Milky Way Panorama Skybox Shader
+ * Renders the authentic night sky viewed from the Orion Arm inside the Milky Way:
+ * - Tilted at 60.2° Galactic Plane inclination relative to the Ecliptic
+ * - Warm golden-amber Galactic Center (Sagittarius) glow
+ * - Silvery-blue diffuse starlight band along the Galactic Equator
+ * - Dark interstellar extinction filaments ("The Great Rift" / Cygnus Rift) via ridgedFbm
+ * - Subtle H-II emission regions (Orion, Carina, Lagoon, North America Nebulae)
+ * - Smoothly dims the interior Milky Way band as uMacroGalaxyFade -> 1.0 when zooming out to intergalactic space
+ */
+export function createDeepSpaceSkyboxMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uMacroGalaxyFade: { value: 0.0 },
+    },
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uMacroGalaxyFade;
+      varying vec3 vDir;
+
+      ${NOISE_GLSL}
+
+      void main() {
+        vec3 d = normalize(vDir);
+
+        // Rotate ecliptic direction into Galactic Coordinates (~60.2° inclination)
+        float inc = 1.0507; // 60.2 deg
+        float cI = cos(inc);
+        float sI = sin(inc);
+        float rotAz = 0.48;
+        float cA = cos(rotAz);
+        float sA = sin(rotAz);
+        vec3 d1 = vec3(d.x * cA - d.z * sA, d.y, d.x * sA + d.z * cA);
+        vec3 gDir = vec3(d1.x, d1.y * cI - d1.z * sI, d1.y * sI + d1.z * cI);
+
+        // Galactic latitude b = asin(gDir.y), longitude l = atan(gDir.z, gDir.x)
+        float galLat = gDir.y;
+
+        // Multi-scale organic warp along the galactic equator
+        float warp = fbm(gDir * 2.6 + vec3(1.7, -0.8, 2.3)) * 0.075;
+        float warpedLat = galLat + warp;
+
+        // Diffuse Milky Way band profile (narrow bright spine + wide soft halo)
+        float mainBand = exp(-pow(warpedLat / 0.145, 2.0));
+        float wideGlow = exp(-pow(warpedLat / 0.34, 2.0));
+
+        // Galactic Center direction (toward Sagittarius A* at +X/-Z in world space)
+        vec3 sgrDir = normalize(vec3(0.95, -0.02, -0.31));
+        float towardCenter = max(dot(d, sgrDir), 0.0);
+        float bulgeProximity = pow(towardCenter, 2.4) * exp(-pow(warpedLat / 0.22, 2.0));
+
+        // Fine stellar cloud structure along the Milky Way band
+        float starCloudA = fbm(gDir * 5.2 + vec3(0.4, 1.1, -0.9));
+        float starCloudB = fbm(gDir * 13.5 - vec3(2.1, 0.5, 1.4));
+        float cloudDensity = clamp(0.58 + 0.32 * starCloudA + 0.18 * starCloudB, 0.0, 1.35);
+
+        // Great Rift dark interstellar dust lanes splitting the Milky Way spine
+        float riftNoise = ridgedFbm(vec3(gDir.x * 4.8, warpedLat * 14.0, gDir.z * 4.8) + vec3(0.8, 0.0, -1.2));
+        float dustCoreMask = exp(-pow(warpedLat / 0.068, 2.0));
+        float dustExtinction = clamp(smoothstep(0.42, 0.86, riftNoise) * dustCoreMask * 0.78, 0.0, 0.82);
+
+        // Subtle H-II emission nebulae knots along the galactic plane
+        float nebNoise = fbm(gDir * 8.5 + vec3(3.1, -1.7, 0.6));
+        float hIIGlow = smoothstep(0.32, 0.72, nebNoise) * mainBand * (0.35 + 0.65 * towardCenter);
+
+        // Deep cosmic void base color (ultra-clean dark slate-indigo black)
+        vec3 voidColor = vec3(0.004, 0.007, 0.016);
+
+        // Milky Way palette: silvery-slate outer arms, warm golden-ivory Sagittarius core, rose-magenta H-II regions
+        vec3 armStarlight = vec3(0.11, 0.15, 0.25);
+        vec3 innerDiskWarm = vec3(0.26, 0.22, 0.17);
+        vec3 bulgeGold = vec3(0.42, 0.31, 0.20);
+        vec3 hIIColor = vec3(0.28, 0.10, 0.18);
+        vec3 darkDustColor = vec3(0.012, 0.014, 0.022);
+
+        vec3 mwColor = armStarlight * (mainBand * 0.75 + wideGlow * 0.32) * cloudDensity;
+        mwColor += innerDiskWarm * mainBand * pow(towardCenter, 1.3) * 0.65 * cloudDensity;
+        mwColor += bulgeGold * bulgeProximity * 0.85 * (0.7 + 0.3 * starCloudA);
+        mwColor += hIIColor * hIIGlow * 0.45;
+
+        // Apply Great Rift dark dust absorption
+        mwColor = mix(mwColor, darkDustColor, dustExtinction);
+
+        // Faint extragalactic cosmic web glow remaining when zoomed outside the Milky Way
+        float cosmicWeb = max(0.0, fbm(d * 3.2) * 0.5 + 0.2) * 0.018;
+        vec3 intergalacticBg = voidColor + vec3(0.012, 0.018, 0.032) * cosmicWeb;
+
+        // As the camera zooms out into intergalactic space (uMacroGalaxyFade -> 1.0),
+        // the interior 360° Milky Way band fades down so the 3D Volumetric Milky Way takes over cleanly
+        float interiorVisibility = 1.0 - uMacroGalaxyFade * 0.86;
+        vec3 finalSky = intergalacticBg + mwColor * interiorVisibility;
+
+        gl_FragColor = vec4(finalSky, 1.0);
+      }
+    `,
+  });
+}
+
+/**
+ * Custom GLSL Per-Star Magnitude & Blackbody Shader for 45,000 Realistic Background Stars
+ * - Faint stars (94%) render as ultra-crisp 1px-2.2px pinpoints with sub-pixel anti-aliasing
+ * - Medium constellation stars (5%) render with soft Gaussian photospheres
+ * - Only the top ~1% brightest navigational stars (aMagnitude > 0.91) render Airy halos & delicate 4-point diffraction rays
+ */
+export function createRealisticStarfieldMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+    },
+    vertexShader: /* glsl */ `
+      attribute float aMagnitude;
+      attribute float aPhase;
+      attribute vec3 aColor;
+
+      uniform float uTime;
+      uniform float uPixelRatio;
+
+      varying vec3 vColor;
+      varying float vMagnitude;
+      varying float vTwinkle;
+
+      void main() {
+        vColor = aColor;
+        vMagnitude = aMagnitude;
+
+        // Subtle scintillation only on faint/medium stars
+        float twinkleAmp = mix(0.18, 0.04, aMagnitude);
+        vTwinkle = 1.0 - twinkleAmp + twinkleAmp * sin(uTime * (1.4 + aMagnitude * 1.8) + aPhase);
+
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+
+        // Nonlinear magnitude-to-size mapping:
+        // Faint background stars: 1.1px - 2.3px
+        // Medium stars: 2.5px - 4.8px
+        // Bright hero stars (aMagnitude > 0.90): up to 13px to accommodate delicate diffraction rays
+        float basePx = 1.15 + pow(aMagnitude, 3.2) * 3.8;
+        if (aMagnitude > 0.91) {
+          float heroT = (aMagnitude - 0.91) / 0.09;
+          basePx += heroT * 9.5;
+        }
+        gl_PointSize = basePx * uPixelRatio;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vColor;
+      varying float vMagnitude;
+      varying float vTwinkle;
+
+      void main() {
+        vec2 uv = gl_PointCoord - vec2(0.5);
+        float d = length(uv) * 2.0;
+        if (d > 1.0) discard;
+
+        // Crisp Gaussian core + soft Airy halo
+        float core = exp(-d * d * (vMagnitude > 0.91 ? 18.0 : 9.5));
+        float halo = exp(-d * 4.2) * (0.22 + 0.45 * vMagnitude);
+
+        float spike = 0.0;
+        if (vMagnitude > 0.91) {
+          float heroStrength = (vMagnitude - 0.91) / 0.09;
+          float sx = exp(-abs(uv.y) * 42.0) * exp(-abs(uv.x) * 4.5);
+          float sy = exp(-abs(uv.x) * 42.0) * exp(-abs(uv.y) * 4.5);
+          spike = (sx + sy) * 0.65 * heroStrength;
+        }
+
+        float intensity = (core + halo + spike) * vTwinkle;
+        float brightness = 0.28 + 0.72 * pow(vMagnitude, 1.45);
+        float alpha = clamp(intensity * brightness, 0.0, 1.0);
+        if (alpha < 0.015) discard;
+
+        vec3 finalCol = mix(vColor, vec3(1.0, 0.99, 0.97), clamp(core * 0.75 + spike * 0.5, 0.0, 1.0));
+        gl_FragColor = vec4(finalCol, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+export interface VolumetricGalaxyDiskConfig {
+  galaxyId: string;
+  subType: string;
+  coreColorHex: string;
+  bulgeColorHex: string;
+  armColorHex: string;
+  nebulaColorHex: string;
+  layerOffset?: number;
+}
+
+/**
+ * High-Definition Volumetric Spiral / Barred / Elliptical / Sombrero Galaxy Disk Shader
+ * Inspired by Cosmoscope.space:
+ * - Renders continuous, silky-smooth galactic luminosity so the galaxy never looks like sparse disconnected dots
+ * - Features a warm golden-white central barred bulge, 4 logarithmic density-wave spiral arms + Orion Spur,
+ *   dark winding interstellar dust extinction lanes, and rose-magenta H-II star-forming knots
+ * - Supports uOpacity for seamless continuous zoom transitions between Galactic Scale and Solar System Scale
+ */
+export function createGalaxyVolumetricDiskMaterial(
+  cfg: VolumetricGalaxyDiskConfig
+): THREE.ShaderMaterial {
+  const isElliptical = cfg.subType === 'galaxy_elliptical';
+  const isIrregular = cfg.subType === 'galaxy_irregular';
+  const isBarred = cfg.subType === 'galaxy_barred';
+  const isSombrero = cfg.galaxyId === 'sombrero-galaxy';
+  const isWhirlpool = cfg.galaxyId === 'whirlpool-galaxy';
+  const isMilkyWay = cfg.galaxyId === 'milky-way';
+
+  let galaxyTypeInt = 0; // 0 = Barred Spiral (Milky Way)
+  if (isElliptical) galaxyTypeInt = 3;
+  else if (isSombrero) galaxyTypeInt = 2;
+  else if (isIrregular) galaxyTypeInt = 4;
+  else if (!isBarred) galaxyTypeInt = 1; // Grand-design spiral (Andromeda, Triangulum, Whirlpool)
+
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uOpacity: { value: 1.0 },
+      uGalaxyType: { value: galaxyTypeInt },
+      uArmCount: { value: isMilkyWay ? 4.0 : 2.0 },
+      uSpiralWinding: {
+        value: isWhirlpool ? 4.2 : cfg.galaxyId === 'triangulum' ? 2.8 : 3.4,
+      },
+      uIsWhirlpool: { value: isWhirlpool ? 1.0 : 0.0 },
+      uLayerFactor: { value: cfg.layerOffset ?? 1.0 },
+      uCoreColor: { value: new THREE.Color(cfg.coreColorHex) },
+      uBulgeColor: { value: new THREE.Color(cfg.bulgeColorHex) },
+      uArmColor: { value: new THREE.Color(cfg.armColorHex) },
+      uNebulaColor: { value: new THREE.Color(cfg.nebulaColorHex) },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vLocalPos;
+      varying vec3 vViewDir;
+
+      void main() {
+        vUv = uv;
+        vLocalPos = position;
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vViewDir = normalize(cameraPosition - worldPos.xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uOpacity;
+      uniform float uGalaxyType;
+      uniform float uArmCount;
+      uniform float uSpiralWinding;
+      uniform float uIsWhirlpool;
+      uniform float uLayerFactor;
+      uniform vec3 uCoreColor;
+      uniform vec3 uBulgeColor;
+      uniform vec3 uArmColor;
+      uniform vec3 uNebulaColor;
+
+      varying vec2 vUv;
+      varying vec3 vLocalPos;
+      varying vec3 vViewDir;
+
+      ${NOISE_GLSL}
+
+      void main() {
+        if (uOpacity <= 0.002) discard;
+
+        // Plane coordinates in [-1, 1] across the galaxy diameter
+        vec2 p = (vUv - 0.5) * 2.0;
+        float r = length(p);
+        if (r > 1.0) discard;
+
+        float theta = atan(p.y, p.x);
+        vec3 pos3 = vec3(p.x * 3.2, uLayerFactor * 0.35, p.y * 3.2);
+
+        float nCoarse = fbm(pos3 * 1.35 + vec3(0.7, 1.2, -0.5));
+        float nMedium = fbm(pos3 * 3.4 - vec3(1.4, 0.3, 2.1));
+        float nFine = fbm(pos3 * 8.2 + vec3(2.3, -1.9, 0.8));
+        float nRidged = ridgedFbm(pos3 * 3.8 + vec3(0.5, 0.2, -1.1));
+
+        vec3 col = vec3(0.0);
+        float alpha = 0.0;
+
+        // TYPE 3: Giant Elliptical Galaxy (M87)
+        if (uGalaxyType > 2.5 && uGalaxyType < 3.5) {
+          vec2 pEll = vec2(p.x / 1.12, p.y / 0.88);
+          float rE = length(pEll);
+          float deVaucouleurs = exp(-pow(rE * 3.1, 0.65)) * 1.35;
+          float corePeak = exp(-rE * rE * 36.0);
+          float cloudMod = 0.88 + 0.12 * nCoarse;
+          col = mix(uBulgeColor, uCoreColor, clamp(corePeak + exp(-rE * 4.5) * 0.5, 0.0, 1.0)) * cloudMod;
+          alpha = clamp((deVaucouleurs + corePeak * 0.6) * (1.0 - smoothstep(0.78, 0.99, r)), 0.0, 0.95);
+        }
+        // TYPE 2: Sombrero Galaxy (M104) with luminous bulge & sharp equatorial dust lane ring
+        else if (uGalaxyType > 1.5 && uGalaxyType < 2.5) {
+          float bulge = exp(-r * r * 11.5) * 1.25 + exp(-r * 3.6) * 0.55;
+          float outerRing = exp(-pow((r - 0.74) / 0.095, 2.0)) * (0.75 + 0.25 * nMedium);
+          float dustRing = exp(-pow((r - 0.71) / 0.032, 2.0)) * (0.78 + 0.22 * nRidged);
+
+          col = mix(uBulgeColor, uCoreColor, exp(-r * r * 22.0));
+          col = mix(col, uArmColor, outerRing * 0.65);
+          col = mix(col, vec3(0.03, 0.025, 0.03), clamp(dustRing * 0.88, 0.0, 0.88));
+          alpha = clamp((bulge + outerRing * 0.78) * (1.0 - smoothstep(0.84, 0.99, r)), 0.0, 0.96);
+        }
+        // TYPE 4: Irregular Magellanic Galaxy (LMC)
+        else if (uGalaxyType > 3.5) {
+          vec2 barP = vec2(p.x * 0.9 + p.y * 0.22, p.y * 1.8 - p.x * 0.25);
+          float barGlow = exp(-dot(barP, barP) * 5.2) * (0.75 + 0.35 * nCoarse);
+          vec2 tarantulaP = p - vec2(0.32, 0.18);
+          float tarantulaGlow = exp(-dot(tarantulaP, tarantulaP) * 32.0) * (0.8 + 0.4 * nFine);
+          float irrDisk = exp(-r * r * 3.4) * clamp(0.55 + 0.45 * nCoarse + 0.25 * nMedium, 0.0, 1.2);
+
+          col = mix(uArmColor, uCoreColor, clamp(barGlow * 0.85, 0.0, 1.0));
+          col = mix(col, uNebulaColor, clamp(tarantulaGlow * 0.85, 0.0, 1.0));
+          alpha = clamp((irrDisk * 0.65 + barGlow * 0.55 + tarantulaGlow * 0.65) * (1.0 - smoothstep(0.75, 0.98, r)), 0.0, 0.92);
+        }
+        // TYPE 0 & 1: Barred Spiral (Milky Way) & Grand-Design Spiral (Andromeda, Triangulum, Whirlpool)
+        else {
+          // 1. Central Galactic Core & Barred Bulge (warm golden-cream like Cosmoscope's Milky Way)
+          float barAngle = 0.42;
+          float cB = cos(barAngle);
+          float sB = sin(barAngle);
+          vec2 bPos = vec2(p.x * cB + p.y * sB, -p.x * sB + p.y * cB);
+          vec2 barScale = uGalaxyType < 0.5 ? vec2(1.0 / 0.34, 1.0 / 0.165) : vec2(1.0 / 0.24, 1.0 / 0.21);
+          float barDist = length(bPos * barScale);
+
+          float nuclearCore = exp(-r * r * 68.0) * 1.35;
+          float centralBulge = exp(-pow(barDist, 1.55) * 1.65) * (0.92 + 0.12 * nCoarse);
+          float softInnerHalo = exp(-r * r * 5.2) * 0.48;
+
+          // 2. Logarithmic Density-Wave Spiral Arms
+          float logR = log(max(r, 0.045));
+          float spiralPhase = theta * uArmCount - logR * (uSpiralWinding * uArmCount) + nCoarse * 0.85;
+          float primaryArms = pow(0.5 + 0.5 * cos(spiralPhase), 1.85);
+
+          // Secondary branching spurs (including the Orion-Cygnus Spur where the Solar System lives!)
+          float spurPhase = theta * (uArmCount * 2.0) - logR * (uSpiralWinding * uArmCount * 2.15) + nMedium * 1.25;
+          float secondarySpurs = pow(0.5 + 0.5 * cos(spurPhase), 2.6) * 0.48;
+
+          // Radial envelope for spiral arms (smoothly emerging from the bar/bulge and tapering at the outer rim)
+          float armRadialMask = smoothstep(0.08, 0.24, r) * (1.0 - smoothstep(0.66, 0.97, r));
+          float cloudGranularity = clamp(0.62 + 0.28 * nMedium + 0.22 * nFine, 0.2, 1.35);
+          float armLuminosity = (primaryArms * 0.82 + secondarySpurs) * armRadialMask * cloudGranularity;
+
+          // 3. Diffuse Stellar Disk Continuum (fills the inter-arm regions with realistic silvery-blue mist)
+          float diskContinuum = exp(-r * r * 3.1) * (1.0 - smoothstep(0.74, 0.99, r)) * (0.34 + 0.16 * nCoarse);
+
+          // 4. Dark Winding Interstellar Dust Extinction Lanes along the concave inner edges of spiral arms
+          float dustPhase = spiralPhase + 0.62;
+          float dustSpiral = pow(0.5 + 0.5 * cos(dustPhase), 3.4);
+          float dustFilaments = smoothstep(0.44, 0.86, nRidged) * (0.45 + 0.55 * dustSpiral);
+          float dustMask = smoothstep(0.07, 0.20, r) * (1.0 - smoothstep(0.62, 0.88, r));
+          float dustExtinction = clamp(dustFilaments * dustMask * 0.72, 0.0, 0.78);
+
+          // 5. H-II Star-Forming Emission Nebulae Knots along the spiral crests
+          float hIIMask = pow(primaryArms, 3.2) * smoothstep(0.54, 0.82, nFine) * armRadialMask;
+
+          // Combine colors:
+          // Golden-ivory center -> warm amber-gold inner bar -> cool silvery-blue & lavender-blue outer spiral arms
+          vec3 bulgeCol = mix(uBulgeColor, uCoreColor, clamp(nuclearCore * 0.85 + exp(-r * r * 20.0) * 0.5, 0.0, 1.0));
+          vec3 armCol = mix(uBulgeColor * 0.85, uArmColor, smoothstep(0.14, 0.46, r));
+          armCol = mix(armCol, vec3(0.82, 0.88, 1.0), primaryArms * 0.35 * smoothstep(0.22, 0.65, r));
+
+          vec3 totalLight =
+            bulgeCol * (nuclearCore + centralBulge * 0.95 + softInnerHalo * 0.55) +
+            armCol * (armLuminosity * 0.88 + diskContinuum * 0.65) +
+            uNebulaColor * (hIIMask * 0.62);
+
+          // Interstellar dark dust absorption (rich dark umber-slate lanes like Cosmoscope's Milky Way)
+          vec3 darkDustTone = vec3(0.035, 0.032, 0.048);
+          totalLight = mix(totalLight, darkDustTone, dustExtinction * (1.0 - nuclearCore * 0.8));
+
+          // Optional companion galaxy NGC 5195 for Whirlpool Galaxy (M51)
+          if (uIsWhirlpool > 0.5) {
+            vec2 compP = p - vec2(0.76, 0.44);
+            float compR = length(compP);
+            float compGlow = exp(-compR * compR * 48.0) * 1.15;
+            totalLight += mix(uBulgeColor, uCoreColor, 0.6) * compGlow;
+          }
+
+          col = totalLight;
+          float rawAlpha =
+            nuclearCore +
+            centralBulge * 0.88 +
+            softInnerHalo * 0.45 +
+            armLuminosity * 0.76 +
+            diskContinuum * 0.55 +
+            dustExtinction * 0.28;
+          alpha = clamp(rawAlpha * (1.0 - smoothstep(0.80, 0.995, r)), 0.0, 0.95);
+        }
+
+        // Multi-plane volumetric layer attenuation
+        float layerAlphaScale = uLayerFactor < 0.99 ? 0.36 : 0.84;
+        gl_FragColor = vec4(col, alpha * layerAlphaScale * uOpacity);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+  });
+}
+
+/**
+ * Custom GLSL Point Shader for 85,000 Variable-Size 3D Galaxy Star Particles & Globular Clusters
+ * Scales point size smoothly with perspective and supports uOpacity for continuous multi-scale zoom!
+ */
+export function createGalaxyStarParticlesMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uOpacity: { value: 1.0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+    },
+    vertexShader: /* glsl */ `
+      attribute float aSize;
+      attribute vec3 color;
+
+      uniform float uPixelRatio;
+
+      varying vec3 vColor;
+      varying float vSize;
+
+      void main() {
+        vColor = color;
+        vSize = aSize;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+
+        // Perspective-attenuated star size with crisp clamp so galaxy stars look like fine diamond dust
+        float dist = max(-mvPosition.z, 1.0);
+        float scaledSize = (aSize * 420.0 / dist) * uPixelRatio;
+        gl_PointSize = clamp(scaledSize, 1.0 * uPixelRatio, 5.2 * uPixelRatio);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uOpacity;
+      varying vec3 vColor;
+      varying float vSize;
+
+      void main() {
+        if (uOpacity <= 0.002) discard;
+
+        vec2 uv = gl_PointCoord - vec2(0.5);
+        float d = length(uv) * 2.0;
+        if (d > 1.0) discard;
+
+        float core = exp(-d * d * 10.5);
+        float halo = exp(-d * 3.8) * 0.32;
+        float alpha = clamp((core + halo) * uOpacity, 0.0, 1.0);
+        if (alpha < 0.015) discard;
+
+        vec3 col = mix(vColor, vec3(1.0, 0.99, 0.96), core * 0.55);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+

@@ -21,7 +21,9 @@ import {
 import { getMissionTrajectoryScenePoints, SPACE_MISSIONS } from '../data/missionsData';
 import {
   createAtmosphereHaloMaterial,
+  createDeepSpaceSkyboxMaterial,
   createPlanetSurfaceMaterial,
+  createRealisticStarfieldMaterial,
   createSaturnRingsShaderMaterial,
   createSolarCoronaMaterial,
   createSolarProminenceMaterial,
@@ -32,12 +34,11 @@ import {
   createDetailedSatellite3DGroup,
   createInstancedAsteroidShaderMaterial,
   createRealistic3DGalaxyGroup,
-  getCosmicNebulaCloudTexture,
   getSoftCircleParticleTexture,
-  getStarSpikeParticleTexture,
   MILKY_WAY_LANDMARKS,
   populateRealisticAsteroidBeltGroup,
   populateSaturnRing3DAsteroidFragments,
+  setGalaxyGroupOpacity,
 } from '../utils/spacecraftAndAsteroidModels';
 
 interface UniverseCanvasProps {
@@ -78,7 +79,7 @@ interface ScreenLabel {
   y: number;
   visible: boolean;
   color: string;
-  kind: 'body' | 'moon' | 'satellite' | 'landmark' | 'galactic_landmark';
+  kind: 'body' | 'moon' | 'satellite' | 'landmark' | 'galactic_landmark' | 'galaxy';
   payloadId: string;
 }
 
@@ -200,6 +201,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
+  const [scaleReadout, setScaleReadout] = useState<string>('18.400 km');
 
   const internalSimTimeRef = useRef<number>(simulationTimeMs);
 
@@ -282,19 +284,30 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     desiredDistanceMultiplier: number;
     focusLatLon: { lat: number; lon: number } | null;
     manualZoomStep: number;
+    suppressNextSelectionReset: boolean;
   }>({
     activeTransition: true,
     desiredDistanceMultiplier: 3.5,
     focusLatLon: null,
     manualZoomStep: 0,
+    suppressNextSelectionReset: false,
   });
 
   useEffect(() => {
+    if (cameraCommandRef.current.suppressNextSelectionReset) {
+      cameraCommandRef.current.suppressNextSelectionReset = false;
+      return;
+    }
     if (!warpState.isActive) {
       cameraCommandRef.current.activeTransition = true;
       cameraCommandRef.current.focusLatLon = null;
+      const selBody = getCelestialBody(selectedBodyId);
       if (saturnRingDiveMode && selectedBodyId === 'saturn') {
         cameraCommandRef.current.desiredDistanceMultiplier = 1.55;
+      } else if (selectedBodyId === 'milky-way') {
+        cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
+      } else if (selBody.category === 'galaxy') {
+        cameraCommandRef.current.desiredDistanceMultiplier = 2.05;
       } else if (selectedBodyId === 'sun') {
         cameraCommandRef.current.desiredDistanceMultiplier = 4.6;
       } else {
@@ -336,13 +349,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     if (!container) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#02040a');
+    scene.background = new THREE.Color('#010206');
 
     const camera = new THREE.PerspectiveCamera(
       46,
       container.clientWidth / Math.max(1, container.clientHeight),
       0.01,
-      15000
+      140000
     );
     camera.position.set(28, 12, 36);
 
@@ -364,10 +377,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
-    controls.maxDistance = 4500;
+    controls.maxDistance = 55000;
     controls.minDistance = 0.05;
     controls.rotateSpeed = 0.7;
-    controls.zoomSpeed = 1.05;
+    controls.zoomSpeed = 1.18;
 
     const stopAutoCamera = () => {
       cameraCommandRef.current.activeTransition = false;
@@ -378,142 +391,106 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
     renderer.domElement.addEventListener('wheel', handleWheelInterrupt, { passive: true });
 
-    // DEEP SPACE ASTRONOMICAL ENVIRONMENT (38,000 Stars + Spiked Beacons + Volumetric Nebula Clouds)
+    // PHOTOREALISTIC DEEP SPACE ENVIRONMENT (360° Interior Milky Way Panorama Skybox + 45,000 Magnitude-Attenuated Stars)
     const starGroup = new THREE.Group();
     scene.add(starGroup);
 
     const softCircleSprite = getSoftCircleParticleTexture();
-    const starSpikeSprite = getStarSpikeParticleTexture();
-    const nebulaCloudSprite = getCosmicNebulaCloudTexture();
 
-    // 1. DENSE MULTI-SPECTRAL FAR-FIELD STARFIELD (38,000 Stars)
-    const starCount = 38000;
+    // 1. 360° GLSL Deep Space & Interior Milky Way Panorama Skybox Sphere (with Great Rift dark dust lanes)
+    const skyboxGeo = new THREE.SphereGeometry(75000, 64, 64);
+    const skyboxMat = createDeepSpaceSkyboxMaterial();
+    const skyboxMesh = new THREE.Mesh(skyboxGeo, skyboxMat);
+    skyboxMesh.renderOrder = -20;
+    skyboxMesh.frustumCulled = false;
+    starGroup.add(skyboxMesh);
+
+    // 2. 45,000 MULTI-SPECTRAL FAR-FIELD STARS WITH REALISTIC MAGNITUDE DISTRIBUTION & BLACKBODY COLORS
+    const starCount = 45000;
     const starPositions = new Float32Array(starCount * 3);
     const starColors = new Float32Array(starCount * 3);
+    const starMagnitudes = new Float32Array(starCount);
+    const starPhases = new Float32Array(starCount);
 
     const spectralPalette = [
-      new THREE.Color('#93c5fd'), // Class O (Luminous Blue)
-      new THREE.Color('#bfdbfe'), // Class B (Blue-White)
-      new THREE.Color('#ffffff'), // Class A (Pure White)
-      new THREE.Color('#fef3c7'), // Class F (Yellow-White)
-      new THREE.Color('#fde047'), // Class G (Solar Yellow)
-      new THREE.Color('#fed7aa'), // Class K (Orange Giant)
-      new THREE.Color('#fca5a5'), // Class M (Red Dwarf)
+      new THREE.Color('#93c5fd'), // Class O (30,000 K Blue)
+      new THREE.Color('#bfdbfe'), // Class B (18,000 K Blue-White)
+      new THREE.Color('#f8fafc'), // Class A (9,500 K Pure White)
+      new THREE.Color('#fef9c3'), // Class F (7,000 K Yellow-White)
+      new THREE.Color('#fde047'), // Class G (5,800 K Solar Yellow)
+      new THREE.Color('#fed7aa'), // Class K (4,400 K Warm Orange)
+      new THREE.Color('#fca5a5'), // Class M (3,100 K Red-Orange)
     ];
 
+    const galTilt = (60.2 * Math.PI) / 180;
+    const cosTilt = Math.cos(galTilt);
+    const sinTilt = Math.sin(galTilt);
+    const rotAz = 0.48;
+    const cosAz = Math.cos(rotAz);
+    const sinAz = Math.sin(rotAz);
+
     for (let i = 0; i < starCount; i++) {
-      const r = 2400 + Math.random() * 2600;
-      const isGalacticBand = i < 18000;
+      const r = 52000 + Math.random() * 14000;
+      const isGalacticBand = i < 24000;
       const theta = Math.random() * Math.PI * 2;
       let phi: number;
       if (isGalacticBand) {
-        const spread = (Math.random() + Math.random() + Math.random() - 1.5) * 0.28;
-        phi = Math.PI / 2 + spread;
+        // Concentrated along the Milky Way Galactic Equator with Gaussian-like vertical dispersion
+        const gSpread =
+          (Math.random() + Math.random() + Math.random() + Math.random() - 2.0) * 0.145;
+        phi = Math.PI / 2 + gSpread;
       } else {
         phi = Math.acos(2 * Math.random() - 1);
       }
 
-      const x = r * Math.sin(phi) * Math.cos(theta);
-      const y = r * Math.cos(phi);
-      const z = r * Math.sin(phi) * Math.sin(theta);
+      const gx = r * Math.sin(phi) * Math.cos(theta);
+      const gy = r * Math.cos(phi);
+      const gz = r * Math.sin(phi) * Math.sin(theta);
 
-      const galTilt = (60.2 * Math.PI) / 180;
-      const ry = y * Math.cos(galTilt) - z * Math.sin(galTilt);
-      const rz = y * Math.sin(galTilt) + z * Math.cos(galTilt);
+      // Rotate from Galactic Coordinates into Ecliptic World Coordinates (matching skyboxMat!)
+      const y1 = gy * cosTilt + gz * sinTilt;
+      const z1 = -gy * sinTilt + gz * cosTilt;
+      const wx = gx * cosAz + z1 * sinAz;
+      const wz = -gx * sinAz + z1 * cosAz;
 
-      starPositions[i * 3] = x;
-      starPositions[i * 3 + 1] = ry;
-      starPositions[i * 3 + 2] = rz;
+      starPositions[i * 3] = wx;
+      starPositions[i * 3 + 1] = y1;
+      starPositions[i * 3 + 2] = wz;
 
+      // Power-law stellar magnitude distribution:
+      // ~94% faint pinpoint diamond-dust stars (0.05 - 0.55)
+      // ~5% medium constellation stars (0.55 - 0.90)
+      // ~1% bright navigational beacons (0.91 - 1.00) with Airy halos & delicate diffraction rays
+      const uMag = Math.random();
+      let mag: number;
+      if (uMag > 0.991) {
+        mag = 0.91 + Math.random() * 0.09; // ~400 brightest navigational stars across the entire 360° sphere
+      } else if (uMag > 0.93) {
+        mag = 0.55 + Math.random() * 0.35;
+      } else {
+        mag = 0.06 + Math.pow(Math.random(), 1.8) * 0.49;
+      }
+      starMagnitudes[i] = mag;
+      starPhases[i] = Math.random() * Math.PI * 2;
+
+      // Realistic spectral class weighting (more F/G/K/M and A/B stars)
       const c = spectralPalette[Math.floor(Math.random() * spectralPalette.length)];
-      const magPow = Math.pow(Math.random(), 2.8);
-      const brightness = isGalacticBand ? 0.25 + magPow * 0.75 : 0.2 + magPow * 0.8;
-      starColors[i * 3] = c.r * brightness;
-      starColors[i * 3 + 1] = c.g * brightness;
-      starColors[i * 3 + 2] = c.b * brightness;
+      starColors[i * 3] = c.r;
+      starColors[i * 3 + 1] = c.g;
+      starColors[i * 3 + 2] = c.b;
     }
 
     const starGeometry = new THREE.BufferGeometry();
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
-    const starMaterial = new THREE.PointsMaterial({
-      map: softCircleSprite,
-      size: 2.2,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.94,
-      alphaTest: 0.02,
-      sizeAttenuation: false,
-    });
+    starGeometry.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
+    starGeometry.setAttribute('aMagnitude', new THREE.BufferAttribute(starMagnitudes, 1));
+    starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
+
+    const starMaterial = createRealisticStarfieldMaterial();
     const starField = new THREE.Points(starGeometry, starMaterial);
+    starField.renderOrder = -15;
+    starField.frustumCulled = false;
     starGroup.add(starField);
-
-    // 2. PROMINENT NAVIGATIONAL STARS WITH 4-POINT DIFFRACTION SPIKES (380 Beacons)
-    const spikeCount = 380;
-    const spikePositions = new Float32Array(spikeCount * 3);
-    const spikeColors = new Float32Array(spikeCount * 3);
-    for (let i = 0; i < spikeCount; i++) {
-      const r = 2100 + Math.random() * 1800;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      spikePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      spikePositions[i * 3 + 1] = r * Math.cos(phi);
-      spikePositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-
-      const c = spectralPalette[Math.floor(Math.random() * spectralPalette.length)];
-      spikeColors[i * 3] = c.r;
-      spikeColors[i * 3 + 1] = c.g;
-      spikeColors[i * 3 + 2] = c.b;
-    }
-    const spikeGeo = new THREE.BufferGeometry();
-    spikeGeo.setAttribute('position', new THREE.BufferAttribute(spikePositions, 3));
-    spikeGeo.setAttribute('color', new THREE.BufferAttribute(spikeColors, 3));
-    const spikeMat = new THREE.PointsMaterial({
-      map: starSpikeSprite,
-      size: 11.0,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      sizeAttenuation: false,
-    });
-    starGroup.add(new THREE.Points(spikeGeo, spikeMat));
-
-    // 3. VOLUMETRIC DEEP-SPACE COSMIC NEBULA CLOUDS (Subtle Interstellar Gas & Dust)
-    const nebulaPalette = [
-      new THREE.Color('#0369a1'), // Deep Cyan Nebula
-      new THREE.Color('#1e1b4b'), // Cosmic Indigo
-      new THREE.Color('#4c0519'), // Magenta Interstellar Dust
-      new THREE.Color('#451a03'), // Amber Dust Extinction Cloud
-      new THREE.Color('#042f2e'), // Deep Teal Nebula
-    ];
-    for (let n = 0; n < 65; n++) {
-      const dist = 2800 + Math.random() * 1800;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const nebPos = new THREE.Vector3(
-        dist * Math.sin(phi) * Math.cos(theta),
-        dist * Math.cos(phi),
-        dist * Math.sin(phi) * Math.sin(theta)
-      );
-      const nebPlane = new THREE.PlaneGeometry(750 + Math.random() * 850, 750 + Math.random() * 850);
-      const nebColor = nebulaPalette[Math.floor(Math.random() * nebulaPalette.length)];
-      const nebMat = new THREE.MeshBasicMaterial({
-        map: nebulaCloudSprite,
-        color: nebColor,
-        transparent: true,
-        opacity: 0.12 + Math.random() * 0.12,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const nebMesh = new THREE.Mesh(nebPlane, nebMat);
-      nebMesh.position.copy(nebPos);
-      nebMesh.lookAt(0, 0, 0);
-      nebMesh.rotation.z = Math.random() * Math.PI * 2;
-      starGroup.add(nebMesh);
-    }
 
     // REAL 3D SOLAR POINT LIGHT & EARTHSHINE AMBIENT FILL FOR PBR SPACECRAFT MODELS
     const sunPointLight = new THREE.PointLight('#fff8eb', 3.6, 0, 0);
@@ -611,7 +588,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     ALL_CELESTIAL_BODIES.forEach((body) => {
       const rootGroup = new THREE.Group();
       const tiltGroup = new THREE.Group();
-      tiltGroup.rotation.z = THREE.MathUtils.degToRad(body.axialTiltDeg);
+      tiltGroup.rotation.z =
+        body.category === 'galaxy' ? 0 : THREE.MathUtils.degToRad(body.axialTiltDeg);
       rootGroup.add(tiltGroup);
 
       let surfaceMaterial: THREE.ShaderMaterial;
@@ -677,7 +655,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       }
 
       tiltGroup.add(spinMesh);
-      clickableMeshes.push(spinMesh);
+      if (body.category !== 'galaxy') {
+        clickableMeshes.push(spinMesh);
+      }
 
       let galaxyVolumetricGroup: THREE.Group | undefined;
       if (body.category === 'galaxy') {
@@ -1138,7 +1118,19 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       const currentSimTimeMs = internalSimTimeRef.current;
 
-      beltGroup.visible = st.showAsteroidBelt && st.scaleMode !== 'TRUE_1_TO_1';
+      // Multi-Scale Hierarchy Cross-Fade Factors based on distance from Solar System origin (0, 0, 0)
+      const distFromOrigin = camera.position.length();
+      const macroGalaxyFade = THREE.MathUtils.smoothstep(distFromOrigin, 180, 520);
+      const solarSystemMacroFade = 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, 220, 620);
+
+      // Keep 360° Deep Space Skybox & 45,000-star sphere centered on camera for infinite parallax depth
+      starGroup.position.copy(camera.position);
+      skyboxMat.uniforms.uTime.value = clockTime;
+      skyboxMat.uniforms.uMacroGalaxyFade.value = macroGalaxyFade;
+      starMaterial.uniforms.uTime.value = clockTime;
+
+      beltGroup.visible =
+        st.showAsteroidBelt && st.scaleMode !== 'TRUE_1_TO_1' && solarSystemMacroFade > 0.04;
       mainAsteroidBelt.rotation.y = clockTime * 0.003;
 
       const bodyWorldPositions: Record<string, THREE.Vector3> = {};
@@ -1163,20 +1155,24 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           node.orbitLine.position.copy(bodyWorldPositions[body.parentId]);
           const showMoonOrbit =
             st.showOrbits &&
+            solarSystemMacroFade > 0.02 &&
             (st.selectedBodyId === body.parentId || st.selectedBodyId === body.id);
           node.orbitLine.visible = showMoonOrbit;
+          (node.orbitLine.material as THREE.LineBasicMaterial).opacity = 0.32 * solarSystemMacroFade;
         } else {
           node.orbitLine.position.set(0, 0, 0);
           node.orbitLine.visible =
-            st.showOrbits && body.id !== 'sun' && body.category !== 'galaxy';
+            st.showOrbits &&
+            solarSystemMacroFade > 0.02 &&
+            body.id !== 'sun' &&
+            body.category !== 'galaxy';
+          (node.orbitLine.material as THREE.LineBasicMaterial).opacity = 0.36 * solarSystemMacroFade;
         }
 
         const radius = getScaledRadius(body, st.scaleMode);
         node.tiltGroup.scale.setScalar(radius);
 
         // CALM, REALISTIC PLANETARY ROTATION:
-        // In Real-Time (timeSpeedDaysPerSec == 0), orient Earth so North & South America face the sunlit hemisphere
-        // with Brazil/Europe/Africa on the twilight terminator, and orient the Moon's Near Side toward sunlight!
         const daysSinceJ2000 = (currentSimTimeMs - Date.UTC(2000, 0, 1, 12, 0, 0)) / 86_400_000;
         const rotDays = body.siderealRotationHours / 24.0;
         const sereneDrift = clockTime * (body.id === 'sun' ? 0.008 : 0.0045);
@@ -1186,10 +1182,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           rotDays !== 0 ? ((daysSinceJ2000 / rotDays) * Math.PI * 2) % (Math.PI * 2) : 0;
 
         if (body.id === 'earth' && st.timeSpeedDaysPerSec === 0) {
-          // Align Americas (u ~ 0.25 -> +Z in local SphereGeometry) with sunlit camera direction
           baseAngleRad = toSunAzimuth + 0.28;
         } else if (body.id === 'moon' && st.timeSpeedDaysPerSec === 0) {
-          // Align Lunar Near Side (Mare Imbrium / Tycho at u ~ 0.5 -> +X) with sunlit camera direction
           baseAngleRad = toSunAzimuth - Math.PI * 0.38;
         }
 
@@ -1202,8 +1196,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           node.spinMesh.rotation.y = -0.35;
         }
 
-        // Update shaders & animations safely
-        if (body.id === 'sun') {
+        // Update shaders & multi-scale visibility safely
+        if (body.category === 'galaxy') {
+          if (node.galaxyVolumetricGroup) {
+            // Keep Milky Way orientation fixed so its Orion Arm Solar System landmark coincides with (0,0,0)!
+            if (body.id !== 'milky-way') {
+              node.galaxyVolumetricGroup.rotation.y = clockTime * 0.006;
+            }
+            setGalaxyGroupOpacity(node.galaxyVolumetricGroup, macroGalaxyFade);
+          }
+          node.rootGroup.visible = macroGalaxyFade > 0.004;
+        } else if (body.id === 'sun') {
+          node.rootGroup.visible = distFromOrigin < 1400;
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
           if (node.atmosphereMesh) {
             (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = clockTime;
@@ -1215,11 +1219,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             node.solarStormParticles.rotation.y = clockTime * 0.025;
             node.solarStormParticles.rotation.z = Math.sin(clockTime * 0.2) * 0.05;
           }
-        } else if (body.category === 'galaxy') {
-          if (node.galaxyVolumetricGroup) {
-            node.galaxyVolumetricGroup.rotation.y = clockTime * 0.018;
-          }
         } else {
+          node.rootGroup.visible = distFromOrigin < 900;
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
           node.surfaceMaterial.uniforms.uSunPosition.value.set(0, 0, 0);
           if (node.surfaceMaterial.uniforms.uVenusRadarMode) {
@@ -1425,10 +1426,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.updateProjectionMatrix();
         }
 
+        const mwWorldPos =
+          bodyWorldPositions['milky-way'] || new THREE.Vector3(909.0, -21.6, -297.0);
+        const isExternalGalaxy =
+          selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
+
         if (hasInitializedTargetPos) {
-          const deltaTarget = new THREE.Vector3().subVectors(targetPos, previousTargetWorldPos);
-          camera.position.add(deltaTarget);
-          controls.target.add(deltaTarget);
+          if (selectedBody.category !== 'galaxy') {
+            const deltaTarget = new THREE.Vector3().subVectors(targetPos, previousTargetWorldPos);
+            const followWeight = 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, 360, 850);
+            camera.position.addScaledVector(deltaTarget, followWeight);
+            controls.target.addScaledVector(deltaTarget, followWeight);
+          }
         } else {
           controls.target.copy(targetPos);
           const initDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
@@ -1437,21 +1446,26 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         previousTargetWorldPos.copy(targetPos);
         hasInitializedTargetPos = true;
 
-        controls.target.copy(targetPos);
-
         if (cameraCommandRef.current.manualZoomStep !== 0) {
           const step = cameraCommandRef.current.manualZoomStep;
           cameraCommandRef.current.manualZoomStep = 0;
           cameraCommandRef.current.activeTransition = false;
-          const offset = new THREE.Vector3().subVectors(camera.position, targetPos);
-          const factor = step > 0 ? 0.74 : 1.35;
-          const nextLen = THREE.MathUtils.clamp(
-            offset.length() * factor,
-            targetRadius * 1.32,
-            3500
-          );
+
+          // When zooming IN from Milky Way galactic scale, steer directly toward (0,0,0) [Sistema Solar in the Orion Arm]
+          const zoomAnchor =
+            !isExternalGalaxy && step > 0 && distFromOrigin > 180
+              ? new THREE.Vector3(0, 0, 0)
+              : controls.target;
+          const offset = new THREE.Vector3().subVectors(camera.position, zoomAnchor);
+          const factor = step > 0 ? 0.72 : 1.38;
+          const minAllowed =
+            selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.08, targetRadius * 1.32);
+          const nextLen = THREE.MathUtils.clamp(offset.length() * factor, minAllowed, 38000);
           offset.setLength(nextLen);
-          camera.position.copy(targetPos).add(offset);
+          camera.position.copy(zoomAnchor).add(offset);
+          if (!isExternalGalaxy && step > 0 && distFromOrigin > 180) {
+            controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.32);
+          }
         }
 
         if (cameraCommandRef.current.activeTransition) {
@@ -1459,7 +1473,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const desiredDist = Math.max(0.25, targetRadius * mult);
 
           let offsetDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-          if (selectedBody.category === 'galaxy') {
+          if (selectedBody.id === 'milky-way') {
+            // Cosmoscope-inspired oblique galactic vantage point framing the barred core, Orion Arm & halo clusters
+            offsetDir = new THREE.Vector3(-0.36, 0.66, 0.66).normalize();
+          } else if (selectedBody.category === 'galaxy') {
             offsetDir = new THREE.Vector3(0.55, 0.52, 0.65).normalize();
           } else if (st.saturnRingDiveMode && st.selectedBodyId === 'saturn') {
             offsetDir = new THREE.Vector3(0.92, 0.06, 0.38).normalize();
@@ -1487,20 +1504,49 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
           const goalCamPos = targetPos.clone().addScaledVector(offsetDir, desiredDist);
           camera.position.lerp(goalCamPos, 0.085);
+          controls.target.lerp(targetPos, 0.14);
           if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.025) {
             cameraCommandRef.current.activeTransition = false;
+          }
+        } else {
+          // Continuous Multi-Scale Orbit Pivot Interpolation:
+          // Smoothly transitions controls.target between Sagittarius A* (at Galactic Scale)
+          // and the Solar System / Selected Planet (at Solar System & Planetary Scale)
+          if (isExternalGalaxy) {
+            controls.target.lerp(targetPos, 0.14);
+          } else {
+            const baseLocalTarget =
+              selectedBody.id === 'milky-way' ? new THREE.Vector3(0, 0, 0) : targetPos;
+            const galacticCenterBlend = THREE.MathUtils.smoothstep(distFromOrigin, 380, 2100);
+            const desiredPivot = new THREE.Vector3().lerpVectors(
+              baseLocalTarget,
+              mwWorldPos,
+              galacticCenterBlend
+            );
+            controls.target.lerp(desiredPivot, 0.14);
+
+            // Seamless automatic handoff when zooming in from Milky Way into the Solar System (or zooming out from Solar System into Milky Way)
+            if (st.selectedBodyId === 'milky-way' && distFromOrigin < 140) {
+              cameraCommandRef.current.suppressNextSelectionReset = true;
+              cb.onSelectBody('sun', false);
+            } else if (selectedBody.category !== 'galaxy' && distFromOrigin > 950) {
+              cameraCommandRef.current.suppressNextSelectionReset = true;
+              cb.onSelectBody('milky-way', false);
+            }
           }
         }
 
         controls.update();
 
-        const camDist = camera.position.distanceTo(targetPos);
+        const camDist = camera.position.distanceTo(controls.target);
         const distInRadii = camDist / Math.max(0.01, targetRadius);
 
         let computedZoom: ZoomLevel = 'SOLAR_SYSTEM';
-        if (selectedBody.id === 'sun' && distInRadii > 8.5) {
+        if (distFromOrigin > 480 || isExternalGalaxy) {
+          computedZoom = 'COSMIC_GALAXY';
+        } else if (selectedBody.id === 'sun' && distInRadii > 8.5) {
           computedZoom = 'SOLAR_SYSTEM';
-        } else if (distInRadii > 16.0) {
+        } else if (distInRadii > 16.0 || selectedBody.id === 'milky-way') {
           computedZoom = 'SOLAR_SYSTEM';
         } else if (distInRadii > 4.8) {
           computedZoom = 'PLANETARY_APPROACH';
@@ -1515,12 +1561,48 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       }
 
-      // PROJECT CLEAN, DECLUTTERED 3D LABELS TO 2D OVERLAY
+      // PROJECT CLEAN, DECLUTTERED 3D LABELS & LIVE SCALE READOUT TO 2D OVERLAY
       labelFrameCounter++;
       if (labelFrameCounter % 3 === 0 && !st.warpState.isActive) {
         const width = container.clientWidth;
         const height = container.clientHeight;
         const nextLabels: ScreenLabel[] = [];
+
+        const isExternalGalaxy =
+          selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
+        const isGalacticScaleView = distFromOrigin > 320 || isExternalGalaxy;
+
+        // Calculate real-time vertical field-of-view scale (Cosmoscope-style "↕ 157.377 ly" / "UA" / "km")
+        const activeCamDist = Math.max(0.1, camera.position.distanceTo(controls.target));
+        const fovSpanUnits =
+          2.0 * activeCamDist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+        let formattedScale = '';
+        if (distFromOrigin > 210 || isExternalGalaxy) {
+          const spanLy = fovSpanUnits * 59.8;
+          if (spanLy >= 1_000_000) {
+            formattedScale = `${(spanLy / 1_000_000).toLocaleString('pt-BR', {
+              maximumFractionDigits: 2,
+            })} Mly`;
+          } else if (spanLy >= 100) {
+            formattedScale = `${Math.round(spanLy).toLocaleString('pt-BR')} ly`;
+          } else {
+            formattedScale = `${spanLy.toLocaleString('pt-BR', {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })} ly`;
+          }
+        } else if (st.zoomLevel === 'SOLAR_SYSTEM' || distFromOrigin > 32) {
+          const spanAU = Math.max(0.1, fovSpanUnits * 0.34);
+          formattedScale = `${spanAU.toLocaleString('pt-BR', {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          })} UA`;
+        } else {
+          const bodyKmPerUnit = selectedBody.meanRadiusKm / Math.max(0.005, targetRadius);
+          const spanKm = Math.max(50, Math.round(fovSpanUnits * bodyKmPerUnit));
+          formattedScale = `${spanKm.toLocaleString('pt-BR')} km`;
+        }
+        setScaleReadout(formattedScale);
 
         const projectPoint = (worldVec: THREE.Vector3) => {
           const cloned = worldVec.clone().project(camera);
@@ -1533,58 +1615,123 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         };
 
         if (st.showLabels) {
-          ALL_CELESTIAL_BODIES.forEach((b) => {
-            const wPos = bodyWorldPositions[b.id];
-            if (!wPos) return;
-            if (
-              (st.zoomLevel === 'ORBITAL_EXPLORATION' ||
-                st.zoomLevel === 'SURFACE_EXPLORATION') &&
-              b.id !== st.selectedBodyId &&
-              b.parentId !== st.selectedBodyId
-            ) {
-              return;
-            }
-            if (
-              b.category === 'moon' &&
-              st.selectedBodyId !== b.parentId &&
-              st.selectedBodyId !== b.id
-            ) {
-              return;
-            }
-            if (
-              b.id === st.selectedBodyId &&
-              st.zoomLevel !== 'SOLAR_SYSTEM'
-            ) {
-              return;
-            }
+          if (isGalacticScaleView) {
+            // AT GALACTIC SCALE: Show Clean Cosmoscope-Style Galaxy Titles & 3D Milky Way Landmarks!
+            // Never clutter Galactic Scale with individual planet labels (they reside inside "Sistema Solar" at (0,0,0)).
+            ALL_CELESTIAL_BODIES.forEach((b) => {
+              if (b.category !== 'galaxy') return;
+              const wPos = bodyWorldPositions[b.id];
+              if (!wPos) return;
+              const labelWorld =
+                b.id === 'milky-way'
+                  ? wPos.clone().add(new THREE.Vector3(0, 65, 0))
+                  : wPos.clone().add(new THREE.Vector3(0, getScaledRadius(b, st.scaleMode) * 0.55, 0));
+              const proj = projectPoint(labelWorld);
+              if (
+                proj.visible &&
+                proj.x > 24 &&
+                proj.x < width - 24 &&
+                proj.y > 24 &&
+                proj.y < height - 24
+              ) {
+                nextLabels.push({
+                  id: `lbl-gal-${b.id}`,
+                  name: b.id === 'milky-way' ? 'Via Láctea (Milky Way)' : b.name,
+                  x: proj.x,
+                  y: proj.y,
+                  visible: true,
+                  color: b.primaryColorHex,
+                  kind: 'galaxy',
+                  payloadId: b.id,
+                });
+              }
+            });
 
-            const bRadius = getScaledRadius(b, st.scaleMode);
-            const labelWorld = wPos.clone().add(new THREE.Vector3(0, bRadius * 1.28, 0));
-            const proj = projectPoint(labelWorld);
-            if (
-              proj.visible &&
-              proj.x > 24 &&
-              proj.x < width - 24 &&
-              proj.y > 24 &&
-              proj.y < height - 24
-            ) {
-              nextLabels.push({
-                id: `lbl-body-${b.id}`,
-                name: b.name,
-                x: proj.x,
-                y: proj.y,
-                visible: true,
-                color: b.orbitColorHex,
-                kind: b.category === 'moon' ? 'moon' : 'body',
-                payloadId: b.id,
+            if (!isExternalGalaxy && distFromOrigin < 9500) {
+              const mwPos =
+                bodyWorldPositions['milky-way'] || new THREE.Vector3(909.0, -21.6, -297.0);
+              const mwRadius = getScaledRadius(getCelestialBody('milky-way'), st.scaleMode);
+
+              MILKY_WAY_LANDMARKS.forEach((lm) => {
+                const localVec = new THREE.Vector3(...lm.position3D).multiplyScalar(mwRadius);
+                const lmWorld = mwPos.clone().add(localVec);
+                const proj = projectPoint(lmWorld);
+                if (
+                  proj.visible &&
+                  proj.x > 20 &&
+                  proj.x < width - 20 &&
+                  proj.y > 20 &&
+                  proj.y < height - 20
+                ) {
+                  nextLabels.push({
+                    id: `lbl-mw-${lm.id}`,
+                    name: lm.name,
+                    subLabel: lm.distanceLy,
+                    x: proj.x,
+                    y: proj.y,
+                    visible: true,
+                    color: lm.colorHex,
+                    kind: 'galactic_landmark',
+                    payloadId: lm.id,
+                  });
+                }
               });
             }
-          });
+          } else {
+            // INSIDE SOLAR SYSTEM SCALE: Show Planets, Dwarf Planets, Moons, Asteroids & Comets.
+            // NEVER show macroscopic galaxy labels inside the Solar System!
+            ALL_CELESTIAL_BODIES.forEach((b) => {
+              if (b.category === 'galaxy') return;
+              const wPos = bodyWorldPositions[b.id];
+              if (!wPos) return;
+              if (
+                (st.zoomLevel === 'ORBITAL_EXPLORATION' ||
+                  st.zoomLevel === 'SURFACE_EXPLORATION') &&
+                b.id !== st.selectedBodyId &&
+                b.parentId !== st.selectedBodyId
+              ) {
+                return;
+              }
+              if (
+                b.category === 'moon' &&
+                st.selectedBodyId !== b.parentId &&
+                st.selectedBodyId !== b.id
+              ) {
+                return;
+              }
+              if (b.id === st.selectedBodyId && st.zoomLevel !== 'SOLAR_SYSTEM') {
+                return;
+              }
+
+              const bRadius = getScaledRadius(b, st.scaleMode);
+              const labelWorld = wPos.clone().add(new THREE.Vector3(0, bRadius * 1.28, 0));
+              const proj = projectPoint(labelWorld);
+              if (
+                proj.visible &&
+                proj.x > 24 &&
+                proj.x < width - 24 &&
+                proj.y > 24 &&
+                proj.y < height - 24
+              ) {
+                nextLabels.push({
+                  id: `lbl-body-${b.id}`,
+                  name: b.name,
+                  x: proj.x,
+                  y: proj.y,
+                  visible: true,
+                  color: b.orbitColorHex,
+                  kind: b.category === 'moon' ? 'moon' : 'body',
+                  payloadId: b.id,
+                });
+              }
+            });
+          }
         }
 
         // Show Earth Satellite pills ONLY outside the planet disk so they never cover the 4K Earth globe!
         if (
           st.showLabels &&
+          !isGalacticScaleView &&
           st.selectedBodyId === 'earth' &&
           earthPos &&
           !st.isExploringInterior &&
@@ -1616,7 +1763,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               proj.y - earthCenterScreen.y
             );
 
-            // Only show pill if satellite is outside the planet's disk on screen (or actively selected)
             if (
               proj.visible &&
               (isSelSat || distFromEarthCenter > planetScreenRadius * 1.04) &&
@@ -1644,6 +1790,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         // Show Surface Landmarks ONLY when zoomed all the way into Level 4 (SURFACE_EXPLORATION)
         if (
           st.showLabels &&
+          !isGalacticScaleView &&
           st.zoomLevel === 'SURFACE_EXPLORATION' &&
           !st.isExploringInterior
         ) {
@@ -1683,40 +1830,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        // Show 3D Galactic Landmarks when viewing the Milky Way (Sagittarius A*, Solar System, Nebulae, Clusters)
-        if (st.showLabels && st.selectedBodyId === 'milky-way') {
-          const mwNode = bodyNodes['milky-way'];
-          const mwPos = bodyWorldPositions['milky-way'] || new THREE.Vector3(0, 0, 0);
-          const mwRadius = getScaledRadius(getCelestialBody('milky-way'), st.scaleMode);
-          const mwRotY = mwNode?.galaxyVolumetricGroup ? mwNode.galaxyVolumetricGroup.rotation.y : 0;
-
-          MILKY_WAY_LANDMARKS.forEach((lm) => {
-            const localVec = new THREE.Vector3(...lm.position3D).multiplyScalar(mwRadius);
-            localVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), mwRotY);
-            const lmWorld = mwPos.clone().add(localVec);
-            const proj = projectPoint(lmWorld);
-            if (
-              proj.visible &&
-              proj.x > 20 &&
-              proj.x < width - 20 &&
-              proj.y > 20 &&
-              proj.y < height - 20
-            ) {
-              nextLabels.push({
-                id: `lbl-mw-${lm.id}`,
-                name: lm.name,
-                subLabel: lm.distanceLy,
-                x: proj.x,
-                y: proj.y,
-                visible: true,
-                color: lm.colorHex,
-                kind: 'galactic_landmark',
-                payloadId: lm.id,
-              });
-            }
-          });
-        }
-
         setScreenLabels(nextLabels);
       }
 
@@ -1741,6 +1854,79 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     <div className="relative w-full h-full select-none overflow-hidden">
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
+      {/* Cosmoscope-Style Multi-Scale Switcher & Live Vertical Scale Readout ("↕ 157.377 ly") */}
+      <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
+        <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
+          <button
+            onClick={() => {
+              if (getCelestialBody(selectedBodyId).category === 'galaxy') {
+                onSelectBody('earth', false);
+              } else {
+                cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
+                cameraCommandRef.current.activeTransition = true;
+              }
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
+              zoomLevel !== 'SOLAR_SYSTEM' && zoomLevel !== 'COSMIC_GALAXY'
+                ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+            title="Escala Planetária (Ver Planeta de Perto)"
+          >
+            <span>🌍</span>
+            <span className="hidden sm:inline">Planeta</span>
+          </button>
+          <button
+            onClick={() => {
+              if (getCelestialBody(selectedBodyId).category === 'galaxy') {
+                onSelectBody('sun', false);
+                setTimeout(() => {
+                  cameraCommandRef.current.desiredDistanceMultiplier = 28.0;
+                  cameraCommandRef.current.activeTransition = true;
+                }, 20);
+              } else {
+                cameraCommandRef.current.desiredDistanceMultiplier =
+                  selectedBodyId === 'sun' ? 28.0 : 42.0;
+                cameraCommandRef.current.activeTransition = true;
+              }
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
+              zoomLevel === 'SOLAR_SYSTEM'
+                ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+            title="Escala do Sistema Solar (Órbitas Planetárias)"
+          >
+            <span>🪐</span>
+            <span className="hidden sm:inline">Sistema Solar</span>
+          </button>
+          <button
+            onClick={() => {
+              onSelectBody('milky-way', false);
+              cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
+              cameraCommandRef.current.activeTransition = true;
+            }}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
+              zoomLevel === 'COSMIC_GALAXY'
+                ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+            title="Escala Galáctica (Via Láctea 3D)"
+          >
+            <span>🌌</span>
+            <span className="hidden sm:inline">Galáxia</span>
+          </button>
+        </div>
+
+        <div
+          className="px-3 py-1.5 rounded-full bg-slate-950/75 backdrop-blur-xl border border-white/12 text-[11px] font-mono text-slate-200 shadow-xl flex items-center gap-1.5"
+          title="Escala Vertical do Campo de Visão Atual"
+        >
+          <span className="text-sky-400 font-bold">↕</span>
+          <span>{scaleReadout}</span>
+        </div>
+      </div>
+
       {/* Sleek Camera Zoom Controls on Left Edge */}
       <div className="fixed left-3.5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-slate-950/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl shadow-xl">
         <button
@@ -1754,7 +1940,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         </button>
         <button
           onClick={() => {
-            cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
+            const sel = getCelestialBody(selectedBodyId);
+            cameraCommandRef.current.desiredDistanceMultiplier =
+              selectedBodyId === 'milky-way'
+                ? 1.65
+                : sel.category === 'galaxy'
+                  ? 2.05
+                  : 3.4;
             cameraCommandRef.current.activeTransition = true;
           }}
           className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors border-y border-white/5"
@@ -1834,6 +2026,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             );
           }
 
+          if (lbl.kind === 'galaxy') {
+            return (
+              <button
+                key={lbl.id}
+                onClick={() => onSelectBody(lbl.payloadId, false)}
+                style={{
+                  transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -50%)`,
+                }}
+                className="pointer-events-auto absolute px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-medium tracking-wide text-white/95 hover:text-sky-300 transition-colors drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] z-20"
+              >
+                {lbl.name}
+              </button>
+            );
+          }
+
           if (lbl.kind === 'galactic_landmark') {
             const isSolarSystemMarker = lbl.payloadId === 'solar-system-marker';
             return (
@@ -1841,26 +2048,27 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 key={lbl.id}
                 onClick={() => {
                   if (isSolarSystemMarker) {
-                    onSelectBody('earth', true);
+                    onSelectBody('sun', false);
+                    cameraCommandRef.current.desiredDistanceMultiplier = 18.0;
+                    cameraCommandRef.current.activeTransition = true;
                   }
                 }}
                 style={{
-                  transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -120%)`,
+                  transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)`,
                 }}
-                className={`pointer-events-auto absolute flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border backdrop-blur-md shadow-xl ${
+                className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs tracking-wide transition-all ${
                   isSolarSystemMarker
-                    ? 'bg-sky-500/40 border-sky-300 text-white shadow-[0_0_20px_rgba(56,189,248,0.7)] animate-pulse z-30 cursor-pointer hover:bg-sky-500/60'
-                    : 'bg-slate-950/85 border-white/20 text-slate-100 hover:border-amber-400 z-20'
+                    ? 'bg-sky-500/25 border border-sky-400/60 text-white font-semibold shadow-[0_0_16px_rgba(56,189,248,0.5)] hover:bg-sky-500/45 z-30 cursor-pointer'
+                    : 'text-slate-100/90 hover:text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)] z-20'
                 }`}
               >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: lbl.color, boxShadow: `0 0 8px ${lbl.color}` }}
-                />
-                <span className="font-semibold">{lbl.name}</span>
-                {lbl.subLabel && (
-                  <span className="text-[10px] text-sky-200/90 font-mono">({lbl.subLabel})</span>
+                {isSolarSystemMarker && (
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0 animate-pulse"
+                    style={{ backgroundColor: lbl.color, boxShadow: `0 0 8px ${lbl.color}` }}
+                  />
                 )}
+                <span>{lbl.name}</span>
               </button>
             );
           }
