@@ -842,14 +842,16 @@ export function createInstancedAsteroidShaderMaterial(
   return new THREE.ShaderMaterial({
     uniforms: {
       uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
+      uSunViewPosition: { value: new THREE.Vector3(0, 0, 0) },
       uPlanetPosition: { value: new THREE.Vector3(0, 0, 0) },
+      uPlanetViewPosition: { value: new THREE.Vector3(0, 0, 0) },
       uPlanetRadius: { value: 0.0 },
       uCraterMap: { value: craterTexture || fallbackTex },
       uIsIceBoulder: { value: isSaturnRingIce ? 1.0 : 0.0 },
     },
     vertexShader: /* glsl */ `
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
       varying vec3 vLocalPos;
       varying vec2 vUv;
       varying vec3 vInstanceColor;
@@ -864,7 +866,7 @@ export function createInstancedAsteroidShaderMaterial(
         #endif
 
         #ifdef USE_INSTANCING
-          mat4 instModel = modelMatrix * instanceMatrix;
+          mat4 instMv = modelViewMatrix * instanceMatrix;
           mat3 im = mat3(instanceMatrix);
           vec3 instNormal = normal / vec3(
             max(dot(im[0], im[0]), 0.0001),
@@ -872,26 +874,26 @@ export function createInstancedAsteroidShaderMaterial(
             max(dot(im[2], im[2]), 0.0001)
           );
           instNormal = im * instNormal;
-          vNormal = normalize(mat3(modelMatrix) * instNormal);
+          vViewNormal = normalize(normalMatrix * instNormal);
         #else
-          mat4 instModel = modelMatrix;
-          vNormal = normalize(mat3(modelMatrix) * normal);
+          mat4 instMv = modelViewMatrix;
+          vViewNormal = normalize(normalMatrix * normal);
         #endif
 
-        vec4 worldPos = instModel * vec4(position, 1.0);
-        vWorldPos = worldPos.xyz;
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = instMv * vec4(position, 1.0);
+        vViewPos = mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec3 uSunPosition;
-      uniform vec3 uPlanetPosition;
+      uniform vec3 uSunViewPosition;
+      uniform vec3 uPlanetViewPosition;
       uniform float uPlanetRadius;
       uniform sampler2D uCraterMap;
       uniform float uIsIceBoulder;
 
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
       varying vec3 vLocalPos;
       varying vec2 vUv;
       varying vec3 vInstanceColor;
@@ -900,9 +902,9 @@ export function createInstancedAsteroidShaderMaterial(
         vec3 texSample = texture2D(uCraterMap, vUv * 2.0).rgb;
         vec3 texDetail = texture2D(uCraterMap, vUv * 5.5 + vec2(0.37, 0.61)).rgb;
 
-        vec3 N = normalize(vNormal);
-        vec3 L = normalize(uSunPosition - vWorldPos);
-        vec3 V = normalize(cameraPosition - vWorldPos);
+        vec3 N = normalize(vViewNormal);
+        vec3 L = normalize(uSunViewPosition - vViewPos);
+        vec3 V = normalize(-vViewPos);
         vec3 H = normalize(L + V);
 
         // Perturb normal from 4K crater texture luminance for crisp micro-facets and deep craters
@@ -915,7 +917,7 @@ export function createInstancedAsteroidShaderMaterial(
         float lommel = (mu0 / (mu0 + NdotV * 0.52)) * 1.48;
         float dayLight = mix(mu0, lommel, 0.65) * smoothstep(-0.14, 0.12, NdotL);
 
-        // Combine mineralogical instance color with 4K NASA crater texture & local 3D depth shading
+        // Combine mineralogical instance color with crater texture & local 3D depth shading
         float craterCavity = clamp((length(vLocalPos) - 0.72) / 0.55, 0.45, 1.18);
         float rockDetail = mix(0.48, 1.42, dot(texSample, vec3(0.333))) * craterCavity;
         vec3 baseAlbedo = vInstanceColor * rockDetail;
@@ -928,15 +930,14 @@ export function createInstancedAsteroidShaderMaterial(
         float rim = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.4);
         float spec = pow(max(dot(N, H), 0.0), uIsIceBoulder > 0.5 ? 36.0 : 16.0) * (uIsIceBoulder > 0.5 ? 0.42 : 0.16) * dayLight;
 
-        // Optional planetary shadow (for Saturn's ring boulders)
+        // Optional planetary shadow in View Space (for Saturn's ring boulders)
         float shadowFactor = 1.0;
-        if (uPlanetRadius > 0.001) {
-          vec3 fromPlanet = vWorldPos - uPlanetPosition;
+        if (uPlanetRadius > 0.00001) {
+          vec3 fromPlanet = vViewPos - uPlanetViewPosition;
           float proj = dot(fromPlanet, L);
           if (proj < 0.0) {
             vec3 closestVec = fromPlanet - proj * L;
-            vec3 scaledClosest = vec3(closestVec.x, closestVec.y / 0.902, closestVec.z);
-            shadowFactor = smoothstep(uPlanetRadius * 0.94, uPlanetRadius * 1.02, length(scaledClosest));
+            shadowFactor = smoothstep(uPlanetRadius * 0.93, uPlanetRadius * 1.01, length(closestVec));
           }
         }
 
@@ -1238,8 +1239,18 @@ export const MILKY_WAY_LANDMARKS: GalacticLandmark[] = [
  */
 export function setGalaxyGroupOpacity(galaxyGroup: THREE.Group, opacity: number): void {
   const clamped = THREE.MathUtils.clamp(opacity, 0, 1);
-  galaxyGroup.visible = clamped > 0.004;
-  if (!galaxyGroup.visible) return;
+  const shouldBeVisible = clamped > 0.004;
+  galaxyGroup.visible = shouldBeVisible;
+  if (!shouldBeVisible) {
+    galaxyGroup.userData.lastOpacity = 0;
+    return;
+  }
+
+  const prev = galaxyGroup.userData.lastOpacity as number | undefined;
+  if (prev !== undefined && Math.abs(prev - clamped) < 0.002) {
+    return;
+  }
+  galaxyGroup.userData.lastOpacity = clamped;
 
   galaxyGroup.traverse((child) => {
     if ((child as THREE.Mesh).isMesh || (child as THREE.Points).isPoints || (child as THREE.Sprite).isSprite) {
@@ -1261,14 +1272,29 @@ export function setGalaxyGroupOpacity(galaxyGroup: THREE.Group, opacity: number)
   });
 }
 
+export interface RealisticGalaxyBuildOptions {
+  starCount?: number;
+  diskLayers?: number;
+  highQualityShader?: boolean;
+  pixelRatio?: number;
+}
+
 /**
  * Builds a photorealistic, scientific 3D Volumetric Galaxy Group (Spiral, Barred Spiral, Elliptical, Sombrero Ring, or Irregular)
  * combining:
  * 1. Multi-layer GLSL Volumetric Spiral Disk + Dark Interstellar Dust Extinction Lanes (createGalaxyVolumetricDiskMaterial)
- * 2. 85,000 Variable-Size 3D Star Particles & Globular Clusters (createGalaxyStarParticlesMaterial)
+ * 2. Variable-Size 3D Star Particles & Globular Clusters tuned cleanly to hardware capability
  * 3. Relativistic Accretion Cores (Sagittarius A* / M87*) and 3D Galactic Landmarks inspired by Cosmoscope.space
  */
-export function createRealistic3DGalaxyGroup(body: CelestialBodyData): THREE.Group {
+export function createRealistic3DGalaxyGroup(
+  body: CelestialBodyData,
+  options: RealisticGalaxyBuildOptions = {}
+): THREE.Group {
+  const starCount = options.starCount ?? 85000;
+  const diskLayers = options.diskLayers ?? 3;
+  const highQualityShader = options.highQualityShader ?? true;
+  const pixelRatio = options.pixelRatio ?? Math.min(window.devicePixelRatio || 1, 2);
+
   const galaxyGroup = new THREE.Group();
   galaxyGroup.name = `galaxy-group-${body.id}`;
   const softSprite = getSoftCircleParticleTexture();
@@ -1291,23 +1317,29 @@ export function createRealistic3DGalaxyGroup(body: CelestialBodyData): THREE.Gro
   };
 
   const mainDiskGeo = new THREE.PlaneGeometry(2.04, 2.04, 1, 1);
-  const mainDiskMat = createGalaxyVolumetricDiskMaterial({
-    ...diskConfigBase,
-    layerOffset: 1.0,
-  });
+  const mainDiskMat = createGalaxyVolumetricDiskMaterial(
+    {
+      ...diskConfigBase,
+      layerOffset: 1.0,
+    },
+    highQualityShader
+  );
   const mainDiskMesh = new THREE.Mesh(mainDiskGeo, mainDiskMat);
   mainDiskMesh.rotation.x = -Math.PI / 2;
   mainDiskMesh.renderOrder = 1;
   galaxyGroup.add(mainDiskMesh);
 
-  // Add upper and lower volumetric haze layers for 3D parallax thickness when tilted
-  const thickOffsets = [-0.022, 0.022];
+  // Add upper and lower volumetric haze layers for 3D parallax thickness when hardware permits
+  const thickOffsets = diskLayers >= 3 ? [-0.022, 0.022] : diskLayers === 2 ? [0.018] : [];
   thickOffsets.forEach((yOff, idx) => {
     const layerGeo = new THREE.PlaneGeometry(1.96, 1.96, 1, 1);
-    const layerMat = createGalaxyVolumetricDiskMaterial({
-      ...diskConfigBase,
-      layerOffset: 0.45 + idx * 0.25,
-    });
+    const layerMat = createGalaxyVolumetricDiskMaterial(
+      {
+        ...diskConfigBase,
+        layerOffset: 0.45 + idx * 0.25,
+      },
+      highQualityShader
+    );
     const layerMesh = new THREE.Mesh(layerGeo, layerMat);
     layerMesh.rotation.x = -Math.PI / 2;
     layerMesh.position.y = yOff;
@@ -1315,8 +1347,7 @@ export function createRealistic3DGalaxyGroup(body: CelestialBodyData): THREE.Gro
     galaxyGroup.add(layerMesh);
   });
 
-  // 2. 85,000 VARIABLE-SIZE 3D STAR PARTICLES & HALO GLOBULAR CLUSTERS
-  const starCount = 85000;
+  // 2. ADAPTIVE VARIABLE-SIZE 3D STAR PARTICLES & HALO GLOBULAR CLUSTERS
   const positions = new Float32Array(starCount * 3);
   const colors = new Float32Array(starCount * 3);
   const sizes = new Float32Array(starCount);
@@ -1470,7 +1501,7 @@ export function createRealistic3DGalaxyGroup(body: CelestialBodyData): THREE.Gro
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
 
-  const starParticlesMat = createGalaxyStarParticlesMaterial();
+  const starParticlesMat = createGalaxyStarParticlesMaterial(pixelRatio);
   const galaxyPoints = new THREE.Points(geo, starParticlesMat);
   galaxyPoints.renderOrder = 2;
   galaxyGroup.add(galaxyPoints);

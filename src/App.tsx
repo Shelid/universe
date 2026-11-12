@@ -4,17 +4,16 @@ import {
   Clock,
   Compass,
   Disc,
+  Gauge,
   Globe,
   Layers,
   Maximize2,
   Minimize2,
-  Orbit,
   Pause,
   Play,
   Radio,
   Rocket,
   RotateCcw,
-  Ruler,
   Satellite,
   Search,
   SlidersHorizontal,
@@ -25,10 +24,17 @@ import {
 } from 'lucide-react';
 import { spaceAudio } from './utils/spaceAudioEngine';
 import {
+  QualityPreference,
+  ResolvedQualityTier,
+  loadSavedQualityPreference,
+  saveQualityPreference,
+} from './utils/performanceProfile';
+import {
   PropagatedSatellite,
   SatelliteCategory,
   SatelliteRecord,
   ScaleMode,
+  SceneBootProgress,
   SpacecraftControlState,
   SpacecraftTelemetry,
   SpaceMission,
@@ -52,6 +58,8 @@ import {
 } from './data/satellitesData';
 import { SPACE_MISSIONS } from './data/missionsData';
 import { UniverseCanvas } from './components/UniverseCanvas';
+import { LoadingScreen } from './components/LoadingScreen';
+import { UniverseLogo } from './components/UniverseLogo';
 import { ScientificDossierPanel } from './components/ScientificDossierPanel';
 import { EarthSurfaceExplorerModal } from './components/EarthSurfaceExplorerModal';
 import { MissionsExplorerModal } from './components/MissionsExplorerModal';
@@ -82,11 +90,28 @@ const ZOOM_LEVEL_META: Record<ZoomLevel, { step: number; title: string }> = {
 
 export type NavDockMode = 'PLANETS' | 'MOONS' | 'DWARFS' | 'ASTEROIDS_COMETS' | 'GALAXIES';
 
+const INITIAL_BOOT_PROGRESS: SceneBootProgress = {
+  progress: 4,
+  stage: 'Preparando motor espacial 3D...',
+  detail: 'Analisando perfil de GPU e VRAM',
+  loadedTextures: 0,
+  totalTextures: 0,
+  ready: false,
+};
+
 export function App() {
-  // Core Navigation & Selection State
+  // Core Navigation & Selection State (Unified True 1:1 Scale & Adaptive Performance)
   const [selectedBodyId, setSelectedBodyId] = useState<string>('earth');
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('PLANETARY_APPROACH');
-  const [scaleMode, setScaleMode] = useState<ScaleMode>('EXPLORATION');
+  const scaleMode: ScaleMode = 'TRUE_1_TO_1';
+  const [qualityPreference, setQualityPreference] = useState<QualityPreference>(() =>
+    loadSavedQualityPreference()
+  );
+  const [resolvedQualityTier, setResolvedQualityTier] = useState<ResolvedQualityTier>('medium');
+  const [bootProgress, setBootProgress] = useState<SceneBootProgress>(INITIAL_BOOT_PROGRESS);
+  const [showLoadingScreen, setShowLoadingScreen] = useState<boolean>(true);
+  const [isLoadingFading, setIsLoadingFading] = useState<boolean>(false);
+  const [isReconfiguringGpu, setIsReconfiguringGpu] = useState<boolean>(false);
   // Closed by default so the initial screen is clean, spacious, and cinematic!
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
   const [isQuickCardOpen, setIsQuickCardOpen] = useState<boolean>(true);
@@ -214,6 +239,26 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!bootProgress.ready) {
+      setShowLoadingScreen(true);
+      setIsLoadingFading(false);
+      return;
+    }
+    const fadeTimer = window.setTimeout(() => {
+      setIsLoadingFading(true);
+    }, 260);
+    const unmountTimer = window.setTimeout(() => {
+      setShowLoadingScreen(false);
+      setIsLoadingFading(false);
+      setIsReconfiguringGpu(false);
+    }, 980);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(unmountTimer);
+    };
+  }, [bootProgress.ready]);
+
   const launchSpacecraftSR7 = useCallback(() => {
     (document.activeElement as HTMLElement | null)?.blur?.();
     spaceAudio.unlock();
@@ -236,28 +281,52 @@ export function App() {
     setSimulationTimeMs(nextTimeMs);
   }, []);
 
-  const earthRadiusScene = useMemo(
-    () => getScaledRadius(getCelestialBody('earth'), scaleMode),
-    [scaleMode]
+  const handleChangeQualityPreference = useCallback(
+    (pref: QualityPreference) => {
+      if (pref === qualityPreference) return;
+      setIsReconfiguringGpu(true);
+      setBootProgress({
+        progress: 6,
+        stage: 'Reconfigurando motor WebGL...',
+        detail: 'Ajustando texturas e shaders para o novo perfil',
+        loadedTextures: 0,
+        totalTextures: 0,
+        ready: false,
+      });
+      setQualityPreference(pref);
+      saveQualityPreference(pref);
+    },
+    [qualityPreference]
   );
 
-  // Note: To prevent satellites from zipping around Earth like crazy when the user fast-forwards planetary orbits,
-  // we propagate satellites using real UTC time (or real-time when timeSpeedDaysPerSec == 0).
-  const satellitePropagationDate = useMemo(() => {
-    if (timeSpeedDaysPerSec === 0) {
-      return new Date(simulationTimeMs);
+  const earthRadiusScene = useMemo(
+    () => getScaledRadius(getCelestialBody('earth'), 'TRUE_1_TO_1'),
+    []
+  );
+
+  // Propagate Earth SGP4 satellites only while Earth or Earth Surface Modal is active;
+  // generate high-precision 64-step orbital track ONLY for the focused satellite.
+  const shouldPropagateLiveSatellites = selectedBodyId === 'earth' || isEarthSurfaceModalOpen;
+  const [frozenSatTimeMs, setFrozenSatTimeMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (shouldPropagateLiveSatellites) {
+      setFrozenSatTimeMs(timeSpeedDaysPerSec === 0 ? simulationTimeMs : Date.now());
     }
-    return new Date();
-  }, [simulationTimeMs, timeSpeedDaysPerSec]);
+  }, [shouldPropagateLiveSatellites, simulationTimeMs, timeSpeedDaysPerSec]);
+
+  const satellitePropagationDate = useMemo(
+    () => new Date(frozenSatTimeMs),
+    [frozenSatTimeMs]
+  );
 
   const propagatedSatellites = useMemo(() => {
     return propagateSatelliteCatalog(
       satelliteCatalog,
       satellitePropagationDate,
       earthRadiusScene,
-      true
+      selectedSatellite?.id ?? null
     );
-  }, [satelliteCatalog, satellitePropagationDate, earthRadiusScene]);
+  }, [satelliteCatalog, satellitePropagationDate, earthRadiusScene, selectedSatellite?.id]);
 
   const currentSelectedSatellite = useMemo(() => {
     if (!selectedSatellite) return null;
@@ -508,7 +577,20 @@ export function App() {
         onUpdateSpacecraftControl={setSpacecraftControl}
         onSyncSpacecraftTelemetry={setSpacecraftTelemetry}
         virtualSteerInput={virtualSteerInput}
+        qualityPreference={qualityPreference}
+        onResolvedQualityChange={setResolvedQualityTier}
+        onBootProgress={setBootProgress}
       />
+
+      {/* 1B. CINEMATIC PRELOAD SPLASH SCREEN WITH LOGO */}
+      {showLoadingScreen && (
+        <LoadingScreen
+          bootProgress={bootProgress}
+          resolvedTier={resolvedQualityTier}
+          isFadingOut={isLoadingFading}
+          isReconfiguring={isReconfiguringGpu}
+        />
+      )}
 
       {/* 2. STREAMLINED RESPONSIVE TOP BAR */}
       {!spacecraftControl.isActive && (
@@ -516,9 +598,7 @@ export function App() {
         {/* Left: Brand Identity + Zoom Level Pill */}
         <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/85 backdrop-blur-xl border border-white/10 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl shadow-lg">
           <div className="flex items-center gap-1.5 sm:gap-2 pr-2 sm:pr-2.5 sm:border-r border-white/10">
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-[0_0_15px_rgba(56,189,248,0.4)] shrink-0">
-              <Orbit className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-            </div>
+            <UniverseLogo size="sm" animated={false} className="w-6 h-6 sm:w-7 sm:h-7 shadow-[0_0_15px_rgba(56,189,248,0.35)] rounded-lg" />
             <span className="text-[11px] sm:text-xs font-display font-bold tracking-wider text-white truncate">
               UNIVERSE<span className="hidden sm:inline"> EXPLORER</span>
             </span>
@@ -538,27 +618,14 @@ export function App() {
             <span className="text-[11px] font-mono text-sky-300">{zoomMeta.title}</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-1.5 pl-2 border-l border-white/10">
-            <Ruler className="w-3.5 h-3.5 text-amber-400" />
-            <select
-              value={scaleMode}
-              onChange={(e) => setScaleMode(e.target.value as ScaleMode)}
-              className="bg-transparent text-slate-300 hover:text-white font-mono text-[11px] focus:outline-none cursor-pointer"
-              title="Escala Visual Adaptada por padrão para facilitar a visualização"
-            >
-              <option value="EXPLORATION" className="bg-slate-950">
-                Escala Adaptada (Exploração)
-              </option>
-              <option value="TRUE_SIZES" className="bg-slate-950">
-                Escala: Proporção Real de Tamanhos
-              </option>
-              <option value="PROPORTIONAL_DISTANCES" className="bg-slate-950">
-                Escala: Distâncias Reais (UA)
-              </option>
-              <option value="TRUE_1_TO_1" className="bg-slate-950">
-                Escala Científica 1:1 Exata
-              </option>
-            </select>
+          <div
+            className="hidden lg:flex items-center gap-1.5 pl-2 border-l border-white/10"
+            title="Tamanhos, órbitas e altitudes em proporção astronômica real 1:1 (1 unidade = 1.000.000 km)"
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.75)]" />
+            <span className="font-mono text-[11px] text-amber-300 font-medium">
+              Escala Real 1:1
+            </span>
           </div>
         </div>
 
@@ -692,20 +759,37 @@ export function App() {
                   </label>
                 ))}
 
-                <div className="pt-2 border-t border-white/10 lg:hidden">
-                  <div className="text-[10px] font-mono uppercase text-amber-300 mb-1">
-                    Escala do Universo
+                <div className="pt-2 border-t border-white/10 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono uppercase text-sky-300">
+                    <span className="flex items-center gap-1">
+                      <Gauge className="w-3 h-3" />
+                      Desempenho Gráfico
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-200 border border-sky-400/30">
+                      {resolvedQualityTier === 'low'
+                        ? 'Leve'
+                        : resolvedQualityTier === 'medium'
+                          ? 'Equilibrado'
+                          : 'Ultra'}
+                    </span>
                   </div>
                   <select
-                    value={scaleMode}
-                    onChange={(e) => setScaleMode(e.target.value as ScaleMode)}
-                    className="w-full bg-slate-900 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none"
+                    value={qualityPreference}
+                    onChange={(e) =>
+                      handleChangeQualityPreference(e.target.value as QualityPreference)
+                    }
+                    className="w-full bg-slate-900 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none cursor-pointer"
+                    title="Ajusta resolução GPU, texturas 2K/4K, partículas estelares e densidade de asteroides"
                   >
-                    <option value="EXPLORATION">Escala Adaptada (Exploração)</option>
-                    <option value="TRUE_SIZES">Proporção Real de Tamanhos</option>
-                    <option value="PROPORTIONAL_DISTANCES">Distâncias Reais (UA)</option>
-                    <option value="TRUE_1_TO_1">Escala Científica 1:1 Exata</option>
+                    <option value="AUTO">Automático (Detectar Hardware)</option>
+                    <option value="LOW">Leve (Celular / PC Fraco)</option>
+                    <option value="MEDIUM">Equilibrado (Padrão Fluido)</option>
+                    <option value="HIGH">Ultra Realista (GPU Dedicada)</option>
                   </select>
+                  <div className="text-[10px] font-mono text-amber-300/90 flex items-center justify-between pt-0.5">
+                    <span>Escala Física</span>
+                    <span>Real 1:1 (1u = 1M km)</span>
+                  </div>
                 </div>
               </div>
             )}

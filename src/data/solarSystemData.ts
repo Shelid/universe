@@ -52,61 +52,41 @@ export function getScaledRadius(body: CelestialBodyData, scaleMode: ScaleMode): 
         return 1200.0;
     }
   }
-  switch (scaleMode) {
-    case 'EXPLORATION':
-      return body.visualRadiusExploration;
-    case 'TRUE_SIZES': {
-      // Earth radius = 0.65 scene units. Sun is capped at 14 units (with note) or proportional
-      const earthRadiusKm = 6371.0;
-      if (body.id === 'sun') return 7.5; // Sun in true planet ratio would be 71 units, overlapping inner orbits
-      return Math.max(0.08, (body.meanRadiusKm / earthRadiusKm) * 0.55);
-    }
-    case 'PROPORTIONAL_DISTANCES':
-      return body.visualRadiusExploration * 0.85;
-    case 'TRUE_1_TO_1': {
-      // 1 scene unit = 1,000,000 km -> Earth = 0.006371, Moon = 0.001737, Mars = 0.00339, Sun = 0.6957, 1 AU = 149.6
-      // Floor at 0.0001 (100 km) preserves exact 1:1 proportions for all planets, dwarfs & major moons.
-      return Math.max(0.0001, body.meanRadiusKm / 1_000_000);
-    }
-  }
+  void scaleMode;
+  // 1 scene unit = 1,000,000 km -> Earth = 0.006371, Moon = 0.001737, Mars = 0.00339, Sun = 0.6957, 1 AU = 149.598
+  // Floor at 0.0000002 (200 m) preserves exact 1:1 proportions across Sun, planets, dwarfs, moons, and comets/asteroids.
+  return Math.max(0.0000002, body.meanRadiusKm / 1_000_000);
 }
 
 /**
  * Returns [fadeStart, fadeEnd] distances from (0,0,0) for transitioning from Solar System to Galactic view,
  * ensuring outer planets in TRUE_1_TO_1 (Saturn ~1427u, Neptune ~4500u, Pluto ~5900u) never vanish or flip to galaxy view.
  */
-export function getGalacticFadeThresholds(scaleMode: ScaleMode): {
+export function getGalacticFadeThresholds(scaleMode: ScaleMode = 'TRUE_1_TO_1'): {
   fadeStart: number;
   fadeEnd: number;
   solarHandoffDist: number;
 } {
-  switch (scaleMode) {
-    case 'TRUE_1_TO_1':
-      return { fadeStart: 82000, fadeEnd: 135000, solarHandoffDist: 140000 };
-    case 'PROPORTIONAL_DISTANCES':
-      return { fadeStart: 1550, fadeEnd: 2800, solarHandoffDist: 3200 };
-    case 'EXPLORATION':
-    case 'TRUE_SIZES':
-    default:
-      return { fadeStart: 180, fadeEnd: 520, solarHandoffDist: 950 };
-  }
+  void scaleMode;
+  return { fadeStart: 82000, fadeEnd: 135000, solarHandoffDist: 140000 };
 }
 
 /**
- * Returns the orbital semi-major axis in 3D scene units for a given body and ScaleMode.
+ * Returns the orbital semi-major axis in 3D scene units for a given body in true 1:1 scale
+ * (1 scene unit = 1,000,000 km; 1 AU = 149.59787 units).
  */
-export function getScaledOrbitalRadius(body: CelestialBodyData, scaleMode: ScaleMode): number {
+export function getScaledOrbitalRadius(
+  body: CelestialBodyData,
+  scaleMode: ScaleMode = 'TRUE_1_TO_1'
+): number {
   if (body.id === 'sun') return 0;
   if (body.category === 'galaxy') return body.explorationDistanceUnits;
 
   if (body.category === 'moon' && body.parentId) {
     const parent = getCelestialBody(body.parentId);
     const parentRadius = getScaledRadius(parent, scaleMode);
-    if (scaleMode === 'TRUE_1_TO_1') {
-      const distKm = body.orbit.semiMajorAxisAU * 149_597_870.7;
-      return Math.max(parentRadius * 1.4, distKm / 1_000_000);
-    }
-    return parentRadius * 1.35 + body.explorationDistanceUnits;
+    const distKm = body.orbit.semiMajorAxisAU * 149_597_870.7;
+    return Math.max(parentRadius * 1.15, distKm / 1_000_000);
   }
 
   // Handle hyperbolic interstellar trajectories (negative semiMajorAxisAU like 1I/'Oumuamua)
@@ -115,19 +95,8 @@ export function getScaledOrbitalRadius(body: CelestialBodyData, scaleMode: Scale
       ? body.orbit.semiMajorAxisAU
       : Math.max(1.5, Math.abs(body.distanceFromSunAU || 3.5));
 
-  switch (scaleMode) {
-    case 'EXPLORATION':
-    case 'TRUE_SIZES':
-      return body.explorationDistanceUnits;
-    case 'PROPORTIONAL_DISTANCES': {
-      // 1 AU = 18 scene units + Sun offset of 8 units
-      return 8.0 + effectiveAU * 18.0;
-    }
-    case 'TRUE_1_TO_1': {
-      // 1 scene unit = 1,000,000 km => 1 AU = 149.59787 units
-      return effectiveAU * 149.59787;
-    }
-  }
+  // 1 scene unit = 1,000,000 km => 1 AU = 149.59787 units
+  return effectiveAU * 149.59787;
 }
 
 /**

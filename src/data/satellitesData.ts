@@ -338,9 +338,9 @@ export const VERIFIED_SATELLITE_CATALOG: SatelliteRecord[] = [
 
 /**
  * Helper to convert Geodetic (latDeg, lonDeg, altKm) to Earth-local 3D coordinates
- * where Earth's radius in local normalized coordinates is `earthSceneRadius`.
- * To make LEO (400-800 km) visually distinguishable above the cloud layer while respecting relative
- * altitude hierarchy (LEO < MEO < GEO), we apply a mild logarithmic altitude offset above the surface.
+ * in true 1:1 physical altitude proportion (`1 + altKm / 6371 km`) relative to Earth's radius.
+ * LEO satellites (~400 km) orbit at ~1.063 R_E (cleanly above the 1.028 R_E atmosphere),
+ * MEO (~20,200 km GPS) at ~4.17 R_E, and GEO (35,786 km GOES-16) at ~6.62 R_E.
  */
 export function geodeticToEarthLocal3D(
   latDeg: number,
@@ -349,14 +349,8 @@ export function geodeticToEarthLocal3D(
   earthSceneRadius: number
 ): [number, number, number] {
   const realEarthRadiusKm = 6371.0;
-  // Smooth radial scaling so 400km LEO sits cleanly above the atmosphere halo, and MEO/GEO scale outward
-  const ratio = altKm / realEarthRadiusKm;
-  const visualAltitudeFactor =
-    altKm < 2000
-      ? 0.14 + (altKm / 2000) * 0.28
-      : 0.42 + Math.log10(1 + (altKm - 2000) / 5000) * 0.95;
-
-  const r = earthSceneRadius * (1.0 + Math.min(2.6, Math.max(0.12, ratio < 0.35 ? visualAltitudeFactor : visualAltitudeFactor)));
+  const clampedAltKm = Math.max(220, altKm);
+  const r = earthSceneRadius * (1.0 + clampedAltKm / realEarthRadiusKm);
   const latRad = (latDeg * Math.PI) / 180;
   const lonRad = (lonDeg * Math.PI) / 180;
 
@@ -374,7 +368,7 @@ export function propagateSatelliteCatalog(
   catalog: SatelliteRecord[],
   targetDate: Date,
   earthSceneRadius: number,
-  computeOrbitTracks = true
+  orbitTrackTarget: boolean | string | null = true
 ): PropagatedSatellite[] {
   const gmst = satellite.gstime(targetDate);
 
@@ -413,9 +407,13 @@ export function propagateSatelliteCatalog(
         earthSceneRadius
       );
 
+      const shouldComputeTrack =
+        orbitTrackTarget === true ||
+        (typeof orbitTrackTarget === 'string' && orbitTrackTarget === sat.id);
+
       const orbitTrack3D: [number, number, number][] = [];
-      if (computeOrbitTracks) {
-        const steps = 72;
+      if (shouldComputeTrack) {
+        const steps = 64;
         const periodMs = periodMinutes * 60 * 1000;
         for (let i = 0; i <= steps; i++) {
           const stepTime = new Date(targetDate.getTime() + (i / steps) * periodMs);

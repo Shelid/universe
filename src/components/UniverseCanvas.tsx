@@ -8,6 +8,7 @@ import {
   PropagatedSatellite,
   SatelliteCategory,
   ScaleMode,
+  SceneBootProgress,
   SpacecraftControlState,
   SpacecraftTelemetry,
   SurfaceLandmark,
@@ -25,6 +26,7 @@ import {
 import { getMissionTrajectoryScenePoints, SPACE_MISSIONS } from '../data/missionsData';
 import {
   createAtmosphereHaloMaterial,
+  createBakedDeepSpaceSkyboxMaterial,
   createDeepSpaceSkyboxMaterial,
   createPlanetSurfaceMaterial,
   createRealisticStarfieldMaterial,
@@ -44,6 +46,12 @@ import {
   populateSaturnRing3DAsteroidFragments,
   setGalaxyGroupOpacity,
 } from '../utils/spacecraftAndAsteroidModels';
+import {
+  downscaleTextureIfNeeded,
+  QualityPreference,
+  ResolvedQualityTier,
+  resolvePerformanceProfile,
+} from '../utils/performanceProfile';
 import { createSR7Spacecraft3DGroup } from '../utils/sr7SpacecraftModel';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
@@ -54,6 +62,9 @@ interface UniverseCanvasProps {
   zoomLevel: ZoomLevel;
   onZoomLevelChange: (level: ZoomLevel) => void;
   scaleMode: ScaleMode;
+  qualityPreference: QualityPreference;
+  onResolvedQualityChange?: (tier: ResolvedQualityTier) => void;
+  onBootProgress?: (progress: SceneBootProgress) => void;
   simulationTimeMs: number;
   onSyncSimulationTime: (nextTimeMs: number) => void;
   timeSpeedDaysPerSec: number;
@@ -94,23 +105,18 @@ interface ScreenLabel {
   payloadId: string;
 }
 
+type PlanetTextureConfig = {
+  diffuse?: string;
+  clouds?: string;
+  night?: string;
+  aux?: string;
+  normal?: string;
+};
+
 // High-resolution 4K / 2K local planetary textures (NASA / LRO / MESSENGER / Solar System Scope / Three.js)
-const REAL_PLANET_TEXTURE_URLS: Record<
-  string,
-  {
-    diffuse?: string;
-    clouds?: string;
-    night?: string;
-    aux?: string;
-    normal?: string;
-  }
-> = {
-  sun: {
-    diffuse: '/textures/sun_4k.jpg',
-  },
-  mercury: {
-    diffuse: '/textures/mercury_4k.jpg',
-  },
+const REAL_PLANET_TEXTURE_URLS_HIGH: Record<string, PlanetTextureConfig> = {
+  sun: { diffuse: '/textures/sun_4k.jpg' },
+  mercury: { diffuse: '/textures/mercury_4k.jpg' },
   venus: {
     diffuse: '/textures/venus_atmo_4k.jpg',
     aux: '/textures/venus_surface_4k.jpg',
@@ -122,43 +128,71 @@ const REAL_PLANET_TEXTURE_URLS: Record<
     aux: '/textures/earth_bump_roughness_clouds_4096.jpg',
     normal: '/textures/earth_normal_2048.jpg',
   },
-  moon: {
-    diffuse: '/textures/moon_4k.jpg',
-  },
-  mars: {
-    diffuse: '/textures/mars_4k.jpg',
-  },
-  jupiter: {
-    diffuse: '/textures/jupiter_4k.jpg',
-  },
-  saturn: {
-    diffuse: '/textures/saturn_4k.jpg',
-  },
-  uranus: {
-    diffuse: '/textures/uranus_2k.jpg',
-  },
-  neptune: {
-    diffuse: '/textures/neptune_2k.jpg',
-  },
-  ceres: {
-    diffuse: '/textures/moon_4k.jpg',
-  },
-  pluto: {
-    diffuse: '/textures/mercury_4k.jpg',
-  },
-  haumea: {
-    diffuse: '/textures/moon_4k.jpg',
-  },
-  makemake: {
-    diffuse: '/textures/mars_4k.jpg',
-  },
-  eris: {
-    diffuse: '/textures/moon_4k.jpg',
-  },
-  sedna: {
-    diffuse: '/textures/mars_4k.jpg',
-  },
+  moon: { diffuse: '/textures/moon_4k.jpg' },
+  mars: { diffuse: '/textures/mars_4k.jpg' },
+  jupiter: { diffuse: '/textures/jupiter_4k.jpg' },
+  saturn: { diffuse: '/textures/saturn_4k.jpg' },
+  uranus: { diffuse: '/textures/uranus_2k.jpg' },
+  neptune: { diffuse: '/textures/neptune_2k.jpg' },
+  ceres: { diffuse: '/textures/moon_4k.jpg' },
+  pluto: { diffuse: '/textures/mercury_4k.jpg' },
+  haumea: { diffuse: '/textures/moon_4k.jpg' },
+  makemake: { diffuse: '/textures/mars_4k.jpg' },
+  eris: { diffuse: '/textures/moon_4k.jpg' },
+  sedna: { diffuse: '/textures/mars_4k.jpg' },
 };
+
+// Memory-lean 2K / 1K textures for smartphones and weaker GPUs (~70% less VRAM with crisp appearance)
+const REAL_PLANET_TEXTURE_URLS_LOW: Record<string, PlanetTextureConfig> = {
+  sun: { diffuse: '/textures/sun_2k.jpg' },
+  mercury: { diffuse: '/textures/mercury_2k.jpg' },
+  venus: {
+    diffuse: '/textures/venus_atmo_2k.jpg',
+    aux: '/textures/venus_surface_2k.jpg',
+  },
+  earth: {
+    diffuse: '/textures/earth_day_4096.jpg',
+    clouds: '/textures/earth_clouds_1024.png',
+    night: '/textures/earth_night_4096.jpg',
+    aux: '/textures/earth_bump_roughness_clouds_4096.jpg',
+    normal: '/textures/earth_normal_2048.jpg',
+  },
+  moon: { diffuse: '/textures/moon_2k.jpg' },
+  mars: { diffuse: '/textures/mars_2k.jpg' },
+  jupiter: { diffuse: '/textures/jupiter_2k.jpg' },
+  saturn: { diffuse: '/textures/saturn_2k.jpg' },
+  uranus: { diffuse: '/textures/uranus_2k.jpg' },
+  neptune: { diffuse: '/textures/neptune_2k.jpg' },
+  ceres: { diffuse: '/textures/moon_2k.jpg' },
+  pluto: { diffuse: '/textures/mercury_2k.jpg' },
+  haumea: { diffuse: '/textures/moon_2k.jpg' },
+  makemake: { diffuse: '/textures/mars_2k.jpg' },
+  eris: { diffuse: '/textures/moon_2k.jpg' },
+  sedna: { diffuse: '/textures/mars_2k.jpg' },
+};
+
+const getTextureDisplayLabel = (url: string): string => {
+  if (url.includes('sun_')) return 'Sol (Fotosfera)';
+  if (url.includes('earth_day')) return 'Terra (Superfície)';
+  if (url.includes('earth_clouds')) return 'Terra (Nuvens)';
+  if (url.includes('earth_night')) return 'Terra (Luzes Noturnas)';
+  if (url.includes('earth_bump')) return 'Terra (Oceanos e Relevo)';
+  if (url.includes('earth_normal')) return 'Terra (Mapa Normal)';
+  if (url.includes('mercury_')) return 'Mercúrio e Asteroides';
+  if (url.includes('venus_atmo')) return 'Vênus (Atmosfera)';
+  if (url.includes('venus_surface')) return 'Vênus (Superfície Radar)';
+  if (url.includes('moon_')) return 'Lua e Luas Rochosas';
+  if (url.includes('mars_')) return 'Marte e Planetas Anões';
+  if (url.includes('jupiter_')) return 'Júpiter (Faixas Gasosas)';
+  if (url.includes('saturn_')) return 'Saturno';
+  if (url.includes('uranus_')) return 'Urano';
+  if (url.includes('neptune_')) return 'Netuno';
+  return 'Textura Planetária';
+};
+
+const _sunlitToSun = new THREE.Vector3();
+const _sunlitUp = new THREE.Vector3(0, 1, 0);
+const _sunlitRight = new THREE.Vector3();
 
 /**
  * Computes a sunlit cinema camera direction for any planet so ~82% of the visible disk
@@ -166,18 +200,19 @@ const REAL_PLANET_TEXTURE_URLS: Record<
  */
 function computeSunlitCameraOffsetDir(
   planetWorldPos: THREE.Vector3,
-  bodyId: string
+  bodyId: string,
+  outDir = new THREE.Vector3()
 ): THREE.Vector3 {
-  if (bodyId === 'sun' || planetWorldPos.lengthSq() < 0.001) {
-    return new THREE.Vector3(0.65, 0.28, 0.72).normalize();
+  if (bodyId === 'sun' || planetWorldPos.lengthSq() < 0.0001) {
+    return outDir.set(0.65, 0.28, 0.72).normalize();
   }
-  const toSun = planetWorldPos.clone().negate().normalize();
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  const right = new THREE.Vector3().crossVectors(worldUp, toSun).normalize();
-  return new THREE.Vector3()
-    .addScaledVector(toSun, 0.88)
-    .addScaledVector(right, 0.44)
-    .addScaledVector(worldUp, 0.14)
+  _sunlitToSun.copy(planetWorldPos).negate().normalize();
+  _sunlitRight.crossVectors(_sunlitUp, _sunlitToSun).normalize();
+  return outDir
+    .set(0, 0, 0)
+    .addScaledVector(_sunlitToSun, 0.88)
+    .addScaledVector(_sunlitRight, 0.44)
+    .addScaledVector(_sunlitUp, 0.14)
     .normalize();
 }
 
@@ -187,6 +222,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   zoomLevel,
   onZoomLevelChange,
   scaleMode,
+  qualityPreference,
+  onResolvedQualityChange,
+  onBootProgress,
   simulationTimeMs,
   onSyncSimulationTime,
   timeSpeedDaysPerSec,
@@ -260,6 +298,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onUpdateWarpState,
     onUpdateSpacecraftControl,
     onSyncSpacecraftTelemetry,
+    onResolvedQualityChange,
+    onBootProgress,
   });
 
   useEffect(() => {
@@ -299,8 +339,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onUpdateWarpState,
       onUpdateSpacecraftControl,
       onSyncSpacecraftTelemetry,
+      onResolvedQualityChange,
+      onBootProgress,
     };
   });
+
+  const overrideDistanceMultiplierRef = useRef<number | null>(null);
 
   const cameraCommandRef = useRef<{
     activeTransition: boolean;
@@ -325,7 +369,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       cameraCommandRef.current.activeTransition = true;
       cameraCommandRef.current.focusLatLon = null;
       const selBody = getCelestialBody(selectedBodyId);
-      if (saturnRingDiveMode && selectedBodyId === 'saturn') {
+      if (overrideDistanceMultiplierRef.current !== null) {
+        cameraCommandRef.current.desiredDistanceMultiplier = overrideDistanceMultiplierRef.current;
+        overrideDistanceMultiplierRef.current = null;
+      } else if (saturnRingDiveMode && selectedBodyId === 'saturn') {
         cameraCommandRef.current.desiredDistanceMultiplier = 1.55;
       } else if (selectedBodyId === 'milky-way') {
         cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
@@ -337,7 +384,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
       }
     }
-  }, [selectedBodyId, saturnRingDiveMode, scaleMode, warpState.isActive]);
+  }, [selectedBodyId, saturnRingDiveMode, warpState.isActive]);
 
   useEffect(() => {
     if (isExploringInterior) {
@@ -366,10 +413,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     }
   }, [selectedLandmark]);
 
-  // Main WebGL initialization — runs ONCE on mount
+  // Main WebGL initialization — runs on mount & when qualityPreference changes
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
+
+    let isDisposed = false;
+    let bootCompleted = false;
+    let bootTimeoutId = 0;
+    const emitBootProgress = (p: SceneBootProgress) => {
+      if (isDisposed) return;
+      callbacksRef.current.onBootProgress?.(p);
+    };
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#010206');
@@ -382,19 +437,35 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     );
     camera.position.set(28, 12, 36);
 
+    const prePerf = resolvePerformanceProfile(qualityPreference);
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: prePerf.antialias,
       powerPreference: 'high-performance',
       logarithmicDepthBuffer: true,
     });
+    const perf = resolvePerformanceProfile(qualityPreference, renderer);
+    callbacksRef.current.onResolvedQualityChange?.(perf.tier);
+
+    emitBootProgress({
+      progress: 10,
+      stage: 'Inicializando motor WebGL...',
+      detail: `Perfil ${perf.tier.toUpperCase()} ativado`,
+      loadedTextures: 0,
+      totalTextures: 0,
+      ready: false,
+    });
+    const activeDpr = Math.min(window.devicePixelRatio || 1, perf.maxDpr);
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(activeDpr);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.12;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+    const maxAnisotropy = Math.min(
+      renderer.capabilities.getMaxAnisotropy(),
+      perf.maxAnisotropy
+    );
     const textureLoader = new THREE.TextureLoader();
     textureLoader.setCrossOrigin('anonymous');
 
@@ -402,7 +473,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
     controls.maxDistance = 200000;
-    controls.minDistance = 0.00008;
+    controls.minDistance = 0.0000005;
     controls.rotateSpeed = 0.7;
     controls.zoomSpeed = 1.18;
 
@@ -427,22 +498,54 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
     renderer.domElement.addEventListener('wheel', handleWheelInterrupt, { passive: true });
 
-    // PHOTOREALISTIC DEEP SPACE ENVIRONMENT (360° Interior Milky Way Panorama Skybox + 45,000 Magnitude-Attenuated Stars)
+    // PHOTOREALISTIC DEEP SPACE ENVIRONMENT (Pre-baked CubeMap Milky Way Skybox + Adaptive Multi-Spectral Starfield)
     const starGroup = new THREE.Group();
     scene.add(starGroup);
 
     const softCircleSprite = getSoftCircleParticleTexture();
 
-    // 1. 360° GLSL Deep Space & Interior Milky Way Panorama Skybox Sphere (with Great Rift dark dust lanes)
-    const skyboxGeo = new THREE.SphereGeometry(250000, 64, 64);
-    const skyboxMat = createDeepSpaceSkyboxMaterial();
+    // Bake 35-octave GLSL Milky Way Great Rift + H-II Nebulae into a GPU CubeTexture ONCE at startup (~50x faster on phones!)
+    const skyCubeRT = new THREE.WebGLCubeRenderTarget(perf.skyboxCubeSize, {
+      type: THREE.UnsignedByteType,
+      generateMipmaps: false,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+    });
+    const skyBakeScene = new THREE.Scene();
+    const skyBakeGeo = new THREE.SphereGeometry(5, 32, 24);
+    const skyBakeMat = createDeepSpaceSkyboxMaterial(true);
+    const skyBakeMesh = new THREE.Mesh(skyBakeGeo, skyBakeMat);
+    skyBakeScene.add(skyBakeMesh);
+    const skyBakeCam = new THREE.CubeCamera(0.1, 20, skyCubeRT);
+    const prevToneMapping = renderer.toneMapping;
+    renderer.toneMapping = THREE.NoToneMapping;
+    skyBakeCam.update(renderer, skyBakeScene);
+    renderer.toneMapping = prevToneMapping;
+    skyBakeGeo.dispose();
+    skyBakeMat.dispose();
+
+    emitBootProgress({
+      progress: 20,
+      stage: 'Renderizando Skybox da Via Láctea...',
+      detail: `CubeMap 360° (${perf.skyboxCubeSize}px)`,
+      loadedTextures: 0,
+      totalTextures: 0,
+      ready: false,
+    });
+
+    const skyboxGeo = new THREE.SphereGeometry(
+      250000,
+      perf.tier === 'low' ? 32 : 48,
+      perf.tier === 'low' ? 24 : 36
+    );
+    const skyboxMat = createBakedDeepSpaceSkyboxMaterial(skyCubeRT.texture);
     const skyboxMesh = new THREE.Mesh(skyboxGeo, skyboxMat);
     skyboxMesh.renderOrder = -20;
     skyboxMesh.frustumCulled = false;
     starGroup.add(skyboxMesh);
 
-    // 2. 45,000 MULTI-SPECTRAL FAR-FIELD STARS WITH REALISTIC MAGNITUDE DISTRIBUTION & BLACKBODY COLORS
-    const starCount = 45000;
+    // 2. ADAPTIVE MULTI-SPECTRAL FAR-FIELD STARS WITH REALISTIC MAGNITUDE DISTRIBUTION & BLACKBODY COLORS
+    const starCount = perf.backgroundStarCount;
     const starPositions = new Float32Array(starCount * 3);
     const starColors = new Float32Array(starCount * 3);
     const starMagnitudes = new Float32Array(starCount);
@@ -464,10 +567,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const rotAz = 0.48;
     const cosAz = Math.cos(rotAz);
     const sinAz = Math.sin(rotAz);
+    const galacticStarCutoff = Math.floor(starCount * 0.54);
 
     for (let i = 0; i < starCount; i++) {
       const r = 175000 + Math.random() * 45000;
-      const isGalacticBand = i < 24000;
+      const isGalacticBand = i < galacticStarCutoff;
       const theta = Math.random() * Math.PI * 2;
       let phi: number;
       if (isGalacticBand) {
@@ -522,7 +626,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     starGeometry.setAttribute('aMagnitude', new THREE.BufferAttribute(starMagnitudes, 1));
     starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
 
-    const starMaterial = createRealisticStarfieldMaterial();
+    const starMaterial = createRealisticStarfieldMaterial(activeDpr);
     const starField = new THREE.Points(starGeometry, starMaterial);
     starField.renderOrder = -15;
     starField.frustumCulled = false;
@@ -582,28 +686,122 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const kuiperBeltShaderMat = createInstancedAsteroidShaderMaterial(null, false);
     const saturnBoulderShaderMat = createInstancedAsteroidShaderMaterial(null, true);
 
-    textureLoader.load('/textures/mercury_4k.jpg', (tex) => {
-      tex.anisotropy = maxAnisotropy;
-      tex.wrapS = THREE.RepeatWrapping;
-      tex.wrapT = THREE.RepeatWrapping;
-      tex.colorSpace = THREE.NoColorSpace;
-      tex.needsUpdate = true;
-      asteroidBeltShaderMat.uniforms.uCraterMap.value = tex;
-      kuiperBeltShaderMat.uniforms.uCraterMap.value = tex;
-      saturnBoulderShaderMat.uniforms.uCraterMap.value = tex;
+    const loadedTextures: THREE.Texture[] = [];
+    const textureTable = perf.use2kTextures
+      ? REAL_PLANET_TEXTURE_URLS_LOW
+      : REAL_PLANET_TEXTURE_URLS_HIGH;
+    const asteroidCraterUrl = perf.use2kTextures
+      ? '/textures/mercury_2k.jpg'
+      : '/textures/mercury_4k.jpg';
+
+    const configurePlanetTexture = (tex: THREE.Texture) => {
+      const optimized = downscaleTextureIfNeeded(tex, perf.maxTextureSize);
+      optimized.anisotropy = maxAnisotropy;
+      optimized.minFilter = THREE.LinearMipmapLinearFilter;
+      optimized.magFilter = THREE.LinearFilter;
+      optimized.generateMipmaps = true;
+      // Keep NoColorSpace for custom ShaderMaterial so WebGL2 does not apply x^2.2 darkening without output gamma!
+      optimized.colorSpace = THREE.NoColorSpace;
+      optimized.needsUpdate = true;
+      loadedTextures.push(optimized);
+      renderer.initTexture(optimized);
+      return optimized;
+    };
+
+    // Deduplicate all texture downloads & GPU VRAM uploads across bodies/belts
+    const uniqueTextureUrlSet = new Set<string>([asteroidCraterUrl]);
+    Object.values(textureTable).forEach((cfg) => {
+      if (cfg.diffuse) uniqueTextureUrlSet.add(cfg.diffuse);
+      if (cfg.clouds) uniqueTextureUrlSet.add(cfg.clouds);
+      if (cfg.night) uniqueTextureUrlSet.add(cfg.night);
+      if (cfg.aux) uniqueTextureUrlSet.add(cfg.aux);
+      if (cfg.normal) uniqueTextureUrlSet.add(cfg.normal);
     });
 
-    let beltScaleBuilt: ScaleMode = 'EXPLORATION';
+    const totalTexCount = uniqueTextureUrlSet.size;
+    let settledTexCount = 0;
+
+    emitBootProgress({
+      progress: 24,
+      stage: 'Carregando texturas planetárias NASA...',
+      detail: 'Preparando cache em VRAM',
+      loadedTextures: 0,
+      totalTextures: totalTexCount,
+      ready: false,
+    });
+
+    const texturePromiseCache = new Map<string, Promise<THREE.Texture | null>>();
+    const getOrLoadCachedTexture = (url: string): Promise<THREE.Texture | null> => {
+      const existing = texturePromiseCache.get(url);
+      if (existing) return existing;
+
+      const promise = new Promise<THREE.Texture | null>((resolve) => {
+        textureLoader.load(
+          url,
+          (tex) => {
+            if (isDisposed) {
+              tex.dispose();
+              resolve(null);
+              return;
+            }
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            const optimized = configurePlanetTexture(tex);
+            settledTexCount++;
+            const pct = 24 + Math.round((settledTexCount / Math.max(1, totalTexCount)) * 60);
+            emitBootProgress({
+              progress: pct,
+              stage: 'Carregando texturas planetárias NASA...',
+              detail: getTextureDisplayLabel(url),
+              loadedTextures: settledTexCount,
+              totalTextures: totalTexCount,
+              ready: false,
+            });
+            resolve(optimized);
+          },
+          undefined,
+          () => {
+            if (isDisposed) {
+              resolve(null);
+              return;
+            }
+            settledTexCount++;
+            const pct = 24 + Math.round((settledTexCount / Math.max(1, totalTexCount)) * 60);
+            emitBootProgress({
+              progress: pct,
+              stage: 'Carregando texturas planetárias NASA...',
+              detail: `Fallback procedural: ${getTextureDisplayLabel(url)}`,
+              loadedTextures: settledTexCount,
+              totalTextures: totalTexCount,
+              ready: false,
+            });
+            resolve(null);
+          }
+        );
+      });
+
+      texturePromiseCache.set(url, promise);
+      return promise;
+    };
+
+    getOrLoadCachedTexture(asteroidCraterUrl).then((sizedTex) => {
+      if (isDisposed || !sizedTex) return;
+      asteroidBeltShaderMat.uniforms.uCraterMap.value = sizedTex;
+      kuiperBeltShaderMat.uniforms.uCraterMap.value = sizedTex;
+      saturnBoulderShaderMat.uniforms.uCraterMap.value = sizedTex;
+    });
+
+    // Main Asteroid Belt (2.2 - 3.3 AU -> 329 - 494 u) & Kuiper Belt (32 - 48 AU -> 4787 - 7180 u) built directly in 1:1 scale
     const mainAsteroidBelt = new THREE.Group();
     populateRealisticAsteroidBeltGroup(
       mainAsteroidBelt,
       asteroidBeltShaderMat,
-      1140,
-      43.2,
-      52.0,
-      0.85,
-      0.025,
-      0.125,
+      perf.mainBeltCount,
+      329.0,
+      494.0,
+      6.0,
+      0.08,
+      0.35,
       false
     );
     beltGroup.add(mainAsteroidBelt);
@@ -612,40 +810,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     populateRealisticAsteroidBeltGroup(
       kuiperBelt,
       kuiperBeltShaderMat,
-      660,
-      113.0,
-      136.0,
-      2.0,
-      0.04,
-      0.18,
+      perf.kuiperBeltCount,
+      4787.0,
+      7180.0,
+      28.0,
+      0.4,
+      1.8,
       true
     );
     beltGroup.add(kuiperBelt);
-
-    const rebuildBeltsForScaleMode = (mode: ScaleMode) => {
-      while (mainAsteroidBelt.children.length > 0) {
-        const child = mainAsteroidBelt.children[0] as THREE.InstancedMesh;
-        child.geometry?.dispose?.();
-        mainAsteroidBelt.remove(child);
-      }
-      while (kuiperBelt.children.length > 0) {
-        const child = kuiperBelt.children[0] as THREE.InstancedMesh;
-        child.geometry?.dispose?.();
-        kuiperBelt.remove(child);
-      }
-
-      if (mode === 'PROPORTIONAL_DISTANCES') {
-        populateRealisticAsteroidBeltGroup(mainAsteroidBelt, asteroidBeltShaderMat, 1140, 47.6, 67.4, 0.9, 0.025, 0.12, false);
-        populateRealisticAsteroidBeltGroup(kuiperBelt, kuiperBeltShaderMat, 660, 584.0, 872.0, 3.0, 0.05, 0.22, true);
-      } else if (mode === 'TRUE_1_TO_1') {
-        populateRealisticAsteroidBeltGroup(mainAsteroidBelt, asteroidBeltShaderMat, 1140, 329.0, 494.0, 6.0, 0.08, 0.35, false);
-        populateRealisticAsteroidBeltGroup(kuiperBelt, kuiperBeltShaderMat, 660, 4787.0, 7180.0, 28.0, 0.4, 1.8, true);
-      } else {
-        populateRealisticAsteroidBeltGroup(mainAsteroidBelt, asteroidBeltShaderMat, 1140, 43.2, 52.0, 0.85, 0.025, 0.125, false);
-        populateRealisticAsteroidBeltGroup(kuiperBelt, kuiperBeltShaderMat, 660, 113.0, 136.0, 2.0, 0.04, 0.18, true);
-      }
-      beltScaleBuilt = mode;
-    };
 
     // CELESTIAL BODIES MESH REGISTRY
     interface BodySceneNode {
@@ -661,6 +834,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       saturnRingShaderMat?: THREE.ShaderMaterial;
       saturnBouldersGroup?: THREE.Group;
       saturnBoulderShaderMat?: THREE.ShaderMaterial;
+      ceresAsteroidCluster?: THREE.Group;
       galaxyVolumetricGroup?: THREE.Group;
       enceladusPlumePoints?: THREE.Points;
       interiorCutawayGroup: THREE.Group;
@@ -672,18 +846,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const clickableMeshes: THREE.Object3D[] = [];
     const interiorLayerMeshes: THREE.Object3D[] = [];
 
-    const sphereGeometryUltra = new THREE.SphereGeometry(1, 128, 128);
-    const sphereGeometryHigh = new THREE.SphereGeometry(1, 96, 96);
-
-    const configurePlanetTexture = (tex: THREE.Texture) => {
-      tex.anisotropy = maxAnisotropy;
-      tex.minFilter = THREE.LinearMipmapLinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.generateMipmaps = true;
-      // Keep NoColorSpace for custom ShaderMaterial so WebGL2 does not apply x^2.2 darkening without output gamma!
-      tex.colorSpace = THREE.NoColorSpace;
-      tex.needsUpdate = true;
-    };
+    const sphereGeometryUltra = new THREE.SphereGeometry(1, ...perf.sphereUltraSegments);
+    const sphereGeometryHigh = new THREE.SphereGeometry(1, ...perf.sphereMoonSegments);
+    const interiorSphereGeo = new THREE.SphereGeometry(1, perf.tier === 'low' ? 24 : 36, perf.tier === 'low' ? 20 : 32);
 
     ALL_CELESTIAL_BODIES.forEach((body) => {
       const rootGroup = new THREE.Group();
@@ -704,39 +869,39 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         );
       }
 
-      // Load real 4K / 2K equirectangular NASA / LRO / MESSENGER / Solar System Scope textures
-      const texConfig = REAL_PLANET_TEXTURE_URLS[body.id];
+      // Bind deduplicated NASA / LRO / MESSENGER / Solar System Scope textures
+      const texConfig = textureTable[body.id];
       if (texConfig?.diffuse) {
-        textureLoader.load(texConfig.diffuse, (tex) => {
-          configurePlanetTexture(tex);
+        getOrLoadCachedTexture(texConfig.diffuse).then((tex) => {
+          if (isDisposed || !tex) return;
           surfaceMaterial.uniforms.uDiffuseMap.value = tex;
           surfaceMaterial.uniforms.uHasDiffuseMap.value = 1.0;
         });
       }
       if (texConfig?.clouds && surfaceMaterial.uniforms.uCloudsMap) {
-        textureLoader.load(texConfig.clouds, (tex) => {
-          configurePlanetTexture(tex);
+        getOrLoadCachedTexture(texConfig.clouds).then((tex) => {
+          if (isDisposed || !tex) return;
           surfaceMaterial.uniforms.uCloudsMap.value = tex;
           surfaceMaterial.uniforms.uHasCloudsMap.value = 1.0;
         });
       }
       if (texConfig?.night && surfaceMaterial.uniforms.uNightMap) {
-        textureLoader.load(texConfig.night, (tex) => {
-          configurePlanetTexture(tex);
+        getOrLoadCachedTexture(texConfig.night).then((tex) => {
+          if (isDisposed || !tex) return;
           surfaceMaterial.uniforms.uNightMap.value = tex;
           surfaceMaterial.uniforms.uHasNightMap.value = 1.0;
         });
       }
       if (texConfig?.aux && surfaceMaterial.uniforms.uAuxMap) {
-        textureLoader.load(texConfig.aux, (tex) => {
-          configurePlanetTexture(tex);
+        getOrLoadCachedTexture(texConfig.aux).then((tex) => {
+          if (isDisposed || !tex) return;
           surfaceMaterial.uniforms.uAuxMap.value = tex;
           surfaceMaterial.uniforms.uHasAuxMap.value = 1.0;
         });
       }
       if (texConfig?.normal && surfaceMaterial.uniforms.uNormalMap) {
-        textureLoader.load(texConfig.normal, (tex) => {
-          configurePlanetTexture(tex);
+        getOrLoadCachedTexture(texConfig.normal).then((tex) => {
+          if (isDisposed || !tex) return;
           surfaceMaterial.uniforms.uNormalMap.value = tex;
           surfaceMaterial.uniforms.uHasNormalMap.value = 1.0;
         });
@@ -761,7 +926,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       let galaxyVolumetricGroup: THREE.Group | undefined;
       if (body.category === 'galaxy') {
-        galaxyVolumetricGroup = createRealistic3DGalaxyGroup(body);
+        galaxyVolumetricGroup = createRealistic3DGalaxyGroup(body, {
+          starCount: perf.galaxyStarCount,
+          diskLayers: perf.galaxyDiskLayers,
+          highQualityShader: perf.tier !== 'low',
+          pixelRatio: activeDpr,
+        });
         tiltGroup.add(galaxyVolumetricGroup);
       }
 
@@ -811,7 +981,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
 
         // 3D Coronal Mass Ejection (CME) / Solar Wind Storm Particles
-        const cmeCount = 1600;
+        const cmeCount = perf.cmeParticleCount;
         const cmePos = new Float32Array(cmeCount * 3);
         const cmeCol = new Float32Array(cmeCount * 3);
         for (let i = 0; i < cmeCount; i++) {
@@ -849,12 +1019,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       }
 
       // CERES SPECIAL FEATURE: Local 3D Sculpted Asteroid Field Cluster surrounding Ceres in the Main Belt
+      let ceresAsteroidCluster: THREE.Group | undefined;
       if (body.id === 'ceres') {
-        const ceresAsteroidCluster = new THREE.Group();
+        ceresAsteroidCluster = new THREE.Group();
         populateRealisticAsteroidBeltGroup(
           ceresAsteroidCluster,
           asteroidBeltShaderMat,
-          210,
+          perf.ceresClusterCount,
           1.5,
           5.5,
           0.45,
@@ -865,7 +1036,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(ceresAsteroidCluster);
       }
 
-      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + 1,200 Proportional Sculpted 3D Asteroid & Ice Fragments
+      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + Proportional Sculpted 3D Asteroid & Ice Fragments
       let saturnRingShaderMesh: THREE.Mesh | undefined;
       let saturnRingShaderMat: THREE.ShaderMaterial | undefined;
       let saturnBouldersGroup: THREE.Group | undefined;
@@ -873,20 +1044,19 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (body.id === 'saturn') {
         const innerR = 1.18;
         const outerR = 2.42;
-        const ringGeo = new THREE.RingGeometry(innerR, outerR, 180, 12);
+        const ringGeo = new THREE.RingGeometry(innerR, outerR, perf.ringSegments, 10);
         saturnRingShaderMat = createSaturnRingsShaderMaterial(1.0);
         saturnRingShaderMesh = new THREE.Mesh(ringGeo, saturnRingShaderMat);
         saturnRingShaderMesh.rotation.x = Math.PI / 2;
         tiltGroup.add(saturnRingShaderMesh);
 
-        // 1,200 Proportional Sculpted 3D Asteroid & Crystalline Ice-Rock Fragments across all 6 archetypes
         saturnBouldersGroup = new THREE.Group();
         populateSaturnRing3DAsteroidFragments(
           saturnBouldersGroup,
           saturnBoulderShaderMat,
           innerR,
           outerR,
-          1200
+          perf.saturnBouldersCount
         );
         tiltGroup.add(saturnBouldersGroup);
       }
@@ -895,7 +1065,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const uRingGeo = new THREE.RingGeometry(
           body.id === 'haumea' ? 1.55 : 1.38,
           body.id === 'uranus' ? 1.95 : body.id === 'haumea' ? 1.82 : 1.78,
-          96
+          perf.tier === 'low' ? 56 : 88
         );
         const uRingMat = new THREE.MeshBasicMaterial({
           color: body.id === 'uranus' ? '#67e8f9' : body.id === 'haumea' ? '#e2e8f0' : '#60a5fa',
@@ -910,7 +1080,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       let enceladusPlumePoints: THREE.Points | undefined;
       if (body.id === 'enceladus') {
-        const plumeCount = 450;
+        const plumeCount = perf.enceladusPlumeCount;
         const plumePos = new Float32Array(plumeCount * 3);
         for (let i = 0; i < plumeCount; i++) {
           const dist = Math.random() * 1.45;
@@ -941,7 +1111,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       body.interiorLayers.forEach((layer, idx) => {
         const r = Math.max(0.08, layer.outerRadiusRatio * 0.992);
-        const layerGeo = new THREE.SphereGeometry(r, 40, 40);
         const layerMat = new THREE.MeshBasicMaterial({
           color: layer.colorHex,
         });
@@ -968,7 +1137,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               .replace('idx_cut', idx === 0 ? '0.0' : '1.0');
         };
 
-        const layerMesh = new THREE.Mesh(layerGeo, layerMat);
+        const layerMesh = new THREE.Mesh(interiorSphereGeo, layerMat);
+        layerMesh.scale.setScalar(r);
         layerMesh.userData = {
           kind: 'interior_layer',
           bodyId: body.id,
@@ -978,7 +1148,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         interiorLayerMeshes.push(layerMesh);
 
         const innerR = layer.innerRadiusRatio * 0.992;
-        const ringFaceGeo = new THREE.RingGeometry(innerR, r, 48, 1, 0, Math.PI * 0.56);
+        const ringFaceGeo = new THREE.RingGeometry(innerR, r, perf.tier === 'low' ? 28 : 44, 1, 0, Math.PI * 0.56);
         const ringFaceMat = new THREE.MeshBasicMaterial({
           color: layer.colorHex,
           side: THREE.DoubleSide,
@@ -998,8 +1168,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         interiorLayerMeshes.push(faceYZ);
       });
 
-      // KEPLERIAN ORBIT LINE
-      const orbitPoints = generateKeplerianOrbitCurvePoints(body, 'EXPLORATION', 180).map(
+      // KEPLERIAN ORBIT LINE IN TRUE 1:1 ASTRONOMICAL SCALE
+      const orbitPoints = generateKeplerianOrbitCurvePoints(body, 'TRUE_1_TO_1', perf.orbitSegments).map(
         ([x, y, z]) => new THREE.Vector3(x, y, z)
       );
       const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPoints);
@@ -1026,11 +1196,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         saturnRingShaderMesh,
         saturnRingShaderMat,
         saturnBouldersGroup,
+        ceresAsteroidCluster,
         galaxyVolumetricGroup,
         enceladusPlumePoints,
         interiorCutawayGroup,
         orbitLine,
-        orbitScaleModeBuilt: 'EXPLORATION',
+        orbitScaleModeBuilt: 'TRUE_1_TO_1',
       };
     });
 
@@ -1059,7 +1230,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const missionLines: Record<string, { line: THREE.Line; scaleBuilt: ScaleMode }> = {};
 
     SPACE_MISSIONS.forEach((mission) => {
-      const pts = getMissionTrajectoryScenePoints(mission, 'EXPLORATION').map(
+      const pts = getMissionTrajectoryScenePoints(mission, 'TRUE_1_TO_1').map(
         ([x, y, z]) => new THREE.Vector3(x, y, z)
       );
       const curve = new THREE.CatmullRomCurve3(pts);
@@ -1067,15 +1238,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       const geo = new THREE.BufferGeometry().setFromPoints(smoothPts);
       const mat = new THREE.LineDashedMaterial({
         color: mission.colorHex,
-        dashSize: 1.2,
-        gapSize: 0.6,
+        dashSize: 12.0,
+        gapSize: 6.0,
         transparent: true,
         opacity: 0.78,
       });
       const line = new THREE.Line(geo, mat);
       line.computeLineDistances();
       missionsGroup.add(line);
-      missionLines[mission.id] = { line, scaleBuilt: 'EXPLORATION' };
+      missionLines[mission.id] = { line, scaleBuilt: 'TRUE_1_TO_1' };
     });
 
     // UPGRADED CINEMATIC SPACETIME WARP TUNNEL (Volumetric Shader Cylinder + Relativistic Star Streaks)
@@ -1083,13 +1254,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     warpTunnelGroup.visible = false;
     scene.add(warpTunnelGroup);
 
-    const warpCylGeo = new THREE.CylinderGeometry(3.2, 1.4, 42, 48, 24, true);
+    const warpCylGeo = new THREE.CylinderGeometry(3.2, 1.4, 42, perf.tier === 'low' ? 24 : 40, 16, true);
     warpCylGeo.rotateX(Math.PI / 2);
     const warpCylMat = createWarpTunnelShaderMaterial();
     const warpCylMesh = new THREE.Mesh(warpCylGeo, warpCylMat);
     warpTunnelGroup.add(warpCylMesh);
 
-    const warpStreakCount = 900;
+    const warpStreakCount = perf.tier === 'low' ? 420 : perf.tier === 'medium' ? 680 : 900;
     const warpPositions = new Float32Array(warpStreakCount * 6);
     const warpColors = new Float32Array(warpStreakCount * 6);
 
@@ -1416,7 +1587,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // MAIN 60FPS RENDER LOOP
+    // MAIN 60FPS RENDER LOOP & POOLED ZERO-ALLOCATION SCRATCH MEMORY
     let animationFrameId = 0;
     let clockTime = 0;
     let lastTimestamp = performance.now();
@@ -1426,7 +1597,32 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let hasInitializedTargetPos = false;
     const warpStartCameraPos = new THREE.Vector3();
     let wasWarpingLastFrame = false;
-    let prevAnimateScaleMode: ScaleMode = stateRef.current.scaleMode;
+    let lastScaleReadout = '';
+    let lastDrawnSatTrackId: string | null = null;
+    let lastDrawnSatArrayRef: PropagatedSatellite[] | null = null;
+    let lastAdaptiveNear = camera.near;
+
+    // Pre-allocated body positions & pooled math temps (eliminates per-frame GC stutters on mobile!)
+    const bodyWorldPositions: Record<string, THREE.Vector3> = {};
+    ALL_CELESTIAL_BODIES.forEach((b) => {
+      bodyWorldPositions[b.id] = new THREE.Vector3();
+    });
+
+    const _sunViewPos = new THREE.Vector3();
+    const _planetViewPos = new THREE.Vector3();
+    const _originVec = new THREE.Vector3(0, 0, 0);
+    const _worldUp = new THREE.Vector3(0, 1, 0);
+    const _zAxis = new THREE.Vector3(0, 0, 1);
+    const _tmpV1 = new THREE.Vector3();
+    const _tmpV2 = new THREE.Vector3();
+    const _tmpV3 = new THREE.Vector3();
+    const _tmpV4 = new THREE.Vector3();
+    const _tmpV5 = new THREE.Vector3();
+    const _tmpV6 = new THREE.Vector3();
+    const _tmpMat4 = new THREE.Matrix4();
+    const _tmpQuat1 = new THREE.Quaternion();
+    const _tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const _projVec = new THREE.Vector3();
 
     const animate = (now: number) => {
       animationFrameId = requestAnimationFrame(animate);
@@ -1437,15 +1633,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       const st = stateRef.current;
       const cb = callbacksRef.current;
 
-      // Advance simulation time smoothly
+      // Advance simulation time smoothly (sync UI at ~1Hz outside active flight/warp to avoid mobile React stalls)
       if (!st.isPaused) {
         if (st.timeSpeedDaysPerSec === 0) {
-          // Real-time mode (1s = 1s): planets and satellites move at true real-time speed!
           internalSimTimeRef.current += dt * 1000;
         } else {
           internalSimTimeRef.current += st.timeSpeedDaysPerSec * 86_400_000 * dt;
         }
-        if (now - lastSimSyncTimestamp > 500) {
+        if (
+          now - lastSimSyncTimestamp > 1000 &&
+          !st.spacecraftControl.isActive &&
+          !st.warpState.isActive
+        ) {
           lastSimSyncTimestamp = now;
           cb.onSyncSimulationTime(internalSimTimeRef.current);
         }
@@ -1465,35 +1664,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         ? 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, 220, 620)
         : 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, galThresholds.fadeStart * 1.05, galThresholds.fadeEnd * 1.15);
 
-      // Keep 360° Deep Space Skybox & 45,000-star sphere centered on camera for infinite parallax depth
+      // Keep 360° Deep Space Skybox & star sphere centered on camera for infinite parallax depth
       starGroup.position.copy(camera.position);
-      skyboxMat.uniforms.uTime.value = clockTime;
       skyboxMat.uniforms.uMacroGalaxyFade.value = macroGalaxyFade;
       starMaterial.uniforms.uTime.value = clockTime;
 
-      if (beltScaleBuilt !== st.scaleMode) {
-        rebuildBeltsForScaleMode(st.scaleMode);
-      }
       beltGroup.visible = st.showAsteroidBelt && solarSystemMacroFade > 0.04;
-      mainAsteroidBelt.rotation.y = clockTime * 0.003;
-
-      const bodyWorldPositions: Record<string, THREE.Vector3> = {};
+      if (beltGroup.visible) {
+        mainAsteroidBelt.rotation.y = clockTime * 0.003;
+      }
 
       ALL_CELESTIAL_BODIES.forEach((body) => {
         const node = bodyNodes[body.id];
         if (!node) return;
 
-        if (node.orbitScaleModeBuilt !== st.scaleMode) {
-          const newOrbitPts = generateKeplerianOrbitCurvePoints(body, st.scaleMode, 180).map(
-            ([x, y, z]) => new THREE.Vector3(x, y, z)
-          );
-          node.orbitLine.geometry.setFromPoints(newOrbitPts);
-          node.orbitScaleModeBuilt = st.scaleMode;
-        }
-
         const [x, y, z] = computeKeplerianPosition3D(body, currentSimTimeMs, st.scaleMode);
         node.rootGroup.position.set(x, y, z);
-        bodyWorldPositions[body.id] = node.rootGroup.position.clone();
+        bodyWorldPositions[body.id].set(x, y, z);
 
         if (body.category === 'moon' && body.parentId && bodyWorldPositions[body.parentId]) {
           node.orbitLine.position.copy(bodyWorldPositions[body.parentId]);
@@ -1502,15 +1689,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             solarSystemMacroFade > 0.02 &&
             (st.selectedBodyId === body.parentId || st.selectedBodyId === body.id);
           node.orbitLine.visible = showMoonOrbit;
-          (node.orbitLine.material as THREE.LineBasicMaterial).opacity = 0.32 * solarSystemMacroFade;
+          if (showMoonOrbit) {
+            (node.orbitLine.material as THREE.LineBasicMaterial).opacity = 0.32 * solarSystemMacroFade;
+          }
         } else {
           node.orbitLine.position.set(0, 0, 0);
-          node.orbitLine.visible =
+          const showBodyOrbit =
             st.showOrbits &&
             solarSystemMacroFade > 0.02 &&
             body.id !== 'sun' &&
             body.category !== 'galaxy';
-          (node.orbitLine.material as THREE.LineBasicMaterial).opacity = 0.36 * solarSystemMacroFade;
+          node.orbitLine.visible = showBodyOrbit;
+          if (showBodyOrbit) {
+            (node.orbitLine.material as THREE.LineBasicMaterial).opacity = 0.36 * solarSystemMacroFade;
+          }
         }
 
         const radius = getScaledRadius(body, st.scaleMode);
@@ -1540,10 +1732,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           node.spinMesh.rotation.y = -0.35;
         }
 
-        // Update shaders & multi-scale visibility safely
+        // Update shaders & distance-aware visibility cleanly (saves dozens of distant draw calls on mobile)
         if (body.category === 'galaxy') {
           if (node.galaxyVolumetricGroup) {
-            // Keep Milky Way orientation fixed so its Orion Arm Solar System landmark coincides with (0,0,0)!
             if (body.id !== 'milky-way') {
               node.galaxyVolumetricGroup.rotation.y = clockTime * 0.006;
             }
@@ -1552,56 +1743,73 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           node.rootGroup.visible = macroGalaxyFade > 0.004;
         } else if (body.id === 'sun') {
           node.rootGroup.visible = isSelected || distFromOrigin < galThresholds.fadeEnd * 2.5;
-          node.surfaceMaterial.uniforms.uTime.value = clockTime;
-          if (node.atmosphereMesh) {
-            (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = clockTime;
-          }
-          if (node.solarProminenceMat) {
-            node.solarProminenceMat.uniforms.uTime.value = clockTime;
-          }
-          if (node.solarStormParticles) {
-            node.solarStormParticles.rotation.y = clockTime * 0.025;
-            node.solarStormParticles.rotation.z = Math.sin(clockTime * 0.2) * 0.05;
+          if (node.rootGroup.visible) {
+            node.surfaceMaterial.uniforms.uTime.value = clockTime;
+            if (node.atmosphereMesh) {
+              (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = clockTime;
+            }
+            if (node.solarProminenceMat) {
+              node.solarProminenceMat.uniforms.uTime.value = clockTime;
+            }
+            if (node.solarStormParticles) {
+              node.solarStormParticles.rotation.y = clockTime * 0.025;
+              node.solarStormParticles.rotation.z = Math.sin(clockTime * 0.2) * 0.05;
+            }
           }
         } else {
-          node.rootGroup.visible = isSelected || solarSystemMacroFade > 0.01;
-          node.surfaceMaterial.uniforms.uTime.value = clockTime;
-          node.surfaceMaterial.uniforms.uSunPosition.value.set(0, 0, 0);
-          if (node.surfaceMaterial.uniforms.uVenusRadarMode) {
-            node.surfaceMaterial.uniforms.uVenusRadarMode.value =
-              body.id === 'venus' && st.venusRadarMode ? 1.0 : 0.0;
+          let isVisible = isSelected || solarSystemMacroFade > 0.01;
+          if (isVisible && body.category === 'moon' && body.parentId && bodyWorldPositions[body.parentId]) {
+            const moonOrbitU = body.orbit.semiMajorAxisAU * 149.59787;
+            const camDistToParent = camera.position.distanceTo(bodyWorldPositions[body.parentId]);
+            isVisible =
+              isSelected ||
+              st.selectedBodyId === body.parentId ||
+              camDistToParent < Math.max(1.5, moonOrbitU * 16);
           }
-          if (node.surfaceMaterial.uniforms.uCutawayEnabled) {
-            node.surfaceMaterial.uniforms.uCutawayEnabled.value = isCutaway ? 1.0 : 0.0;
+          node.rootGroup.visible = isVisible;
+
+          if (isVisible) {
+            node.surfaceMaterial.uniforms.uTime.value = clockTime;
+            if (node.surfaceMaterial.uniforms.uVenusRadarMode) {
+              node.surfaceMaterial.uniforms.uVenusRadarMode.value =
+                body.id === 'venus' && st.venusRadarMode ? 1.0 : 0.0;
+            }
+            if (node.surfaceMaterial.uniforms.uCutawayEnabled) {
+              node.surfaceMaterial.uniforms.uCutawayEnabled.value = isCutaway ? 1.0 : 0.0;
+            }
           }
-          if (
-            node.atmosphereMesh &&
-            (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms?.uSunPosition
-          ) {
-            (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uSunPosition.value.set(
-              0,
-              0,
-              0
-            );
-          }
+        }
+
+        if (node.ceresAsteroidCluster && node.rootGroup.visible) {
+          const camDistCeres = camera.position.distanceTo(node.rootGroup.position);
+          node.ceresAsteroidCluster.visible =
+            st.selectedBodyId === 'ceres' || camDistCeres < Math.max(0.25, radius * 45);
+        }
+
+        if (node.enceladusPlumePoints && node.rootGroup.visible) {
+          const camDistEnc = camera.position.distanceTo(node.rootGroup.position);
+          node.enceladusPlumePoints.visible =
+            st.selectedBodyId === 'enceladus' || st.selectedBodyId === 'saturn' || camDistEnc < radius * 28;
         }
 
         node.interiorCutawayGroup.visible = isCutaway;
 
-        // Saturn special rings shader and 4,200 sculpted 3D asteroid & ice boulders
-        if (body.id === 'saturn') {
+        // Saturn special rings & sculpted 3D boulder distance culling
+        if (body.id === 'saturn' && node.rootGroup.visible) {
           if (node.saturnRingShaderMat) {
-            node.saturnRingShaderMat.uniforms.uSunPosition.value.set(0, 0, 0);
             node.saturnRingShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
             node.saturnRingShaderMat.uniforms.uPlanetRadius.value = radius;
             node.saturnRingShaderMat.uniforms.uInnerRadius.value = 1.18;
             node.saturnRingShaderMat.uniforms.uOuterRadius.value = 2.42;
           }
-          saturnBoulderShaderMat.uniforms.uSunPosition.value.set(0, 0, 0);
           saturnBoulderShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
           saturnBoulderShaderMat.uniforms.uPlanetRadius.value = radius;
           if (node.saturnBouldersGroup) {
-            node.saturnBouldersGroup.rotation.y = clockTime * 0.028;
+            const camDistSaturn = camera.position.distanceTo(node.rootGroup.position);
+            node.saturnBouldersGroup.visible = camDistSaturn < Math.max(0.5, radius * 28);
+            if (node.saturnBouldersGroup.visible) {
+              node.saturnBouldersGroup.rotation.y = clockTime * 0.028;
+            }
           }
         }
       });
@@ -1612,15 +1820,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         SPACE_MISSIONS.forEach((m) => {
           const mEntry = missionLines[m.id];
           if (!mEntry) return;
-          if (mEntry.scaleBuilt !== st.scaleMode) {
-            const pts = getMissionTrajectoryScenePoints(m, st.scaleMode).map(
-              ([x, y, z]) => new THREE.Vector3(x, y, z)
-            );
-            const curve = new THREE.CatmullRomCurve3(pts);
-            mEntry.line.geometry.setFromPoints(curve.getPoints(90));
-            mEntry.line.computeLineDistances();
-            mEntry.scaleBuilt = st.scaleMode;
-          }
           mEntry.line.visible =
             st.showMissionTrajectories || st.activeMissionId === m.id;
           (mEntry.line.material as THREE.LineDashedMaterial).opacity =
@@ -1628,7 +1827,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
       }
 
-      // Position Earth Satellites 3D Spacecraft Models (Without Criss-Crossing Wire Clutter!)
+      // Position Earth Satellites 3D Spacecraft Models (True 1:1 Altitudes & Cached Orbit Track)
       const earthPos = bodyWorldPositions['earth'];
       if (earthPos) {
         satelliteGroup.position.copy(earthPos);
@@ -1647,12 +1846,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             }
             const catVisible = !!st.enabledSatelliteCategories[sat.category];
             model.visible = catVisible;
-            model.position.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]);
-            model.lookAt(earthPos);
-            const isSelSat = sat.id === st.selectedSatelliteId;
-            model.scale.setScalar((isSelSat ? 1.45 : 0.92) * satRadiusScale);
+            if (catVisible) {
+              model.position.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]);
+              model.lookAt(earthPos);
+              const isSelSat = sat.id === st.selectedSatelliteId;
+              model.scale.setScalar((isSelSat ? 1.15 : 0.72) * satRadiusScale);
+            }
 
-            // Hide simultaneous background orbit rings so Earth's 4K globe stays crystal-clear
             const faintOrbit = satFaintOrbitMap[sat.id];
             if (faintOrbit) {
               faintOrbit.visible = false;
@@ -1663,11 +1863,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             (s) => s.id === st.selectedSatelliteId
           );
           if (selectedSat && selectedSat.orbitTrack3D.length > 1) {
-            const trackVectors = selectedSat.orbitTrack3D.map(
-              ([x, y, z]) => new THREE.Vector3(x, y, z)
-            );
-            activeSatelliteOrbitLine.geometry.setFromPoints(trackVectors);
-            activeSatelliteOrbitLineMat.color.set(selectedSat.colorHex);
+            if (
+              lastDrawnSatTrackId !== selectedSat.id ||
+              lastDrawnSatArrayRef !== st.propagatedSatellites
+            ) {
+              const trackVectors = selectedSat.orbitTrack3D.map(
+                ([tx, ty, tz]) => new THREE.Vector3(tx, ty, tz)
+              );
+              activeSatelliteOrbitLine.geometry.setFromPoints(trackVectors);
+              activeSatelliteOrbitLineMat.color.set(selectedSat.colorHex);
+              lastDrawnSatTrackId = selectedSat.id;
+              lastDrawnSatArrayRef = st.propagatedSatellites;
+            }
             activeSatelliteOrbitLine.visible = true;
           } else {
             activeSatelliteOrbitLine.visible = false;
@@ -1677,7 +1884,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       // CINEMATIC INTERPLANETARY WARP FLIGHT OR NORMAL CAMERA TRACKING
       const selectedBody = getCelestialBody(st.selectedBodyId);
-      const targetPos = bodyWorldPositions[selectedBody.id] || new THREE.Vector3(0, 0, 0);
+      const targetPos = bodyWorldPositions[selectedBody.id] || _originVec;
       const targetRadius = getScaledRadius(selectedBody, st.scaleMode);
 
       if (st.warpState.isActive) {
@@ -1690,8 +1897,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           wasWarpingLastFrame = true;
         }
 
-        const destPos =
-          bodyWorldPositions[st.warpState.targetId] || new THREE.Vector3(0, 0, 0);
+        const destPos = bodyWorldPositions[st.warpState.targetId] || _originVec;
         const destBody = getCelestialBody(st.warpState.targetId);
         const destRadius = getScaledRadius(destBody, st.scaleMode);
 
@@ -1706,13 +1912,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         // Final orbital camera position on the sunlit hemisphere of the destination planet!
         const arrivalOffsetDir = computeSunlitCameraOffsetDir(destPos, destBody.id);
         const mult = destBody.id === 'sun' ? 4.6 : 3.25;
-        const goalCamPos = destPos.clone().addScaledVector(arrivalOffsetDir, destRadius * mult);
+        const goalCamPos = _tmpV1.copy(destPos).addScaledVector(arrivalOffsetDir, destRadius * mult);
 
         // Interpolate camera directly from actual starting camera position to goalCamPos
         camera.position.lerpVectors(warpStartCameraPos, goalCamPos, smoothEase);
 
         // Smoothly pan lookAt target toward destination planet
-        const lookAtTarget = new THREE.Vector3().lerpVectors(
+        const lookAtTarget = _tmpV2.lerpVectors(
           controls.target,
           destPos,
           Math.min(1.0, smoothEase * 1.35)
@@ -1781,23 +1987,19 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       } else if (st.spacecraftControl.isActive) {
         wasWarpingLastFrame = false;
         const sc = st.spacecraftControl;
-        const baseShipScale =
-          st.scaleMode === 'TRUE_1_TO_1'
-            ? THREE.MathUtils.clamp(targetRadius * 0.28, 0.0014, 0.34)
-            : 0.34;
+        const baseShipScale = THREE.MathUtils.clamp(targetRadius * 0.28, 0.00005, 0.34);
         sr7.rootGroup.scale.setScalar(baseShipScale);
-        const shipScaleSwitched = prevAnimateScaleMode !== st.scaleMode;
 
         // Keep rim lighting subtle and dynamic so PBR metallic bevels gleam cleanly anywhere in deep space
         shipRimLight.visible = true;
+        _tmpV2.set(0.45, 0.85, 0.35);
         shipRimLight.position
           .copy(sr7.rootGroup.position)
-          .addScaledVector(new THREE.Vector3(0.45, 0.85, 0.35), baseShipScale * 24);
+          .addScaledVector(_tmpV2, baseShipScale * 24);
         shipRimLight.target.position.copy(sr7.rootGroup.position);
         shipRimLight.target.updateMatrixWorld();
 
-        if (!wasSpacecraftActive || shipScaleSwitched) {
-          prevAnimateScaleMode = st.scaleMode;
+        if (!wasSpacecraftActive) {
           const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
           const spawnDist =
             selectedBody.category === 'galaxy'
@@ -1817,9 +2019,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           lastFirePulseCount = sc.firePulseCount;
           if (sc.cameraView === 'EXTERNAL') {
             sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
-            const chasePos = new THREE.Vector3();
-            sr7.chaseCameraAnchor.getWorldPosition(chasePos);
-            camera.position.copy(chasePos);
+            sr7.chaseCameraAnchor.getWorldPosition(_tmpV2);
+            camera.position.copy(_tmpV2);
             controls.target.copy(sr7.rootGroup.position);
           }
         }
@@ -1935,16 +2136,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               cb.onSelectBody(autoTargetId, false);
             }
           } else {
-            const lookMat = new THREE.Matrix4().lookAt(
-              sr7.rootGroup.position,
-              autoPos,
-              new THREE.Vector3(0, 1, 0)
-            );
-            const desiredQuat = new THREE.Quaternion().setFromRotationMatrix(lookMat);
-            const alignAngle = sr7.rootGroup.quaternion.angleTo(desiredQuat);
+            _tmpMat4.lookAt(sr7.rootGroup.position, autoPos, _worldUp);
+            _tmpQuat1.setFromRotationMatrix(_tmpMat4);
+            const alignAngle = sr7.rootGroup.quaternion.angleTo(_tmpQuat1);
 
             if (Math.abs(pitchInput) < 0.08 && Math.abs(yawInput) < 0.08) {
-              sr7.rootGroup.quaternion.slerp(desiredQuat, Math.min(1, dt * 2.8));
+              sr7.rootGroup.quaternion.slerp(_tmpQuat1, Math.min(1, dt * 2.8));
             }
             autopilotStatus = alignAngle > 0.14 ? 'ALIGNING' : 'CRUISING';
             if (!sc.brakeRequested) {
@@ -1953,7 +2150,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        // 3. Adaptive Velocity Integration Across Solar & Galactic Scales
+        // 3. Adaptive Velocity Integration Across Real 1:1 Solar & Galactic Scales
         const boosting =
           sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight');
         boostBlend = THREE.MathUtils.lerp(boostBlend, boosting ? 1 : 0, Math.min(1, dt * 3.8));
@@ -1964,15 +2161,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const localHorizonRef = Math.max(targetRadius * 1.5, Math.min(distFromOrigin, shipDistToTarget));
         const adaptiveCruise = autoPos
           ? THREE.MathUtils.clamp(sr7.rootGroup.position.distanceTo(autoPos) * 0.55, baseShipScale * 4.0, 2800.0)
-          : st.scaleMode === 'TRUE_1_TO_1' && !boosting
+          : !boosting
             ? THREE.MathUtils.clamp(localHorizonRef * 0.9, baseShipScale * 4.5, 480.0)
             : THREE.MathUtils.clamp(Math.max(baseShipScale * 12.0, localHorizonRef * 0.65), baseShipScale * 12.0, 2800.0);
         const targetSpeed = effectiveThrottle * adaptiveCruise * THREE.MathUtils.lerp(1.0, 3.8, boostBlend);
-        const shipForward = new THREE.Vector3(0, 0, -1)
-          .applyQuaternion(sr7.rootGroup.quaternion)
-          .normalize();
+        const shipForward = _tmpV1.set(0, 0, -1).applyQuaternion(sr7.rootGroup.quaternion).normalize();
 
-        const desiredVel = shipForward.clone().multiplyScalar(targetSpeed);
+        const desiredVel = _tmpV2.copy(shipForward).multiplyScalar(targetSpeed);
         const dampRate = sc.brakeRequested
           ? dt * 4.8
           : sc.sasEnabled
@@ -1980,7 +2175,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             : dt * 0.72;
         shipVelocity.lerp(desiredVel, Math.min(1, dampRate));
 
-        const shipDisplacement = shipVelocity.clone().multiplyScalar(dt);
+        const shipDisplacement = _tmpV3.copy(shipVelocity).multiplyScalar(dt);
         sr7.rootGroup.position.add(shipDisplacement);
 
         // 4. High-Speed Boost Warp Streaks & Dynamic Panoramic FOV
@@ -1989,7 +2184,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         warpTunnelGroup.visible = showWarpStreaks;
         if (showWarpStreaks) {
           warpTunnelGroup.position.copy(sr7.rootGroup.position);
-          warpTunnelGroup.lookAt(sr7.rootGroup.position.clone().add(shipForward));
+          _tmpV4.copy(sr7.rootGroup.position).add(shipForward);
+          warpTunnelGroup.lookAt(_tmpV4);
           warpCylMat.uniforms.uTime.value = clockTime;
           warpCylMat.uniforms.uIntensity.value = 0.42 * boostBlend;
           warpLines.rotation.z = clockTime * 2.8;
@@ -2012,16 +2208,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           spaceAudio.playPlasmaPulse();
           const boltScaleRatio = baseShipScale / 0.34;
           const boltSpeed = Math.max(baseShipScale * 95, currentSpeed * 1.8 + baseShipScale * 90);
-          const boltVel = shipForward.clone().multiplyScalar(boltSpeed);
+          _tmpV4.copy(shipForward).multiplyScalar(boltSpeed);
           [-0.29, 0.29].forEach((sideX) => {
             const boltMesh = new THREE.Mesh(pulseBoltGeo, pulseBoltMat);
             boltMesh.scale.setScalar(boltScaleRatio);
-            const muzzleWorld = new THREE.Vector3(sideX, -0.32, -2.26);
-            sr7.rootGroup.localToWorld(muzzleWorld);
-            boltMesh.position.copy(muzzleWorld);
+            _tmpV5.set(sideX, -0.32, -2.26);
+            sr7.rootGroup.localToWorld(_tmpV5);
+            boltMesh.position.copy(_tmpV5);
             boltMesh.quaternion.copy(sr7.rootGroup.quaternion);
             projectileGroup.add(boltMesh);
-            activePulseBolts.push({ mesh: boltMesh, velocity: boltVel.clone(), age: 0 });
+            activePulseBolts.push({ mesh: boltMesh, velocity: _tmpV4.clone(), age: 0 });
           });
         }
         muzzleFlashAlpha = Math.max(0, muzzleFlashAlpha - dt * 7.5);
@@ -2040,19 +2236,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         if (sc.cameraView === 'COCKPIT') {
           controls.enabled = false;
           sr7.cockpitSeatAnchor.updateWorldMatrix(true, false);
-          const seatWorldPos = new THREE.Vector3();
-          sr7.cockpitSeatAnchor.getWorldPosition(seatWorldPos);
-          camera.position.copy(seatWorldPos);
+          sr7.cockpitSeatAnchor.getWorldPosition(_tmpV4);
+          camera.position.copy(_tmpV4);
           // Subtle natural inertial pilot head lean into high-G turns
-          const cockpitTilt = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(angVelPitch * -0.025, angVelYaw * -0.025, angVelRoll * -0.045, 'YXZ')
-          );
-          camera.quaternion.copy(sr7.rootGroup.quaternion).multiply(cockpitTilt);
-          controls.target.copy(seatWorldPos).addScaledVector(shipForward, 6.0);
+          _tmpEuler.set(angVelPitch * -0.025, angVelYaw * -0.025, angVelRoll * -0.045, 'YXZ');
+          _tmpQuat1.setFromEuler(_tmpEuler);
+          camera.quaternion.copy(sr7.rootGroup.quaternion).multiply(_tmpQuat1);
+          controls.target.copy(_tmpV4).addScaledVector(shipForward, 6.0);
         } else {
           controls.enabled = true;
-          controls.minDistance = Math.max(0.00012, baseShipScale * 2.15);
-          controls.maxDistance = st.scaleMode === 'TRUE_1_TO_1' ? 190000 : 38000;
+          controls.minDistance = Math.max(0.00008, baseShipScale * 2.15);
+          controls.maxDistance = 190000;
           const curRecenter = sc.recenterTrigger || 0;
           if (curRecenter !== prevRecenterTrigger) {
             prevRecenterTrigger = curRecenter;
@@ -2062,9 +2256,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
           if (prevCameraView !== 'EXTERNAL') {
             sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
-            const chaseWorld = new THREE.Vector3();
-            sr7.chaseCameraAnchor.getWorldPosition(chaseWorld);
-            camera.position.copy(chaseWorld);
+            sr7.chaseCameraAnchor.getWorldPosition(_tmpV4);
+            camera.position.copy(_tmpV4);
             controls.target.copy(sr7.rootGroup.position);
             lastManualOrbitTimestamp = 0;
           } else {
@@ -2078,20 +2271,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               Math.abs(angVelPitch) > 0.05 ||
               Math.abs(effectiveThrottle) > 0.08;
             if (!isCockpitDragging && (lastManualOrbitTimestamp === 0 || (secondsSinceManualOrbit > 2.6 && hasSteeringOrThrust))) {
-              const currentOffset = new THREE.Vector3().subVectors(camera.position, sr7.rootGroup.position);
+              const currentOffset = _tmpV4.subVectors(camera.position, sr7.rootGroup.position);
               const currentDist = Math.max(controls.minDistance, currentOffset.length());
               // Subtle cinematic side/up lag during sharp turns + warp boost zoom-out
-              const localChaseVec = new THREE.Vector3(
-                -angVelYaw * 0.55,
-                1.28 + angVelPitch * 0.45,
-                6.1 + boostBlend * 1.35
-              );
-              const desiredChaseDir = localChaseVec
+              _tmpV5
+                .set(-angVelYaw * 0.55, 1.28 + angVelPitch * 0.45, 6.1 + boostBlend * 1.35)
                 .applyQuaternion(sr7.rootGroup.quaternion)
                 .normalize();
-              const currentDir = currentOffset.clone().normalize();
+              const currentDir = _tmpV6.copy(currentOffset).normalize();
               const followLerp = Math.min(1, dt * (2.8 + Math.abs(angVelYaw) * 1.4));
-              currentDir.lerp(desiredChaseDir, followLerp).normalize();
+              currentDir.lerp(_tmpV5, followLerp).normalize();
               camera.position.copy(sr7.rootGroup.position).addScaledVector(currentDir, currentDist);
             }
           }
@@ -2128,32 +2317,29 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
 
         // 7. Compute Nearest Contacts & Ship-Relative Radar Bearings
-        const invShipQuat = sr7.rootGroup.quaternion.clone().invert();
+        _tmpQuat1.copy(sr7.rootGroup.quaternion).invert();
         const contactsUnsorted: NearbySpacecraftContact[] = [];
         ALL_CELESTIAL_BODIES.forEach((b) => {
           const bPos = bodyWorldPositions[b.id];
           if (!bPos) return;
           const dist = sr7.rootGroup.position.distanceTo(bPos);
-          const relLocal = bPos.clone().sub(sr7.rootGroup.position).applyQuaternion(invShipQuat);
+          const relLocal = _tmpV2.copy(bPos).sub(sr7.rootGroup.position).applyQuaternion(_tmpQuat1);
           const bearingDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.x, -relLocal.z));
           const horizDist = Math.max(0.001, Math.hypot(relLocal.x, relLocal.z));
           const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.y, horizDist));
 
-          const kmPerUnit = st.scaleMode === 'TRUE_1_TO_1' ? 1_000_000 : 12_500;
-          const km = dist * kmPerUnit;
+          const km = dist * 1_000_000;
           let distFormatted = '';
-          if (km < 5_000_000) {
-            distFormatted = `${Math.round(km).toLocaleString('pt-BR')} km`;
-          } else if (dist < 4200 && st.scaleMode === 'TRUE_1_TO_1') {
-            distFormatted = `${(dist / 149.59787).toFixed(2)} UA`;
-          } else if (dist < 420 && st.scaleMode !== 'TRUE_1_TO_1') {
-            distFormatted = `${(dist * 0.25).toFixed(2)} UA`;
-          } else {
-            const ly = dist * 42;
+          if (b.category === 'galaxy' || dist >= 90000) {
+            const ly = dist * 59.8;
             distFormatted =
               ly >= 1_000_000
                 ? `${(ly / 1_000_000).toFixed(2)} Mly`
                 : `${Math.round(ly).toLocaleString('pt-BR')} ly`;
+          } else if (km < 5_000_000) {
+            distFormatted = `${Math.round(km).toLocaleString('pt-BR')} km`;
+          } else {
+            distFormatted = `${(dist / 149.59787).toFixed(2)} UA`;
           }
 
           contactsUnsorted.push({
@@ -2172,8 +2358,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         let speedFormatted = '0 km/s';
         if (currentSpeed > baseShipScale * 0.06) {
-          const speedKmSec =
-            st.scaleMode === 'TRUE_1_TO_1' ? currentSpeed * 1_000_000 : currentSpeed * 1_850;
+          const speedKmSec = currentSpeed * 1_000_000;
           if (speedKmSec < 299_792) {
             speedFormatted = `${Math.round(speedKmSec).toLocaleString('pt-BR')} km/s`;
           } else if (speedKmSec < 299_792 * 180) {
@@ -2185,10 +2370,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         const radarAgeSec =
           sc.radarPulseTimestamp > 0 ? (now - sc.radarPulseTimestamp) / 1000 : 99;
-        const shipEuler = new THREE.Euler().setFromQuaternion(sr7.rootGroup.quaternion, 'YXZ');
-        const pitchDegVal = Math.round(THREE.MathUtils.radToDeg(shipEuler.x));
-        const yawDegVal = Math.round(THREE.MathUtils.radToDeg(shipEuler.y));
-        const rollDegVal = Math.round(THREE.MathUtils.radToDeg(shipEuler.z));
+        _tmpEuler.setFromQuaternion(sr7.rootGroup.quaternion, 'YXZ');
+        const pitchDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.x));
+        const yawDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.y));
+        const rollDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.z));
         const liveReactorTemp = Math.round(
           320 + Math.abs(effectiveThrottle) * 240 + boostBlend * 380
         );
@@ -2239,7 +2424,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const computedShipZoom: ZoomLevel =
           distFromOrigin > galThresholds.fadeEnd
             ? 'COSMIC_GALAXY'
-            : distFromOrigin > (st.scaleMode === 'TRUE_1_TO_1' ? 120 : 38)
+            : distFromOrigin > 120
               ? 'SOLAR_SYSTEM'
               : 'PLANETARY_APPROACH';
         if (computedShipZoom !== st.zoomLevel) {
@@ -2254,7 +2439,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
         controls.enabled = true;
         controls.minDistance =
-          selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.00008, targetRadius * 1.18);
+          selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.0000004, targetRadius * 1.18);
         wasWarpingLastFrame = false;
         warpTunnelGroup.visible = false;
         if (Math.abs(camera.fov - 46) > 0.1) {
@@ -2262,27 +2447,24 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.updateProjectionMatrix();
         }
 
-        const mwWorldPos =
-          bodyWorldPositions['milky-way'] || new THREE.Vector3(909.0, -21.6, -297.0);
+        const mwWorldPos = bodyWorldPositions['milky-way'] || _originVec;
         const isExternalGalaxy =
           selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
 
-        if (hasInitializedTargetPos && prevAnimateScaleMode === st.scaleMode) {
+        if (hasInitializedTargetPos) {
           if (selectedBody.category !== 'galaxy') {
-            const deltaTarget = new THREE.Vector3().subVectors(targetPos, previousTargetWorldPos);
+            _tmpV1.subVectors(targetPos, previousTargetWorldPos);
             const followWeight =
               1.0 - THREE.MathUtils.smoothstep(distFromOrigin, galThresholds.fadeStart * 1.8, galThresholds.fadeEnd * 2.2);
-            camera.position.addScaledVector(deltaTarget, followWeight);
-            controls.target.addScaledVector(deltaTarget, followWeight);
+            camera.position.addScaledVector(_tmpV1, followWeight);
+            controls.target.addScaledVector(_tmpV1, followWeight);
           }
         } else {
           controls.target.copy(targetPos);
           const initDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-          camera.position.copy(targetPos.clone().addScaledVector(initDir, Math.max(0.00015, targetRadius * 3.25)));
-        }
-        const scaleSwitchedObservatory = prevAnimateScaleMode !== st.scaleMode;
-        if (scaleSwitchedObservatory) {
-          prevAnimateScaleMode = st.scaleMode;
+          camera.position
+            .copy(targetPos)
+            .addScaledVector(initDir, Math.max(0.0000008, targetRadius * 3.25));
         }
         previousTargetWorldPos.copy(targetPos);
         hasInitializedTargetPos = true;
@@ -2295,39 +2477,47 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           // When zooming IN from Milky Way galactic scale, steer directly toward (0,0,0) [Sistema Solar in the Orion Arm]
           const zoomAnchor =
             !isExternalGalaxy && step > 0 && distFromOrigin > galThresholds.fadeStart
-              ? new THREE.Vector3(0, 0, 0)
+              ? _originVec
               : controls.target;
-          const offset = new THREE.Vector3().subVectors(camera.position, zoomAnchor);
+          const offset = _tmpV1.subVectors(camera.position, zoomAnchor);
           const factor = step > 0 ? 0.72 : 1.38;
           const minAllowed =
-            selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.00012, targetRadius * 1.24);
-          const maxLen = st.scaleMode === 'TRUE_1_TO_1' ? 190000 : 38000;
+            selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.0000004, targetRadius * 1.24);
+          const maxLen = 190000;
           const nextLen = THREE.MathUtils.clamp(offset.length() * factor, minAllowed, maxLen);
           offset.setLength(nextLen);
           camera.position.copy(zoomAnchor).add(offset);
           if (!isExternalGalaxy && step > 0 && distFromOrigin > galThresholds.fadeStart) {
-            controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.32);
+            controls.target.lerp(_originVec, 0.32);
           }
         }
 
         if (cameraCommandRef.current.activeTransition) {
           const mult = cameraCommandRef.current.desiredDistanceMultiplier;
-          const desiredDist = Math.max(0.00015, targetRadius * mult);
+          let desiredDist = Math.max(0.0000008, targetRadius * mult);
 
           let offsetDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
           if (selectedBody.id === 'milky-way') {
             // Cosmoscope-inspired oblique galactic vantage point framing the barred core, Orion Arm & halo clusters
-            offsetDir = new THREE.Vector3(-0.36, 0.66, 0.66).normalize();
+            offsetDir = _tmpV3.set(-0.36, 0.66, 0.66).normalize();
           } else if (selectedBody.category === 'galaxy') {
-            offsetDir = new THREE.Vector3(0.55, 0.52, 0.65).normalize();
+            offsetDir = _tmpV3.set(0.55, 0.52, 0.65).normalize();
           } else if (st.saturnRingDiveMode && st.selectedBodyId === 'saturn') {
-            offsetDir = new THREE.Vector3(0.92, 0.06, 0.38).normalize();
+            offsetDir = _tmpV3.set(0.92, 0.06, 0.38).normalize();
           } else if (st.selectedSatelliteId && st.selectedBodyId === 'earth') {
             const focusedSat = st.propagatedSatellites.find(
               (s) => s.id === st.selectedSatelliteId
             );
             if (focusedSat) {
-              offsetDir = new THREE.Vector3(...focusedSat.position3D).normalize();
+              const satRadiusU = Math.hypot(
+                focusedSat.position3D[0],
+                focusedSat.position3D[1],
+                focusedSat.position3D[2]
+              );
+              desiredDist = Math.max(desiredDist, satRadiusU + targetRadius * 0.55);
+              offsetDir = _tmpV3
+                .set(focusedSat.position3D[0], focusedSat.position3D[1], focusedSat.position3D[2])
+                .normalize();
             }
           } else if (cameraCommandRef.current.focusLatLon) {
             const node = bodyNodes[selectedBody.id];
@@ -2335,26 +2525,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             const latR = THREE.MathUtils.degToRad(cameraCommandRef.current.focusLatLon.lat);
             const lonR =
               THREE.MathUtils.degToRad(cameraCommandRef.current.focusLatLon.lon) + spinY;
-            offsetDir = new THREE.Vector3(
-              Math.cos(latR) * Math.cos(lonR),
-              Math.sin(latR),
-              -Math.cos(latR) * Math.sin(lonR)
-            ).normalize();
+            offsetDir = _tmpV3
+              .set(
+                Math.cos(latR) * Math.cos(lonR),
+                Math.sin(latR),
+                -Math.cos(latR) * Math.sin(lonR)
+              )
+              .normalize();
           } else if (st.isExploringInterior) {
-            offsetDir = new THREE.Vector3(0.62, 0.42, 0.66).normalize();
+            offsetDir = _tmpV3.set(0.62, 0.42, 0.66).normalize();
           }
 
-          const goalCamPos = targetPos.clone().addScaledVector(offsetDir, desiredDist);
-          if (scaleSwitchedObservatory) {
-            camera.position.copy(goalCamPos);
-            controls.target.copy(targetPos);
+          const goalCamPos = _tmpV2.copy(targetPos).addScaledVector(offsetDir, desiredDist);
+          camera.position.lerp(goalCamPos, 0.085);
+          controls.target.lerp(targetPos, 0.14);
+          if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.025) {
             cameraCommandRef.current.activeTransition = false;
-          } else {
-            camera.position.lerp(goalCamPos, 0.085);
-            controls.target.lerp(targetPos, 0.14);
-            if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.025) {
-              cameraCommandRef.current.activeTransition = false;
-            }
           }
         } else {
           // Continuous Multi-Scale Orbit Pivot Interpolation:
@@ -2364,13 +2550,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             controls.target.lerp(targetPos, 0.14);
           } else {
             const baseLocalTarget =
-              selectedBody.id === 'milky-way' ? new THREE.Vector3(0, 0, 0) : targetPos;
+              selectedBody.id === 'milky-way' ? _originVec : targetPos;
             const galacticCenterBlend = THREE.MathUtils.smoothstep(
               distFromOrigin,
               galThresholds.fadeStart * 2.0,
               galThresholds.fadeEnd * 4.0
             );
-            const desiredPivot = new THREE.Vector3().lerpVectors(
+            const desiredPivot = _tmpV1.lerpVectors(
               baseLocalTarget,
               mwWorldPos,
               galacticCenterBlend
@@ -2394,14 +2580,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         controls.update();
 
         const camDist = camera.position.distanceTo(controls.target);
-        const distInRadii = camDist / Math.max(0.00005, targetRadius);
+        const distInRadii = camDist / Math.max(0.0000002, targetRadius);
 
         let computedZoom: ZoomLevel = 'SOLAR_SYSTEM';
         if (distFromOrigin > galThresholds.fadeEnd || isExternalGalaxy || selectedBody.id === 'milky-way') {
           computedZoom = 'COSMIC_GALAXY';
         } else if (selectedBody.id === 'sun' && distInRadii > 8.5) {
           computedZoom = 'SOLAR_SYSTEM';
-        } else if (distInRadii > (st.scaleMode === 'TRUE_1_TO_1' ? 95.0 : 16.0)) {
+        } else if (distInRadii > 95.0) {
           computedZoom = 'SOLAR_SYSTEM';
         } else if (distInRadii > 4.8) {
           computedZoom = 'PLANETARY_APPROACH';
@@ -2416,9 +2602,48 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       }
 
+      // ADAPTIVE LOG-DEPTH NEAR PLANE + VIEW-SPACE SHADER LIGHTING SYNC (eliminates float32 outer-planet jitter!)
+      const activeCamDist = Math.max(0.0000004, camera.position.distanceTo(controls.target));
+      const targetNear = THREE.MathUtils.clamp(activeCamDist * 0.004, 1e-7, 0.02);
+      if (Math.abs(targetNear - lastAdaptiveNear) > lastAdaptiveNear * 0.2) {
+        lastAdaptiveNear = targetNear;
+        camera.near = targetNear;
+        camera.updateProjectionMatrix();
+      }
+
+      camera.updateMatrixWorld();
+      _sunViewPos.copy(_originVec).applyMatrix4(camera.matrixWorldInverse);
+      const saturnWorldPos = bodyWorldPositions['saturn'];
+      if (saturnWorldPos) {
+        _planetViewPos.copy(saturnWorldPos).applyMatrix4(camera.matrixWorldInverse);
+      }
+
+      asteroidBeltShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+      kuiperBeltShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+      saturnBoulderShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+      saturnBoulderShaderMat.uniforms.uPlanetViewPosition.value.copy(_planetViewPos);
+
+      ALL_CELESTIAL_BODIES.forEach((b) => {
+        const node = bodyNodes[b.id];
+        if (!node || !node.rootGroup.visible) return;
+        if (node.surfaceMaterial.uniforms.uSunViewPosition) {
+          node.surfaceMaterial.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+        }
+        if (node.atmosphereMesh) {
+          const atmoMat = node.atmosphereMesh.material as THREE.ShaderMaterial;
+          if (atmoMat.uniforms.uSunViewPosition) {
+            atmoMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+          }
+        }
+        if (node.saturnRingShaderMat) {
+          node.saturnRingShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+          node.saturnRingShaderMat.uniforms.uPlanetViewPosition.value.copy(_planetViewPos);
+        }
+      });
+
       // PROJECT CLEAN, DECLUTTERED 3D LABELS & LIVE SCALE READOUT TO 2D OVERLAY
       labelFrameCounter++;
-      if (labelFrameCounter % 3 === 0 && !st.warpState.isActive) {
+      if (labelFrameCounter % perf.labelUpdateIntervalFrames === 0 && !st.warpState.isActive) {
         const width = container.clientWidth;
         const height = container.clientHeight;
         const nextLabels: ScreenLabel[] = [];
@@ -2431,7 +2656,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           distFromOrigin > galThresholds.fadeStart * 1.45;
 
         // Calculate real-time vertical field-of-view scale (Cosmoscope-style "↕ 157.377 ly" / "UA" / "km")
-        const activeCamDist = Math.max(0.00005, camera.position.distanceTo(controls.target));
         const fovSpanUnits =
           2.0 * activeCamDist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
         let formattedScale = '';
@@ -2450,32 +2674,26 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             })} ly`;
           }
         } else if (st.zoomLevel === 'SOLAR_SYSTEM') {
-          const spanAU =
-            st.scaleMode === 'TRUE_1_TO_1'
-              ? Math.max(0.01, fovSpanUnits / 149.59787)
-              : st.scaleMode === 'PROPORTIONAL_DISTANCES'
-                ? Math.max(0.05, fovSpanUnits / 18.0)
-                : Math.max(0.1, fovSpanUnits * 0.34);
+          const spanAU = Math.max(0.01, fovSpanUnits / 149.59787);
           formattedScale = `${spanAU.toLocaleString('pt-BR', {
             minimumFractionDigits: spanAU < 1 ? 2 : 1,
             maximumFractionDigits: spanAU < 1 ? 2 : 1,
           })} UA`;
         } else {
-          const bodyKmPerUnit =
-            st.scaleMode === 'TRUE_1_TO_1'
-              ? 1_000_000
-              : selectedBody.meanRadiusKm / Math.max(0.00005, targetRadius);
-          const spanKm = Math.max(50, Math.round(fovSpanUnits * bodyKmPerUnit));
+          const spanKm = Math.max(1, Math.round(fovSpanUnits * 1_000_000));
           formattedScale = `${spanKm.toLocaleString('pt-BR')} km`;
         }
-        setScaleReadout(formattedScale);
+        if (formattedScale !== lastScaleReadout) {
+          lastScaleReadout = formattedScale;
+          setScaleReadout(formattedScale);
+        }
 
         const projectPoint = (worldVec: THREE.Vector3) => {
-          const cloned = worldVec.clone().project(camera);
-          const visible = cloned.z >= -1 && cloned.z <= 1;
+          _projVec.copy(worldVec).project(camera);
+          const visible = _projVec.z >= -1 && _projVec.z <= 1;
           return {
-            x: (cloned.x * 0.5 + 0.5) * width,
-            y: (-(cloned.y * 0.5) + 0.5) * height,
+            x: (_projVec.x * 0.5 + 0.5) * width,
+            y: (-(_projVec.y * 0.5) + 0.5) * height,
             visible,
           };
         };
@@ -2483,16 +2701,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         if (st.showLabels) {
           if (isGalacticScaleView) {
             // AT GALACTIC SCALE: Show Clean Cosmoscope-Style Galaxy Titles & 3D Milky Way Landmarks!
-            // Never clutter Galactic Scale with individual planet labels (they reside inside "Sistema Solar" at (0,0,0)).
             ALL_CELESTIAL_BODIES.forEach((b) => {
               if (b.category !== 'galaxy') return;
               const wPos = bodyWorldPositions[b.id];
               if (!wPos) return;
-              const labelWorld =
-                b.id === 'milky-way'
-                  ? wPos.clone().add(new THREE.Vector3(0, 65, 0))
-                  : wPos.clone().add(new THREE.Vector3(0, getScaledRadius(b, st.scaleMode) * 0.55, 0));
-              const proj = projectPoint(labelWorld);
+              _tmpV1
+                .copy(wPos)
+                .add(
+                  _tmpV2.set(0, b.id === 'milky-way' ? 65 : getScaledRadius(b, st.scaleMode) * 0.55, 0)
+                );
+              const proj = projectPoint(_tmpV1);
               if (
                 proj.visible &&
                 proj.x > 24 &&
@@ -2514,14 +2732,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             });
 
             if (!isExternalGalaxy && distFromOrigin < 9500) {
-              const mwPos =
-                bodyWorldPositions['milky-way'] || new THREE.Vector3(909.0, -21.6, -297.0);
+              const mwPos = bodyWorldPositions['milky-way'] || _originVec;
               const mwRadius = getScaledRadius(getCelestialBody('milky-way'), st.scaleMode);
 
               MILKY_WAY_LANDMARKS.forEach((lm) => {
-                const localVec = new THREE.Vector3(...lm.position3D).multiplyScalar(mwRadius);
-                const lmWorld = mwPos.clone().add(localVec);
-                const proj = projectPoint(lmWorld);
+                _tmpV2.set(lm.position3D[0], lm.position3D[1], lm.position3D[2]).multiplyScalar(mwRadius);
+                _tmpV1.copy(mwPos).add(_tmpV2);
+                const proj = projectPoint(_tmpV1);
                 if (
                   proj.visible &&
                   proj.x > 20 &&
@@ -2545,7 +2762,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             }
           } else {
             // INSIDE SOLAR SYSTEM SCALE: Show Planets, Dwarf Planets, Moons, Asteroids & Comets.
-            // NEVER show macroscopic galaxy labels inside the Solar System!
             ALL_CELESTIAL_BODIES.forEach((b) => {
               if (b.category === 'galaxy') return;
               const wPos = bodyWorldPositions[b.id];
@@ -2570,8 +2786,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               }
 
               const bRadius = getScaledRadius(b, st.scaleMode);
-              const labelWorld = wPos.clone().add(new THREE.Vector3(0, bRadius * 1.28, 0));
-              const proj = projectPoint(labelWorld);
+              _tmpV1.copy(wPos).add(_tmpV2.set(0, bRadius * 1.28, 0));
+              const proj = projectPoint(_tmpV1);
               if (
                 proj.visible &&
                 proj.x > 24 &&
@@ -2605,10 +2821,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             st.zoomLevel === 'SURFACE_EXPLORATION')
         ) {
           const earthCenterScreen = projectPoint(earthPos);
-          const camUpEdge = earthPos
-            .clone()
-            .add(new THREE.Vector3(0, targetRadius * 1.05, 0));
-          const edgeScreen = projectPoint(camUpEdge);
+          _tmpV1.copy(earthPos).add(_tmpV2.set(0, targetRadius * 1.05, 0));
+          const edgeScreen = projectPoint(_tmpV1);
           const planetScreenRadius = Math.hypot(
             edgeScreen.x - earthCenterScreen.x,
             edgeScreen.y - earthCenterScreen.y
@@ -2620,10 +2834,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             const isSelSat = sat.id === st.selectedSatelliteId;
             if (!isSelSat && shownSatCount >= 4) return;
 
-            const satWorld = earthPos
-              .clone()
-              .add(new THREE.Vector3(sat.position3D[0], sat.position3D[1], sat.position3D[2]));
-            const proj = projectPoint(satWorld);
+            _tmpV1
+              .copy(earthPos)
+              .add(_tmpV2.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]));
+            const proj = projectPoint(_tmpV1);
             const distFromEarthCenter = Math.hypot(
               proj.x - earthCenterScreen.x,
               proj.y - earthCenterScreen.y
@@ -2663,22 +2877,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const activeNode = bodyNodes[selectedBody.id];
           if (activeNode && selectedBody.landmarks.length > 0) {
             const spinY = activeNode.spinMesh.rotation.y;
+            const tiltRad = THREE.MathUtils.degToRad(selectedBody.axialTiltDeg);
+            const toCam = _tmpV3.subVectors(camera.position, targetPos).normalize();
             selectedBody.landmarks.forEach((lm) => {
               const latR = THREE.MathUtils.degToRad(lm.latitudeDeg);
               const lonR = THREE.MathUtils.degToRad(lm.longitudeDeg) + spinY;
-              const localDir = new THREE.Vector3(
-                Math.cos(latR) * Math.cos(lonR),
-                Math.sin(latR),
-                -Math.cos(latR) * Math.sin(lonR)
-              );
-              localDir.applyAxisAngle(
-                new THREE.Vector3(0, 0, 1),
-                THREE.MathUtils.degToRad(selectedBody.axialTiltDeg)
-              );
-              const toCam = new THREE.Vector3().subVectors(camera.position, targetPos).normalize();
-              if (localDir.dot(toCam) > 0.35) {
-                const lmWorld = targetPos.clone().addScaledVector(localDir, targetRadius * 1.03);
-                const proj = projectPoint(lmWorld);
+              _tmpV2
+                .set(
+                  Math.cos(latR) * Math.cos(lonR),
+                  Math.sin(latR),
+                  -Math.cos(latR) * Math.sin(lonR)
+                )
+                .applyAxisAngle(_zAxis, tiltRad);
+              if (_tmpV2.dot(toCam) > 0.35) {
+                _tmpV1.copy(targetPos).addScaledVector(_tmpV2, targetRadius * 1.03);
+                const proj = projectPoint(_tmpV1);
                 if (proj.visible) {
                   nextLabels.push({
                     id: `lbl-lm-${lm.id}`,
@@ -2702,9 +2915,139 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       renderer.render(scene, camera);
     };
 
+    const finalizeSceneBoot = () => {
+      if (isDisposed || bootCompleted) return;
+      bootCompleted = true;
+      window.clearTimeout(bootTimeoutId);
+
+      emitBootProgress({
+        progress: 88,
+        stage: 'Compilando shaders 3D, Via Láctea e SR-7...',
+        detail: 'Pré-aquecendo pipeline GPU WebGL',
+        loadedTextures: settledTexCount,
+        totalTextures: totalTexCount,
+        ready: false,
+      });
+
+      const simNow = internalSimTimeRef.current;
+      ALL_CELESTIAL_BODIES.forEach((b) => {
+        const node = bodyNodes[b.id];
+        if (!node) return;
+        const [bx, by, bz] = computeKeplerianPosition3D(b, simNow, 'TRUE_1_TO_1');
+        node.rootGroup.position.set(bx, by, bz);
+        bodyWorldPositions[b.id].set(bx, by, bz);
+        node.tiltGroup.scale.setScalar(getScaledRadius(b, 'TRUE_1_TO_1'));
+        node.rootGroup.visible = true;
+        if (node.galaxyVolumetricGroup) {
+          setGalaxyGroupOpacity(node.galaxyVolumetricGroup, 1.0);
+        }
+      });
+
+      const initialTargetBody = getCelestialBody(stateRef.current.selectedBodyId);
+      const initialPos = bodyWorldPositions[initialTargetBody.id] || _originVec;
+      const initialRadius = getScaledRadius(initialTargetBody, 'TRUE_1_TO_1');
+      const initDir = computeSunlitCameraOffsetDir(initialPos, initialTargetBody.id);
+      if (!hasInitializedTargetPos) {
+        controls.target.copy(initialPos);
+        camera.position
+          .copy(initialPos)
+          .addScaledVector(initDir, Math.max(0.0000008, initialRadius * 3.25));
+        previousTargetWorldPos.copy(initialPos);
+        hasInitializedTargetPos = true;
+      }
+      controls.update();
+      camera.updateMatrixWorld();
+
+      _sunViewPos.copy(_originVec).applyMatrix4(camera.matrixWorldInverse);
+      const satWorldInit = bodyWorldPositions['saturn'];
+      if (satWorldInit) {
+        _planetViewPos.copy(satWorldInit).applyMatrix4(camera.matrixWorldInverse);
+      }
+      asteroidBeltShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+      kuiperBeltShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+      saturnBoulderShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+      saturnBoulderShaderMat.uniforms.uPlanetViewPosition.value.copy(_planetViewPos);
+      ALL_CELESTIAL_BODIES.forEach((b) => {
+        const node = bodyNodes[b.id];
+        if (!node) return;
+        if (node.surfaceMaterial.uniforms.uSunViewPosition) {
+          node.surfaceMaterial.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+        }
+        if (node.atmosphereMesh) {
+          const atmoMat = node.atmosphereMesh.material as THREE.ShaderMaterial;
+          if (atmoMat.uniforms.uSunViewPosition) {
+            atmoMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+          }
+        }
+        if (node.saturnRingShaderMat) {
+          node.saturnRingShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
+          node.saturnRingShaderMat.uniforms.uPlanetViewPosition.value.copy(_planetViewPos);
+        }
+      });
+
+      const prevSr7Vis = sr7.rootGroup.visible;
+      const prevBeltVis = beltGroup.visible;
+      const prevSatVis = satelliteGroup.visible;
+      sr7.rootGroup.visible = true;
+      sr7.rootGroup.position.copy(initialPos);
+      beltGroup.visible = true;
+      satelliteGroup.visible = true;
+
+      renderer.compile(scene, camera);
+
+      sr7.rootGroup.visible = prevSr7Vis;
+      beltGroup.visible = prevBeltVis;
+      satelliteGroup.visible = prevSatVis;
+
+      emitBootProgress({
+        progress: 96,
+        stage: 'Sincronizando órbitas 1:1 e telemetria SGP4...',
+        detail: 'Finalizando primeiro quadro 3D',
+        loadedTextures: totalTexCount,
+        totalTextures: totalTexCount,
+        ready: false,
+      });
+
+      const fontsPromise =
+        typeof document !== 'undefined' && 'fonts' in document
+          ? Promise.race([
+              document.fonts.ready,
+              new Promise<void>((res) => window.setTimeout(res, 650)),
+            ])
+          : Promise.resolve();
+
+      fontsPromise.finally(() => {
+        if (isDisposed) return;
+        requestAnimationFrame(() => {
+          if (isDisposed) return;
+          requestAnimationFrame(() => {
+            if (isDisposed) return;
+            renderer.render(scene, camera);
+            emitBootProgress({
+              progress: 100,
+              stage: 'Observatório pronto',
+              detail: 'Iniciando exploração espacial...',
+              loadedTextures: totalTexCount,
+              totalTextures: totalTexCount,
+              ready: true,
+            });
+          });
+        });
+      });
+    };
+
+    bootTimeoutId = window.setTimeout(finalizeSceneBoot, 14000);
+    Promise.all(Array.from(texturePromiseCache.values())).then(() => {
+      if (!isDisposed) {
+        finalizeSceneBoot();
+      }
+    });
+
     animationFrameId = requestAnimationFrame(animate);
 
     return () => {
+      isDisposed = true;
+      window.clearTimeout(bootTimeoutId);
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('keydown', handleKeyDown);
@@ -2719,11 +3062,60 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       renderer.domElement.removeEventListener('touchend', handleTouchEnd);
       controls.dispose();
       spaceAudio.dispose();
+
+      skyCubeRT.dispose();
+      skyboxGeo.dispose();
+      skyboxMat.dispose();
+      starGeometry.dispose();
+      starMaterial.dispose();
+      sphereGeometryUltra.dispose();
+      sphereGeometryHigh.dispose();
+      interiorSphereGeo.dispose();
+      asteroidBeltShaderMat.dispose();
+      kuiperBeltShaderMat.dispose();
+      saturnBoulderShaderMat.dispose();
+      warpCylGeo.dispose();
+      warpCylMat.dispose();
+      warpGeo.dispose();
+      warpMat.dispose();
+      pulseBoltGeo.dispose();
+      pulseBoltMat.dispose();
+      activeSatelliteOrbitLineGeo.dispose();
+      activeSatelliteOrbitLineMat.dispose();
+      loadedTextures.forEach((tex) => tex.dispose());
+
+      Object.values(bodyNodes).forEach((node) => {
+        node.surfaceMaterial.dispose();
+        if (node.atmosphereMesh) {
+          (node.atmosphereMesh.material as THREE.Material).dispose();
+        }
+        node.solarProminenceMat?.dispose();
+        if (node.solarStormParticles) {
+          node.solarStormParticles.geometry.dispose();
+          (node.solarStormParticles.material as THREE.Material).dispose();
+        }
+        if (node.saturnRingShaderMesh) {
+          node.saturnRingShaderMesh.geometry.dispose();
+        }
+        node.saturnRingShaderMat?.dispose();
+        if (node.enceladusPlumePoints) {
+          node.enceladusPlumePoints.geometry.dispose();
+          (node.enceladusPlumePoints.material as THREE.Material).dispose();
+        }
+        node.orbitLine.geometry.dispose();
+        (node.orbitLine.material as THREE.Material).dispose();
+      });
+
+      Object.values(missionLines).forEach(({ line }) => {
+        line.geometry.dispose();
+        (line.material as THREE.Material).dispose();
+      });
+
       envRT.dispose();
       pmremGenerator.dispose();
       renderer.dispose();
     };
-  }, []);
+  }, [qualityPreference]);
 
   return (
     <div className="relative w-full h-full select-none overflow-hidden">
@@ -2736,7 +3128,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
           <button
             onClick={() => {
-              if (getCelestialBody(selectedBodyId).category === 'galaxy') {
+              const selCat = getCelestialBody(selectedBodyId).category;
+              if (selCat === 'galaxy' || selectedBodyId === 'sun') {
                 onSelectBody('earth', false);
               } else {
                 cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
@@ -2755,16 +3148,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           </button>
           <button
             onClick={() => {
-              if (getCelestialBody(selectedBodyId).category === 'galaxy') {
-                onSelectBody('sun', false);
-                setTimeout(() => {
-                  cameraCommandRef.current.desiredDistanceMultiplier = 28.0;
-                  cameraCommandRef.current.activeTransition = true;
-                }, 20);
-              } else {
-                cameraCommandRef.current.desiredDistanceMultiplier =
-                  selectedBodyId === 'sun' ? 28.0 : 42.0;
+              if (selectedBodyId === 'sun') {
+                cameraCommandRef.current.desiredDistanceMultiplier = 520.0;
                 cameraCommandRef.current.activeTransition = true;
+              } else {
+                overrideDistanceMultiplierRef.current = 520.0;
+                onSelectBody('sun', false);
               }
             }}
             className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
@@ -2943,10 +3332,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                         brakeRequested: false,
                         autopilotTargetId: 'sun',
                       }));
-                    } else {
-                      onSelectBody('sun', false);
-                      cameraCommandRef.current.desiredDistanceMultiplier = 18.0;
+                    } else if (selectedBodyId === 'sun') {
+                      cameraCommandRef.current.desiredDistanceMultiplier = 520.0;
                       cameraCommandRef.current.activeTransition = true;
+                    } else {
+                      overrideDistanceMultiplierRef.current = 520.0;
+                      onSelectBody('sun', false);
                     }
                   }
                 }}

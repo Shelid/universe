@@ -330,35 +330,19 @@ export const SPACE_MISSIONS: SpaceMission[] = [
 ];
 
 /**
- * Converts a mission's AU trajectory points into 3D scene coordinates according to the active ScaleMode.
+ * Converts a mission's AU trajectory points into 3D scene coordinates in true 1:1 physical scale
+ * (1 scene unit = 1,000,000 km; 1 AU = 149.59787 scene units).
  */
 export function getMissionTrajectoryScenePoints(
   mission: SpaceMission,
-  scaleMode: ScaleMode
+  _scaleMode: ScaleMode = 'TRUE_1_TO_1'
 ): [number, number, number][] {
   return mission.trajectoryPointsAU.map((wp) => {
     const [xAU, yAU, zAU] = wp.positionAU;
     const rAU = Math.sqrt(xAU * xAU + yAU * yAU + zAU * zAU);
     if (rAU === 0) return [0, 0, 0];
 
-    let targetR = rAU;
-    if (scaleMode === 'EXPLORATION' || scaleMode === 'TRUE_SIZES') {
-      // Map AU smoothly to exploration orbital units: 1 AU ~ 30, 5.2 AU ~ 56, 9.58 AU ~ 74, 30 AU ~ 110, >40 AU ~ 135+
-      if (rAU <= 1.0) {
-        targetR = 8.0 + rAU * 22.0;
-      } else if (rAU <= 10.0) {
-        targetR = 30.0 + Math.pow((rAU - 1.0) / 9.0, 0.72) * 44.0;
-      } else if (rAU <= 40.0) {
-        targetR = 74.0 + ((rAU - 10.0) / 30.0) * 52.0;
-      } else {
-        targetR = 126.0 + Math.log10(1 + (rAU - 40.0) / 20.0) * 42.0;
-      }
-    } else if (scaleMode === 'PROPORTIONAL_DISTANCES') {
-      targetR = 8.0 + rAU * 18.0;
-    } else {
-      targetR = rAU * 149.59787;
-    }
-
+    const targetR = rAU * 149.59787;
     const scale = targetR / rAU;
     return [xAU * scale, yAU * scale, zAU * scale];
   });

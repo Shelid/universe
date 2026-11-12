@@ -326,6 +326,7 @@ export function createPlanetSurfaceMaterial(
     uniforms: {
       uTime: { value: 0 },
       uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
+      uSunViewPosition: { value: new THREE.Vector3(0, 0, 0) },
       uShaderType: { value: SHADER_TYPE_MAP[shaderType] || 1 },
       uPrimaryColor: { value: new THREE.Color(primaryHex) },
       uSecondaryColor: { value: new THREE.Color(secondaryHex) },
@@ -344,35 +345,33 @@ export function createPlanetSurfaceMaterial(
       uHasNormalMap: { value: 0.0 },
     },
     vertexShader: /* glsl */ `
-      varying vec3 vNormal;
+      varying vec3 vViewNormal;
       varying vec3 vLocalPos;
-      varying vec3 vWorldPos;
-      varying vec3 vViewDir;
+      varying vec3 vViewPos;
       varying vec2 vUv;
-      varying vec3 vTangent;
-      varying vec3 vBitangent;
+      varying vec3 vViewTangent;
+      varying vec3 vViewBitangent;
 
       void main() {
         vUv = uv;
         vLocalPos = normalize(position);
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPos = worldPos.xyz;
-        mat3 normalMat = mat3(modelMatrix);
-        vNormal = normalize(normalMat * normal);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = mvPosition.xyz;
+        vViewNormal = normalize(normalMatrix * normal);
 
-        // Compute spherical tangent frame for 4K normal / crater relief mapping
+        // Compute spherical tangent frame in View Space for crisp float64-derived crater & normal relief
         vec3 localTangent = normalize(vec3(-position.z, 0.0, position.x + 0.0001));
         vec3 localBitangent = normalize(cross(normal, localTangent));
-        vTangent = normalize(normalMat * localTangent);
-        vBitangent = normalize(normalMat * localBitangent);
+        vViewTangent = normalize(normalMatrix * localTangent);
+        vViewBitangent = normalize(normalMatrix * localBitangent);
 
-        vViewDir = normalize(cameraPosition - worldPos.xyz);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
       uniform vec3 uSunPosition;
+      uniform vec3 uSunViewPosition;
       uniform int uShaderType;
       uniform vec3 uPrimaryColor;
       uniform vec3 uSecondaryColor;
@@ -390,46 +389,51 @@ export function createPlanetSurfaceMaterial(
       uniform sampler2D uNormalMap;
       uniform float uHasNormalMap;
 
-      varying vec3 vNormal;
+      varying vec3 vViewNormal;
       varying vec3 vLocalPos;
-      varying vec3 vWorldPos;
-      varying vec3 vViewDir;
+      varying vec3 vViewPos;
       varying vec2 vUv;
-      varying vec3 vTangent;
-      varying vec3 vBitangent;
+      varying vec3 vViewTangent;
+      varying vec3 vViewBitangent;
 
       ${NOISE_GLSL}
 
       void main() {
-        // 1. Sample all 4K textures in uniform control flow at top of main()
-        vec3 sampledDiffuse = texture2D(uDiffuseMap, vUv).rgb;
-        // Neighboring texels for crisp 4K crater/terrain normal relief on Moon, Mercury, Mars
-        float texStepU = 0.00035;
-        float texStepV = 0.00065;
-        vec3 sampledDiffuseRight = texture2D(uDiffuseMap, vUv + vec2(texStepU, 0.0)).rgb;
-        vec3 sampledDiffuseUp = texture2D(uDiffuseMap, vUv + vec2(0.0, texStepV)).rgb;
-
-        // Animated 4K Cloud UVs + Sun-offset shadow UVs
-        vec2 cloudUv = vec2(fract(vUv.x - uTime * 0.00035), vUv.y);
-        vec2 cloudShadowUv = vec2(fract(cloudUv.x + 0.0018), clamp(cloudUv.y - 0.0014, 0.0, 1.0));
-        vec3 sampledClouds = texture2D(uCloudsMap, cloudUv).rgb;
-        vec3 sampledCloudsShadow = texture2D(uCloudsMap, cloudShadowUv).rgb;
-
-        vec3 sampledNight = texture2D(uNightMap, vUv).rgb;
-        vec3 sampledAux = texture2D(uAuxMap, vUv).rgb;
-        vec3 sampledNormal = texture2D(uNormalMap, vUv).rgb;
-
         if (uCutawayEnabled > 0.5) {
           if (vLocalPos.x > 0.0 && vLocalPos.y > -0.12 && vLocalPos.z > 0.0) {
             discard;
           }
         }
 
-        vec3 baseN = normalize(vNormal);
-        vec3 T = normalize(vTangent);
-        vec3 B = normalize(vBitangent);
-        vec3 L = normalize(uSunPosition - vWorldPos);
-        vec3 V = normalize(vViewDir);
+        // Uniformly gate texture fetches so untextured moons & non-Earth bodies skip unused lookups
+        vec3 sampledDiffuse = uHasDiffuseMap > 0.5 ? texture2D(uDiffuseMap, vUv).rgb : uPrimaryColor;
+        vec3 sampledDiffuseRight = sampledDiffuse;
+        vec3 sampledDiffuseUp = sampledDiffuse;
+        if (uHasDiffuseMap > 0.5 && (uShaderType == 1 || uShaderType == 4 || uShaderType == 11)) {
+          float texStepU = 0.00035;
+          float texStepV = 0.00065;
+          sampledDiffuseRight = texture2D(uDiffuseMap, vUv + vec2(texStepU, 0.0)).rgb;
+          sampledDiffuseUp = texture2D(uDiffuseMap, vUv + vec2(0.0, texStepV)).rgb;
+        }
+
+        vec3 sampledClouds = vec3(0.0);
+        vec3 sampledCloudsShadow = vec3(0.0);
+        if (uHasCloudsMap > 0.5) {
+          vec2 cloudUv = vec2(fract(vUv.x - uTime * 0.00035), vUv.y);
+          vec2 cloudShadowUv = vec2(fract(cloudUv.x + 0.0018), clamp(cloudUv.y - 0.0014, 0.0, 1.0));
+          sampledClouds = texture2D(uCloudsMap, cloudUv).rgb;
+          sampledCloudsShadow = texture2D(uCloudsMap, cloudShadowUv).rgb;
+        }
+
+        vec3 sampledNight = uHasNightMap > 0.5 ? texture2D(uNightMap, vUv).rgb : vec3(0.0);
+        vec3 sampledAux = uHasAuxMap > 0.5 ? texture2D(uAuxMap, vUv).rgb : vec3(0.0);
+        vec3 sampledNormal = uHasNormalMap > 0.5 ? texture2D(uNormalMap, vUv).rgb : vec3(0.5, 0.5, 1.0);
+
+        vec3 baseN = normalize(vViewNormal);
+        vec3 T = normalize(vViewTangent);
+        vec3 B = normalize(vViewBitangent);
+        vec3 L = normalize(uSunViewPosition - vViewPos);
+        vec3 V = normalize(-vViewPos);
         vec3 p = vLocalPos;
 
         // Compute surface normal with 4K relief
@@ -730,6 +734,7 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
   return new THREE.ShaderMaterial({
     uniforms: {
       uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
+      uSunViewPosition: { value: new THREE.Vector3(0, 0, 0) },
       uAtmosphereColor: { value: new THREE.Color(atmosphereHex) },
     },
     transparent: true,
@@ -737,29 +742,26 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
     blending: THREE.AdditiveBlending,
     side: THREE.BackSide,
     vertexShader: /* glsl */ `
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
-      varying vec3 vViewDir;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
 
       void main() {
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPos = worldPos.xyz;
-        vNormal = normalize(mat3(modelMatrix) * normal);
-        vViewDir = normalize(cameraPosition - worldPos.xyz);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = mvPosition.xyz;
+        vViewNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec3 uSunPosition;
+      uniform vec3 uSunViewPosition;
       uniform vec3 uAtmosphereColor;
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
-      varying vec3 vViewDir;
+      varying vec3 vViewNormal;
+      varying vec3 vViewPos;
 
       void main() {
-        vec3 N = normalize(vNormal);
-        vec3 L = normalize(uSunPosition - vWorldPos);
-        vec3 V = normalize(vViewDir);
+        vec3 N = normalize(vViewNormal);
+        vec3 L = normalize(uSunViewPosition - vViewPos);
+        vec3 V = normalize(-vViewPos);
 
         float viewDot = abs(dot(N, V));
         float rim = pow(clamp(1.0 - viewDot, 0.0, 1.0), 2.8);
@@ -775,13 +777,15 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
 /**
  * Ultra-Detailed Saturn Ring System Shader with hundreds of fine Cassini ringlets,
  * crystalline ice forward/back-scattering, Cassini Division, Encke & Keeler gaps,
- * and real-time shadow of Saturn cast across the ring plane.
+ * and real-time shadow of Saturn cast across the ring plane in View Space (zero float32 jitter).
  */
 export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
+      uSunViewPosition: { value: new THREE.Vector3(0, 0, 0) },
       uPlanetPosition: { value: new THREE.Vector3(0, 0, 0) },
+      uPlanetViewPosition: { value: new THREE.Vector3(0, 0, 0) },
       uPlanetRadius: { value: saturnRadiusSceneUnits },
       uInnerRadius: { value: saturnRadiusSceneUnits * 1.18 },
       uOuterRadius: { value: saturnRadiusSceneUnits * 2.42 },
@@ -790,24 +794,24 @@ export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number):
     depthWrite: false,
     side: THREE.DoubleSide,
     vertexShader: /* glsl */ `
-      varying vec3 vWorldPos;
+      varying vec3 vViewPos;
       varying vec3 vLocalPos;
 
       void main() {
         vLocalPos = position;
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPos = worldPos.xyz;
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec3 uSunPosition;
-      uniform vec3 uPlanetPosition;
+      uniform vec3 uSunViewPosition;
+      uniform vec3 uPlanetViewPosition;
       uniform float uPlanetRadius;
       uniform float uInnerRadius;
       uniform float uOuterRadius;
 
-      varying vec3 vWorldPos;
+      varying vec3 vViewPos;
       varying vec3 vLocalPos;
 
       void main() {
@@ -859,19 +863,18 @@ export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number):
           ringColor = vec3(0.94, 0.91, 0.85);
         }
 
-        // Real-time shadow of Saturn cast onto the rings
-        vec3 toSun = normalize(uSunPosition - vWorldPos);
-        vec3 fromPlanet = vWorldPos - uPlanetPosition;
+        // Real-time shadow of Saturn cast onto the rings in View Space
+        vec3 toSun = normalize(uSunViewPosition - vViewPos);
+        vec3 fromPlanet = vViewPos - uPlanetViewPosition;
         float proj = dot(fromPlanet, toSun);
         float shadowFactor = 1.0;
         if (proj < 0.0) {
           vec3 closestVec = fromPlanet - proj * toSun;
-          vec3 scaledClosest = vec3(closestVec.x, closestVec.y / 0.902, closestVec.z);
-          float perpDist = length(scaledClosest);
-          shadowFactor = smoothstep(uPlanetRadius * 0.95, uPlanetRadius * 1.02, perpDist);
+          float perpDist = length(closestVec);
+          shadowFactor = smoothstep(uPlanetRadius * 0.93, uPlanetRadius * 1.01, perpDist);
         }
 
-        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        vec3 viewDir = normalize(-vViewPos);
         float phaseScatter = 1.0 + 0.25 * pow(max(dot(viewDir, -toSun), 0.0), 3.0);
 
         vec3 finalColor = ringColor * phaseScatter * (0.06 + 0.94 * shadowFactor);
@@ -945,11 +948,12 @@ export function createWarpTunnelShaderMaterial(): THREE.ShaderMaterial {
  * - Subtle H-II emission regions (Orion, Carina, Lagoon, North America Nebulae)
  * - Smoothly dims the interior Milky Way band as uMacroGalaxyFade -> 1.0 when zooming out to intergalactic space
  */
-export function createDeepSpaceSkyboxMaterial(): THREE.ShaderMaterial {
+export function createDeepSpaceSkyboxMaterial(bakeMilkyWayOnly = false): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
       uMacroGalaxyFade: { value: 0.0 },
+      uBakeMilkyWayOnly: { value: bakeMilkyWayOnly ? 1.0 : 0.0 },
     },
     side: THREE.BackSide,
     depthWrite: false,
@@ -964,6 +968,7 @@ export function createDeepSpaceSkyboxMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       uniform float uTime;
       uniform float uMacroGalaxyFade;
+      uniform float uBakeMilkyWayOnly;
       varying vec3 vDir;
 
       ${NOISE_GLSL}
@@ -1035,10 +1040,49 @@ export function createDeepSpaceSkyboxMaterial(): THREE.ShaderMaterial {
 
         // As the camera zooms out into intergalactic space (uMacroGalaxyFade -> 1.0),
         // the interior 360° Milky Way band fades down so the 3D Volumetric Milky Way takes over cleanly
+        if (uBakeMilkyWayOnly > 0.5) {
+          gl_FragColor = vec4(mwColor + vec3(0.012, 0.018, 0.032) * cosmicWeb, 1.0);
+          return;
+        }
         float interiorVisibility = 1.0 - uMacroGalaxyFade * 0.86;
         vec3 finalSky = intergalacticBg + mwColor * interiorVisibility;
 
         gl_FragColor = vec4(finalSky, 1.0);
+      }
+    `,
+  });
+}
+
+/**
+ * Ultra-fast pre-baked CubeMap Skybox Shader (~50x less mobile GPU fragment cost vs live 35-octave noise).
+ */
+export function createBakedDeepSpaceSkyboxMaterial(skyCubeTexture: THREE.CubeTexture): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uMacroGalaxyFade: { value: 0.0 },
+      uSkyCube: { value: skyCubeTexture },
+    },
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uMacroGalaxyFade;
+      uniform samplerCube uSkyCube;
+      varying vec3 vDir;
+
+      void main() {
+        vec3 bakedBands = textureCube(uSkyCube, normalize(vDir)).rgb;
+        vec3 voidColor = vec3(0.004, 0.007, 0.016);
+        float interiorVisibility = 1.0 - uMacroGalaxyFade * 0.86;
+        gl_FragColor = vec4(voidColor + bakedBands * interiorVisibility, 1.0);
       }
     `,
   });
@@ -1050,11 +1094,13 @@ export function createDeepSpaceSkyboxMaterial(): THREE.ShaderMaterial {
  * - Medium constellation stars (5%) render with soft Gaussian photospheres
  * - Only the top ~1% brightest navigational stars (aMagnitude > 0.91) render Airy halos & delicate 4-point diffraction rays
  */
-export function createRealisticStarfieldMaterial(): THREE.ShaderMaterial {
+export function createRealisticStarfieldMaterial(
+  pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
+): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uPixelRatio: { value: pixelRatio },
     },
     vertexShader: /* glsl */ `
       attribute float aMagnitude;
@@ -1147,7 +1193,8 @@ export interface VolumetricGalaxyDiskConfig {
  * - Supports uOpacity for seamless continuous zoom transitions between Galactic Scale and Solar System Scale
  */
 export function createGalaxyVolumetricDiskMaterial(
-  cfg: VolumetricGalaxyDiskConfig
+  cfg: VolumetricGalaxyDiskConfig,
+  highQualityShader = true
 ): THREE.ShaderMaterial {
   const isElliptical = cfg.subType === 'galaxy_elliptical';
   const isIrregular = cfg.subType === 'galaxy_irregular';
@@ -1173,6 +1220,7 @@ export function createGalaxyVolumetricDiskMaterial(
       },
       uIsWhirlpool: { value: isWhirlpool ? 1.0 : 0.0 },
       uLayerFactor: { value: cfg.layerOffset ?? 1.0 },
+      uHighDetail: { value: highQualityShader ? 1.0 : 0.0 },
       uCoreColor: { value: new THREE.Color(cfg.coreColorHex) },
       uBulgeColor: { value: new THREE.Color(cfg.bulgeColorHex) },
       uArmColor: { value: new THREE.Color(cfg.armColorHex) },
@@ -1181,14 +1229,11 @@ export function createGalaxyVolumetricDiskMaterial(
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       varying vec3 vLocalPos;
-      varying vec3 vViewDir;
 
       void main() {
         vUv = uv;
         vLocalPos = position;
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vViewDir = normalize(cameraPosition - worldPos.xyz);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
@@ -1199,6 +1244,7 @@ export function createGalaxyVolumetricDiskMaterial(
       uniform float uSpiralWinding;
       uniform float uIsWhirlpool;
       uniform float uLayerFactor;
+      uniform float uHighDetail;
       uniform vec3 uCoreColor;
       uniform vec3 uBulgeColor;
       uniform vec3 uArmColor;
@@ -1206,7 +1252,6 @@ export function createGalaxyVolumetricDiskMaterial(
 
       varying vec2 vUv;
       varying vec3 vLocalPos;
-      varying vec3 vViewDir;
 
       ${NOISE_GLSL}
 
@@ -1222,9 +1267,9 @@ export function createGalaxyVolumetricDiskMaterial(
         vec3 pos3 = vec3(p.x * 3.2, uLayerFactor * 0.35, p.y * 3.2);
 
         float nCoarse = fbm(pos3 * 1.35 + vec3(0.7, 1.2, -0.5));
-        float nMedium = fbm(pos3 * 3.4 - vec3(1.4, 0.3, 2.1));
-        float nFine = fbm(pos3 * 8.2 + vec3(2.3, -1.9, 0.8));
-        float nRidged = ridgedFbm(pos3 * 3.8 + vec3(0.5, 0.2, -1.1));
+        float nMedium = uHighDetail > 0.5 ? fbm(pos3 * 3.4 - vec3(1.4, 0.3, 2.1)) : nCoarse * 0.72;
+        float nFine = uHighDetail > 0.5 ? fbm(pos3 * 8.2 + vec3(2.3, -1.9, 0.8)) : snoise(pos3 * 7.5);
+        float nRidged = uHighDetail > 0.5 ? ridgedFbm(pos3 * 3.8 + vec3(0.5, 0.2, -1.1)) : abs(nCoarse) * 0.78 + 0.22;
 
         vec3 col = vec3(0.0);
         float alpha = 0.0;
@@ -1353,11 +1398,11 @@ export function createGalaxyVolumetricDiskMaterial(
  * Custom GLSL Point Shader for 85,000 Variable-Size 3D Galaxy Star Particles & Globular Clusters
  * Scales point size smoothly with perspective and supports uOpacity for continuous multi-scale zoom!
  */
-export function createGalaxyStarParticlesMaterial(): THREE.ShaderMaterial {
+export function createGalaxyStarParticlesMaterial(pixelRatio = Math.min(window.devicePixelRatio || 1, 2)): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uOpacity: { value: 1.0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uPixelRatio: { value: pixelRatio },
     },
     vertexShader: /* glsl */ `
       attribute float aSize;

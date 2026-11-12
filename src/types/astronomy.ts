@@ -34,11 +34,7 @@ export type ZoomLevel =
   | 'SURFACE_EXPLORATION'// Nível 4: Exploração da Superfície
   | 'COSMIC_GALAXY';     // Nível 5: Escala Galáctica & Universo Profundo
 
-export type ScaleMode =
-  | 'EXPLORATION'            // Escala visual adaptada para exploração fluida
-  | 'TRUE_SIZES'             // Proporção real de tamanhos entre planetas
-  | 'PROPORTIONAL_DISTANCES' // Distâncias orbitais proporcionais em UA
-  | 'TRUE_1_TO_1';           // Escala física 1:1 (distâncias e diâmetros reais na mesma unidade)
+export type ScaleMode = 'TRUE_1_TO_1'; // Escala física real 1:1 (tamanhos e distâncias astronômicas exatas)
 
 export interface KeplerianElements {
   /** Semi-major axis in AU (for heliocentric) or km (for planetocentric moons) */
@@ -361,5 +357,14 @@ export interface SpacecraftTelemetry {
   nearestDistanceFormatted: string;
   nearbyContacts: NearbySpacecraftContact[];
   autopilotStatus: 'OFF' | 'ALIGNING' | 'CRUISING' | 'ARRIVED';
+}
+
+export interface SceneBootProgress {
+  progress: number;
+  stage: string;
+  detail: string;
+  loadedTextures: number;
+  totalTextures: number;
+  ready: boolean;
 }
 

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <radialGradient id="ueBg" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#0f2547" />
+      <stop offset="65%" stop-color="#050b18" />
+      <stop offset="100%" stop-color="#02040a" />
+    </radialGradient>
+    <radialGradient id="uePlanet" cx="35%" cy="32%" r="68%">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="40%" stop-color="#0284c7" />
+      <stop offset="78%" stop-color="#312e81" />
+      <stop offset="100%" stop-color="#090d24" />
+    </radialGradient>
+    <linearGradient id="ueRingA" x1="12" y1="90" x2="116" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.15" />
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0.25" />
+    </linearGradient>
+    <linearGradient id="ueRingB" x1="20" y1="30" x2="108" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.2" />
+      <stop offset="50%" stop-color="#7dd3fc" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.35" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#ueBg)" />
+  <circle cx="64" cy="64" r="54" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="1.2" stroke-dasharray="3 5" />
+  <g transform="rotate(-24 64 64)">
+    <ellipse cx="64" cy="64" rx="50" ry="17" stroke="url(#ueRingA)" stroke-width="2.4" />
+  </g>
+  <g transform="rotate(30 64 64)">
+    <ellipse cx="64" cy="64" rx="46" ry="14" stroke="url(#ueRingB)" stroke-width="1.6" />
+  </g>
+  <circle cx="64" cy="64" r="22" fill="url(#uePlanet)" />
+  <circle cx="64" cy="64" r="22.8" stroke="#7dd3fc" stroke-opacity="0.55" stroke-width="1" />
+  <circle cx="101" cy="40" r="3.4" fill="#38bdf8" />
+  <circle cx="31" cy="86" r="2.6" fill="#fbbf24" />
+</svg>
+
