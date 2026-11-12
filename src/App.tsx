@@ -19,8 +19,11 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
+import { spaceAudio } from './utils/spaceAudioEngine';
 import {
   PropagatedSatellite,
   SatelliteCategory,
@@ -156,7 +159,7 @@ export function App() {
   // SR-7 Explorer Spacecraft & Interactive 3D Cockpit Flight State
   const [spacecraftControl, setSpacecraftControl] = useState<SpacecraftControlState>({
     isActive: false,
-    cameraView: 'COCKPIT',
+    cameraView: 'EXTERNAL',
     throttle: 0,
     boostActive: false,
     headlightsOn: true,
@@ -167,6 +170,7 @@ export function App() {
     brakeRequested: false,
     firePulseCount: 0,
     interiorLightsOn: true,
+    recenterTrigger: 0,
   });
 
   const [spacecraftTelemetry, setSpacecraftTelemetry] = useState<SpacecraftTelemetry>({
@@ -191,6 +195,16 @@ export function App() {
     roll: 0,
     forward: 0,
   });
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+
+  const toggleAudioMuted = useCallback(() => {
+    spaceAudio.unlock();
+    setIsAudioMuted((prev) => {
+      const next = !prev;
+      spaceAudio.setMuted(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     refreshCatalogFromCelesTrak(VERIFIED_SATELLITE_CATALOG).then((res) => {
@@ -202,16 +216,19 @@ export function App() {
 
   const launchSpacecraftSR7 = useCallback(() => {
     (document.activeElement as HTMLElement | null)?.blur?.();
+    spaceAudio.unlock();
+    spaceAudio.playShipStartup();
     setIsDossierOpen(false);
     setIsExploringInterior(false);
     setWarpState((w) => ({ ...w, isActive: false, stage: 'IDLE' }));
     setSpacecraftControl((prev) => ({
       ...prev,
       isActive: true,
-      cameraView: 'COCKPIT',
+      cameraView: 'EXTERNAL',
       throttle: 0,
       brakeRequested: false,
       autopilotTargetId: null,
+      recenterTrigger: (prev.recenterTrigger || 0) + 1,
     }));
   }, []);
 
@@ -266,6 +283,8 @@ export function App() {
         originBody.parentId !== targetId;
 
       if (triggerWarp && cinematicTravelEnabled && isDifferentMajorBody) {
+        spaceAudio.unlock();
+        spaceAudio.playWarpEngage();
         const dAU = Math.max(
           0.05,
           Math.abs(targetBody.distanceFromSunAU - originBody.distanceFromSunAU)
@@ -296,6 +315,9 @@ export function App() {
       }
 
       setSelectedBodyId(targetId);
+      if (!triggerWarp || !cinematicTravelEnabled || !isDifferentMajorBody) {
+        spaceAudio.playSelectBody(targetBody.category);
+      }
       setIsQuickCardOpen(true);
       if (targetBody.category === 'galaxy') {
         setNavDockMode('GALAXIES');
@@ -688,6 +710,18 @@ export function App() {
               </div>
             )}
           </div>
+
+          <button
+            onClick={toggleAudioMuted}
+            className={`p-2 rounded-xl border backdrop-blur-xl shadow-lg transition-all ${
+              isAudioMuted
+                ? 'bg-slate-950/75 border-white/10 text-slate-400 hover:text-white'
+                : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/35'
+            }`}
+            title={isAudioMuted ? 'Ativar Efeitos Sonoros' : 'Silenciar Áudio'}
+          >
+            {isAudioMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+          </button>
 
           <button
             onClick={toggleFullscreen}
@@ -1088,6 +1122,7 @@ export function App() {
           telemetry={spacecraftTelemetry}
           onUpdateControl={setSpacecraftControl}
           onExitSpacecraft={() => {
+            spaceAudio.playShipShutdown();
             setSpacecraftControl((prev) => ({
               ...prev,
               isActive: false,
@@ -1097,6 +1132,8 @@ export function App() {
             }));
           }}
           onVirtualSteerChange={setVirtualSteerInput}
+          isAudioMuted={isAudioMuted}
+          onToggleAudioMuted={toggleAudioMuted}
         />
       )}
 

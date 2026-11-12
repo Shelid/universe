@@ -334,6 +334,7 @@ export interface SpacecraftControlState {
   brakeRequested: boolean;
   firePulseCount: number; // Triggers ventral telemetry/plasma cannons
   interiorLightsOn: boolean;
+  recenterTrigger?: number;
 }
 
 export interface NearbySpacecraftContact {
