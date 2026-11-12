@@ -159,6 +159,28 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           )}
 
           <button
+            onClick={() =>
+              onUpdateControl((prev) => {
+                spaceAudio.playCockpitSwitch(!prev.sasEnabled);
+                return { ...prev, sasEnabled: !prev.sasEnabled };
+              })
+            }
+            className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] font-mono transition-colors ${
+              controlState.sasEnabled
+                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
+                : 'bg-amber-500/20 border-amber-400/45 text-amber-200 hover:bg-amber-500/30'
+            }`}
+            title={
+              controlState.sasEnabled
+                ? 'SAS Ativo — Estabilização Giroscópica (Tecla Z para Deriva Newtoniana Livre)'
+                : 'Deriva Newtoniana Livre — Zero Atrito no Vácuo (Tecla Z para Ativar SAS)'
+            }
+          >
+            <Compass className="w-3 h-3" />
+            <span>{controlState.sasEnabled ? 'SAS' : 'NEWTON'}</span>
+          </button>
+
+          <button
             onClick={() => setIsShipMenuOpen((open) => !open)}
             className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
               isShipMenuOpen
@@ -216,14 +238,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
         )}
       </div>
 
-      {/* ULTRA-SUBTLE CENTER BORESIGHT DOT IN 1ST-PERSON COCKPIT ONLY */}
+      {/* ULTRA-MINIMAL CENTER BORESIGHT PINPOINT IN 1ST-PERSON COCKPIT ONLY (Preserves 3D Holo Combiner!) */}
       {controlState.cameraView === 'COCKPIT' && !isShipMenuOpen && (
         <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
-          <Crosshair
-            className={`w-5 h-5 ${
-              controlState.boostActive ? 'text-cyan-300/75' : 'text-sky-300/45'
+          <div
+            className={`w-1.5 h-1.5 rounded-full transition-colors ${
+              controlState.boostActive
+                ? 'bg-cyan-300/80 shadow-[0_0_8px_rgba(103,232,249,0.9)]'
+                : 'bg-sky-300/60 shadow-[0_0_6px_rgba(56,189,248,0.6)]'
             }`}
-            strokeWidth={1.2}
           />
         </div>
       )}
@@ -398,7 +421,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       }`}
                     >
                       <Compass className="w-3.5 h-3.5" />
-                      <span>SAS {controlState.sasEnabled ? 'ON' : 'OFF'}</span>
+                      <span>
+                        {controlState.sasEnabled ? 'SAS: ATIVO' : 'MODO: NEWTON'} (Z)
+                      </span>
                     </button>
 
                     <button
@@ -666,8 +691,13 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-slate-900/75 border border-white/10 rounded-xl p-3 text-[11px] text-slate-300 leading-relaxed">
-                  Na câmera <strong className="text-white">3ª Pessoa</strong>, você pode arrastar com o mouse ou dedo ao redor da SR-7 para inspecionar a nave em qualquer ângulo — ao acelerar ou manobrar, a câmera retorna suavemente para trás dos motores. Use o botão <strong className="text-sky-300">Manche Tátil</strong> na barra inferior se quiser pilotar diretamente pelo toque.
+                <div className="bg-slate-900/75 border border-white/10 rounded-xl p-3 text-[11px] text-slate-300 leading-relaxed space-y-1.5">
+                  <p>
+                    No espaço (<strong className="text-emerald-300">Z</strong> alterna <strong className="text-white">SAS</strong> / <strong className="text-amber-300">NEWTON</strong>): ao zerar o motor (0%), a nave continua deslizando por inércia. Use <strong className="text-rose-300">Espaço</strong> para acionar os retrofoguetes e frear.
+                  </p>
+                  <p>
+                    Dentro da <strong className="text-sky-300">Cabine 3D</strong>, arraste para manobrar suavemente como um manche virtual e clique nos botões iluminados dos consoles laterais, manete ou gatilho! Na <strong className="text-white">3ª Pessoa</strong>, arraste para inspecionar a nave.
+                  </p>
                 </div>
               </div>
             )}
