@@ -4,9 +4,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Plus, Minus, Focus } from 'lucide-react';
 import {
   CelestialBodyData,
+  NearbySpacecraftContact,
   PropagatedSatellite,
   SatelliteCategory,
   ScaleMode,
+  SpacecraftControlState,
+  SpacecraftTelemetry,
   SurfaceLandmark,
   WarpFlightState,
   ZoomLevel,
@@ -16,6 +19,7 @@ import {
   computeKeplerianPosition3D,
   generateKeplerianOrbitCurvePoints,
   getCelestialBody,
+  getGalacticFadeThresholds,
   getScaledRadius,
 } from '../data/solarSystemData';
 import { getMissionTrajectoryScenePoints, SPACE_MISSIONS } from '../data/missionsData';
@@ -40,6 +44,8 @@ import {
   populateSaturnRing3DAsteroidFragments,
   setGalaxyGroupOpacity,
 } from '../utils/spacecraftAndAsteroidModels';
+import { createSR7Spacecraft3DGroup } from '../utils/sr7SpacecraftModel';
+import { VirtualSteerInput } from './SpacecraftCockpitHUD';
 
 interface UniverseCanvasProps {
   selectedBodyId: string;
@@ -69,6 +75,10 @@ interface UniverseCanvasProps {
   onSelectLandmark: (landmark: SurfaceLandmark | null) => void;
   warpState: WarpFlightState;
   onUpdateWarpState: React.Dispatch<React.SetStateAction<WarpFlightState>>;
+  spacecraftControl: SpacecraftControlState;
+  onUpdateSpacecraftControl: React.Dispatch<React.SetStateAction<SpacecraftControlState>>;
+  onSyncSpacecraftTelemetry: (telemetry: SpacecraftTelemetry) => void;
+  virtualSteerInput: VirtualSteerInput;
 }
 
 interface ScreenLabel {
@@ -198,6 +208,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   onSelectLandmark,
   warpState,
   onUpdateWarpState,
+  spacecraftControl,
+  onUpdateSpacecraftControl,
+  onSyncSpacecraftTelemetry,
+  virtualSteerInput,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
@@ -231,6 +245,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     selectedSatelliteId,
     selectedLandmark,
     warpState,
+    spacecraftControl,
+    virtualSteerInput,
   });
 
   const callbacksRef = useRef({
@@ -241,6 +257,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onSelectSatellite,
     onSelectLandmark,
     onUpdateWarpState,
+    onUpdateSpacecraftControl,
+    onSyncSpacecraftTelemetry,
   });
 
   useEffect(() => {
@@ -264,6 +282,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       selectedSatelliteId,
       selectedLandmark,
       warpState,
+      spacecraftControl,
+      virtualSteerInput,
     };
   });
 
@@ -276,6 +296,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onSelectSatellite,
       onSelectLandmark,
       onUpdateWarpState,
+      onUpdateSpacecraftControl,
+      onSyncSpacecraftTelemetry,
     };
   });
 
@@ -354,14 +376,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const camera = new THREE.PerspectiveCamera(
       46,
       container.clientWidth / Math.max(1, container.clientHeight),
-      0.01,
-      140000
+      0.00005,
+      600000
     );
     camera.position.set(28, 12, 36);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
+      logarithmicDepthBuffer: true,
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -377,8 +400,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
-    controls.maxDistance = 55000;
-    controls.minDistance = 0.05;
+    controls.maxDistance = 200000;
+    controls.minDistance = 0.00008;
     controls.rotateSpeed = 0.7;
     controls.zoomSpeed = 1.18;
 
@@ -398,7 +421,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const softCircleSprite = getSoftCircleParticleTexture();
 
     // 1. 360° GLSL Deep Space & Interior Milky Way Panorama Skybox Sphere (with Great Rift dark dust lanes)
-    const skyboxGeo = new THREE.SphereGeometry(75000, 64, 64);
+    const skyboxGeo = new THREE.SphereGeometry(250000, 64, 64);
     const skyboxMat = createDeepSpaceSkyboxMaterial();
     const skyboxMesh = new THREE.Mesh(skyboxGeo, skyboxMat);
     skyboxMesh.renderOrder = -20;
@@ -430,7 +453,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const sinAz = Math.sin(rotAz);
 
     for (let i = 0; i < starCount; i++) {
-      const r = 52000 + Math.random() * 14000;
+      const r = 175000 + Math.random() * 45000;
       const isGalacticBand = i < 24000;
       const theta = Math.random() * Math.PI * 2;
       let phi: number;
@@ -519,6 +542,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       saturnBoulderShaderMat.uniforms.uCraterMap.value = tex;
     });
 
+    let beltScaleBuilt: ScaleMode = 'EXPLORATION';
     const mainAsteroidBelt = new THREE.Group();
     populateRealisticAsteroidBeltGroup(
       mainAsteroidBelt,
@@ -546,6 +570,31 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       true
     );
     beltGroup.add(kuiperBelt);
+
+    const rebuildBeltsForScaleMode = (mode: ScaleMode) => {
+      while (mainAsteroidBelt.children.length > 0) {
+        const child = mainAsteroidBelt.children[0] as THREE.InstancedMesh;
+        child.geometry?.dispose?.();
+        mainAsteroidBelt.remove(child);
+      }
+      while (kuiperBelt.children.length > 0) {
+        const child = kuiperBelt.children[0] as THREE.InstancedMesh;
+        child.geometry?.dispose?.();
+        kuiperBelt.remove(child);
+      }
+
+      if (mode === 'PROPORTIONAL_DISTANCES') {
+        populateRealisticAsteroidBeltGroup(mainAsteroidBelt, asteroidBeltShaderMat, 1140, 47.6, 67.4, 0.9, 0.025, 0.12, false);
+        populateRealisticAsteroidBeltGroup(kuiperBelt, kuiperBeltShaderMat, 660, 584.0, 872.0, 3.0, 0.05, 0.22, true);
+      } else if (mode === 'TRUE_1_TO_1') {
+        populateRealisticAsteroidBeltGroup(mainAsteroidBelt, asteroidBeltShaderMat, 1140, 329.0, 494.0, 6.0, 0.08, 0.35, false);
+        populateRealisticAsteroidBeltGroup(kuiperBelt, kuiperBeltShaderMat, 660, 4787.0, 7180.0, 28.0, 0.4, 1.8, true);
+      } else {
+        populateRealisticAsteroidBeltGroup(mainAsteroidBelt, asteroidBeltShaderMat, 1140, 43.2, 52.0, 0.85, 0.025, 0.125, false);
+        populateRealisticAsteroidBeltGroup(kuiperBelt, kuiperBeltShaderMat, 660, 113.0, 136.0, 2.0, 0.04, 0.18, true);
+      }
+      beltScaleBuilt = mode;
+    };
 
     // CELESTIAL BODIES MESH REGISTRY
     interface BodySceneNode {
@@ -1028,15 +1077,136 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const warpLines = new THREE.LineSegments(warpGeo, warpMat);
     warpTunnelGroup.add(warpLines);
 
+    // SR-7 EXPLORER 3D SPACECRAFT & INTERACTIVE COCKPIT + VENTRAL PULSE PROJECTILES
+    const sr7 = createSR7Spacecraft3DGroup();
+    sr7.rootGroup.scale.setScalar(0.34);
+    sr7.rootGroup.visible = false;
+    scene.add(sr7.rootGroup);
+
+    const projectileGroup = new THREE.Group();
+    scene.add(projectileGroup);
+
+    interface ActivePulseBolt {
+      mesh: THREE.Mesh;
+      velocity: THREE.Vector3;
+      age: number;
+    }
+    const activePulseBolts: ActivePulseBolt[] = [];
+    const pulseBoltGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.72, 8);
+    pulseBoltGeo.rotateX(Math.PI / 2);
+    const pulseBoltMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+    });
+
+    // 6-DOF Spacecraft Flight Physics State
+    const pressedKeys = new Set<string>();
+    const shipVelocity = new THREE.Vector3();
+    let wasSpacecraftActive = false;
+    let prevCameraView: 'COCKPIT' | 'EXTERNAL' = 'COCKPIT';
+    let lastFirePulseCount = 0;
+    let muzzleFlashAlpha = 0;
+    let isCockpitDragging = false;
+    let cockpitDragSteerX = 0;
+    let cockpitDragSteerY = 0;
+    let lastTelemetrySync = 0;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (!stateRef.current.spacecraftControl.isActive) return;
+
+      pressedKeys.add(e.code);
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          throttle: 0,
+          boostActive: false,
+          autopilotTargetId: null,
+          brakeRequested: true,
+        }));
+      } else if (e.code === 'KeyL') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          headlightsOn: !prev.headlightsOn,
+        }));
+      } else if (e.code === 'KeyZ') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          sasEnabled: !prev.sasEnabled,
+        }));
+      } else if (e.code === 'KeyR') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          radarPulseTimestamp: performance.now(),
+        }));
+      } else if (e.code === 'KeyV') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          cameraView: prev.cameraView === 'COCKPIT' ? 'EXTERNAL' : 'COCKPIT',
+        }));
+      } else if (e.code === 'KeyF') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          firePulseCount: prev.firePulseCount + 1,
+        }));
+      } else if (e.code === 'KeyI') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          interiorLightsOn: !prev.interiorLightsOn,
+        }));
+      } else if (e.code === 'KeyW') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          brakeRequested: false,
+          throttle: Math.min(1, Number((prev.throttle + 0.1).toFixed(2))),
+        }));
+      } else if (e.code === 'KeyS') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          brakeRequested: false,
+          throttle: Math.max(-0.5, Number((prev.throttle - 0.1).toFixed(2))),
+        }));
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      pressedKeys.delete(e.code);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
     // RAYCASTING FOR CLICK SELECTION
     const raycaster = new THREE.Raycaster();
     const pointerDownPos = new THREE.Vector2();
 
     const handlePointerDown = (e: MouseEvent) => {
       pointerDownPos.set(e.clientX, e.clientY);
+      if (
+        stateRef.current.spacecraftControl.isActive &&
+        stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
+      ) {
+        isCockpitDragging = true;
+      }
+    };
+
+    const handlePointerMove = (e: MouseEvent) => {
+      if (!isCockpitDragging) return;
+      cockpitDragSteerX = THREE.MathUtils.clamp(-e.movementX * 0.045, -1.2, 1.2);
+      cockpitDragSteerY = THREE.MathUtils.clamp(-e.movementY * 0.045, -1.2, 1.2);
     };
 
     const handlePointerUp = (e: MouseEvent) => {
+      isCockpitDragging = false;
+      cockpitDragSteerX = 0;
+      cockpitDragSteerY = 0;
+
       const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
       if (moveDist > 6) return;
 
@@ -1047,6 +1217,56 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       );
 
       raycaster.setFromCamera(mouse, camera);
+
+      if (stateRef.current.spacecraftControl.isActive) {
+        const cockpitHits = raycaster.intersectObjects(sr7.clickableCockpitControls, false);
+        if (cockpitHits.length > 0) {
+          const action = cockpitHits[0].object.userData?.action;
+          if (action === 'headlights') {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              headlightsOn: !p.headlightsOn,
+            }));
+            return;
+          }
+          if (action === 'sas') {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              sasEnabled: !p.sasEnabled,
+            }));
+            return;
+          }
+          if (action === 'scanner') {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              radarPulseTimestamp: performance.now(),
+            }));
+            return;
+          }
+          if (action === 'boost') {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              boostActive: !p.boostActive,
+            }));
+            return;
+          }
+          if (action === 'fire') {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              firePulseCount: p.firePulseCount + 1,
+            }));
+            return;
+          }
+          if (action === 'throttle_step') {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              brakeRequested: false,
+              throttle: p.throttle < 0.4 ? 0.5 : p.throttle < 0.9 ? 1.0 : 0,
+            }));
+            return;
+          }
+        }
+      }
 
       if (stateRef.current.isExploringInterior) {
         const layerHits = raycaster.intersectObjects(interiorLayerMeshes, false);
@@ -1063,16 +1283,53 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (hits.length > 0) {
         const bodyId = hits[0].object.userData?.bodyId;
         if (bodyId) {
-          callbacksRef.current.onSelectBody(
-            bodyId,
-            bodyId !== stateRef.current.selectedBodyId
-          );
+          if (stateRef.current.spacecraftControl.isActive) {
+            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+              ...p,
+              autopilotTargetId: bodyId,
+            }));
+          } else {
+            callbacksRef.current.onSelectBody(
+              bodyId,
+              bodyId !== stateRef.current.selectedBodyId
+            );
+          }
         }
       }
     };
 
+    let lastTouchPos: { x: number; y: number } | null = null;
+    const handleTouchStart = (e: TouchEvent) => {
+      if (
+        stateRef.current.spacecraftControl.isActive &&
+        stateRef.current.spacecraftControl.cameraView === 'COCKPIT' &&
+        e.touches.length === 1
+      ) {
+        isCockpitDragging = true;
+        lastTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isCockpitDragging || !lastTouchPos || e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - lastTouchPos.x;
+      const dy = e.touches[0].clientY - lastTouchPos.y;
+      lastTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      cockpitDragSteerX = THREE.MathUtils.clamp(-dx * 0.045, -1.2, 1.2);
+      cockpitDragSteerY = THREE.MathUtils.clamp(-dy * 0.045, -1.2, 1.2);
+    };
+    const handleTouchEnd = () => {
+      isCockpitDragging = false;
+      lastTouchPos = null;
+      cockpitDragSteerX = 0;
+      cockpitDragSteerY = 0;
+    };
+
     renderer.domElement.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('mousemove', handlePointerMove);
     renderer.domElement.addEventListener('mouseup', handlePointerUp);
+    renderer.domElement.addEventListener('touchstart', handleTouchStart, { passive: true });
+    renderer.domElement.addEventListener('touchmove', handleTouchMove, { passive: true });
+    renderer.domElement.addEventListener('touchend', handleTouchEnd);
 
     const handleResize = () => {
       if (!container) return;
@@ -1092,6 +1349,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let hasInitializedTargetPos = false;
     const warpStartCameraPos = new THREE.Vector3();
     let wasWarpingLastFrame = false;
+    let prevAnimateScaleMode: ScaleMode = stateRef.current.scaleMode;
 
     const animate = (now: number) => {
       animationFrameId = requestAnimationFrame(animate);
@@ -1120,8 +1378,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       // Multi-Scale Hierarchy Cross-Fade Factors based on distance from Solar System origin (0, 0, 0)
       const distFromOrigin = camera.position.length();
-      const macroGalaxyFade = THREE.MathUtils.smoothstep(distFromOrigin, 180, 520);
-      const solarSystemMacroFade = 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, 220, 620);
+      const selectedBodyObj = getCelestialBody(st.selectedBodyId);
+      const isSelectedGalaxy = selectedBodyObj.category === 'galaxy';
+      const galThresholds = getGalacticFadeThresholds(st.scaleMode);
+      const macroGalaxyFade = isSelectedGalaxy
+        ? Math.max(0.85, THREE.MathUtils.smoothstep(distFromOrigin, 120, 420))
+        : THREE.MathUtils.smoothstep(distFromOrigin, galThresholds.fadeStart, galThresholds.fadeEnd);
+      const solarSystemMacroFade = isSelectedGalaxy
+        ? 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, 220, 620)
+        : 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, galThresholds.fadeStart * 1.05, galThresholds.fadeEnd * 1.15);
 
       // Keep 360° Deep Space Skybox & 45,000-star sphere centered on camera for infinite parallax depth
       starGroup.position.copy(camera.position);
@@ -1129,8 +1394,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       skyboxMat.uniforms.uMacroGalaxyFade.value = macroGalaxyFade;
       starMaterial.uniforms.uTime.value = clockTime;
 
-      beltGroup.visible =
-        st.showAsteroidBelt && st.scaleMode !== 'TRUE_1_TO_1' && solarSystemMacroFade > 0.04;
+      if (beltScaleBuilt !== st.scaleMode) {
+        rebuildBeltsForScaleMode(st.scaleMode);
+      }
+      beltGroup.visible = st.showAsteroidBelt && solarSystemMacroFade > 0.04;
       mainAsteroidBelt.rotation.y = clockTime * 0.003;
 
       const bodyWorldPositions: Record<string, THREE.Vector3> = {};
@@ -1207,7 +1474,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
           node.rootGroup.visible = macroGalaxyFade > 0.004;
         } else if (body.id === 'sun') {
-          node.rootGroup.visible = distFromOrigin < 1400;
+          node.rootGroup.visible = isSelected || distFromOrigin < galThresholds.fadeEnd * 2.5;
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
           if (node.atmosphereMesh) {
             (node.atmosphereMesh.material as THREE.ShaderMaterial).uniforms.uTime.value = clockTime;
@@ -1220,7 +1487,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             node.solarStormParticles.rotation.z = Math.sin(clockTime * 0.2) * 0.05;
           }
         } else {
-          node.rootGroup.visible = distFromOrigin < 900;
+          node.rootGroup.visible = isSelected || solarSystemMacroFade > 0.01;
           node.surfaceMaterial.uniforms.uTime.value = clockTime;
           node.surfaceMaterial.uniforms.uSunPosition.value.set(0, 0, 0);
           if (node.surfaceMaterial.uniforms.uVenusRadarMode) {
@@ -1292,6 +1559,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         satelliteGroup.visible = showEarthSats;
 
         if (showEarthSats) {
+          const currentEarthRadius = getScaledRadius(getCelestialBody('earth'), st.scaleMode);
+          const satRadiusScale = currentEarthRadius / 1.25;
           st.propagatedSatellites.forEach((sat) => {
             let model = satModelMap[sat.id];
             if (!model) {
@@ -1302,9 +1571,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             const catVisible = !!st.enabledSatelliteCategories[sat.category];
             model.visible = catVisible;
             model.position.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]);
-            model.lookAt(0, 0, 0);
+            model.lookAt(earthPos);
             const isSelSat = sat.id === st.selectedSatelliteId;
-            model.scale.setScalar(isSelSat ? 1.45 : 0.92);
+            model.scale.setScalar((isSelSat ? 1.45 : 0.92) * satRadiusScale);
 
             // Hide simultaneous background orbit rings so Earth's 4K globe stays crystal-clear
             const faintOrbit = satFaintOrbitMap[sat.id];
@@ -1335,6 +1604,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       const targetRadius = getScaledRadius(selectedBody, st.scaleMode);
 
       if (st.warpState.isActive) {
+        sr7.rootGroup.visible = false;
+        wasSpacecraftActive = false;
+        controls.enabled = true;
         if (!wasWarpingLastFrame) {
           warpStartCameraPos.copy(camera.position);
           wasWarpingLastFrame = true;
@@ -1418,7 +1690,327 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             apparentSpeedC: Number((warpBell * Math.max(1, prev.distanceAU) * 65).toFixed(1)),
           }));
         }
+      } else if (st.spacecraftControl.isActive) {
+        wasWarpingLastFrame = false;
+        const sc = st.spacecraftControl;
+        const baseShipScale =
+          st.scaleMode === 'TRUE_1_TO_1'
+            ? THREE.MathUtils.clamp(targetRadius * 0.28, 0.0014, 0.34)
+            : 0.34;
+        sr7.rootGroup.scale.setScalar(baseShipScale);
+        const shipScaleSwitched = prevAnimateScaleMode !== st.scaleMode;
+
+        if (!wasSpacecraftActive || shipScaleSwitched) {
+          prevAnimateScaleMode = st.scaleMode;
+          const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
+          const spawnDist =
+            selectedBody.category === 'galaxy'
+              ? targetRadius * 1.45
+              : targetRadius * 3.1 + baseShipScale * 5.2;
+          sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
+          sr7.rootGroup.lookAt(targetPos);
+          shipVelocity.set(0, 0, 0);
+          wasSpacecraftActive = true;
+          prevCameraView = sc.cameraView;
+          lastFirePulseCount = sc.firePulseCount;
+          if (sc.cameraView === 'EXTERNAL') {
+            sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
+            const chasePos = new THREE.Vector3();
+            sr7.chaseCameraAnchor.getWorldPosition(chasePos);
+            camera.position.copy(chasePos);
+            controls.target.copy(sr7.rootGroup.position);
+          }
+        }
+
+        sr7.rootGroup.visible = true;
+
+        // 1. Gather 6-DOF Attitude Inputs (Keyboard + Mouse Drag in Cockpit + Virtual Pad)
+        const vSteer = st.virtualSteerInput;
+        let pitchInput =
+          (pressedKeys.has('ArrowUp') ? 1 : 0) -
+          (pressedKeys.has('ArrowDown') ? 1 : 0) +
+          (vSteer?.pitch || 0) +
+          cockpitDragSteerY;
+        let yawInput =
+          (pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft') ? 1 : 0) -
+          (pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight') ? 1 : 0) +
+          (vSteer?.yaw || 0) +
+          cockpitDragSteerX;
+        let rollInput =
+          (pressedKeys.has('KeyQ') ? 1 : 0) -
+          (pressedKeys.has('KeyE') ? 1 : 0) +
+          (vSteer?.roll || 0);
+
+        pitchInput = THREE.MathUtils.clamp(pitchInput, -1.4, 1.4);
+        yawInput = THREE.MathUtils.clamp(yawInput, -1.4, 1.4);
+        rollInput = THREE.MathUtils.clamp(rollInput, -1.4, 1.4);
+        cockpitDragSteerX *= 0.82;
+        cockpitDragSteerY *= 0.82;
+
+        const rotRate = 1.48;
+        if (Math.abs(pitchInput) > 0.005) sr7.rootGroup.rotateX(pitchInput * rotRate * dt);
+        if (Math.abs(yawInput) > 0.005) sr7.rootGroup.rotateY(yawInput * rotRate * dt);
+        if (Math.abs(rollInput) > 0.005) sr7.rootGroup.rotateZ(rollInput * rotRate * 1.25 * dt);
+
+        // 2. Autopilot Alignment & Automated Approach
+        const autoTargetId = sc.autopilotTargetId;
+        const autoPos = autoTargetId ? bodyWorldPositions[autoTargetId] : null;
+        let autopilotStatus: SpacecraftTelemetry['autopilotStatus'] = 'OFF';
+        let autoThrottleDrive = sc.throttle;
+
+        if (autoPos && autoTargetId) {
+          const autoBody = getCelestialBody(autoTargetId);
+          const autoRadius = getScaledRadius(autoBody, st.scaleMode);
+          const stopDist =
+            autoBody.category === 'galaxy' ? autoRadius * 1.35 : autoRadius * 2.8 + baseShipScale * 4.0;
+          const distToAuto = sr7.rootGroup.position.distanceTo(autoPos);
+
+          if (distToAuto <= stopDist) {
+            autopilotStatus = 'ARRIVED';
+            shipVelocity.multiplyScalar(Math.max(0, 1 - dt * 5.5));
+            if (shipVelocity.length() < baseShipScale * 0.35) {
+              shipVelocity.set(0, 0, 0);
+              cb.onUpdateSpacecraftControl((prev) => ({
+                ...prev,
+                autopilotTargetId: null,
+                throttle: 0,
+                boostActive: false,
+              }));
+              cb.onSelectBody(autoTargetId, false);
+            }
+          } else {
+            const lookMat = new THREE.Matrix4().lookAt(
+              sr7.rootGroup.position,
+              autoPos,
+              new THREE.Vector3(0, 1, 0)
+            );
+            const desiredQuat = new THREE.Quaternion().setFromRotationMatrix(lookMat);
+            const alignAngle = sr7.rootGroup.quaternion.angleTo(desiredQuat);
+
+            if (Math.abs(pitchInput) < 0.08 && Math.abs(yawInput) < 0.08) {
+              sr7.rootGroup.quaternion.slerp(desiredQuat, Math.min(1, dt * 3.4));
+            }
+            autopilotStatus = alignAngle > 0.14 ? 'ALIGNING' : 'CRUISING';
+            if (!sc.brakeRequested) {
+              autoThrottleDrive = alignAngle > 0.35 ? 0.35 : distToAuto > stopDist * 2.4 ? 1.0 : 0.45;
+            }
+          }
+        }
+
+        // 3. Adaptive Velocity Integration Across Solar & Galactic Scales
+        const boosting =
+          sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight');
+        const effectiveThrottle = sc.brakeRequested
+          ? 0
+          : THREE.MathUtils.clamp(autoThrottleDrive + (vSteer?.forward || 0), -0.8, 1.2);
+        const shipDistToTarget = sr7.rootGroup.position.distanceTo(targetPos);
+        const localHorizonRef = Math.max(targetRadius * 1.5, Math.min(distFromOrigin, shipDistToTarget));
+        const adaptiveCruise = autoPos
+          ? THREE.MathUtils.clamp(sr7.rootGroup.position.distanceTo(autoPos) * 0.55, baseShipScale * 4.0, 2800.0)
+          : st.scaleMode === 'TRUE_1_TO_1' && !boosting
+            ? THREE.MathUtils.clamp(localHorizonRef * 0.9, baseShipScale * 4.5, 480.0)
+            : THREE.MathUtils.clamp(Math.max(baseShipScale * 12.0, localHorizonRef * 0.65), baseShipScale * 12.0, 2800.0);
+        const targetSpeed = effectiveThrottle * adaptiveCruise * (boosting ? 3.8 : 1.0);
+        const shipForward = new THREE.Vector3(0, 0, -1)
+          .applyQuaternion(sr7.rootGroup.quaternion)
+          .normalize();
+
+        const desiredVel = shipForward.clone().multiplyScalar(targetSpeed);
+        const dampRate = sc.brakeRequested
+          ? dt * 7.2
+          : sc.sasEnabled
+            ? dt * 3.8
+            : dt * 1.25;
+        shipVelocity.lerp(desiredVel, Math.min(1, dampRate));
+
+        const shipDisplacement = shipVelocity.clone().multiplyScalar(dt);
+        sr7.rootGroup.position.add(shipDisplacement);
+
+        // 4. High-Speed Boost Warp Streaks & Dynamic FOV
+        const currentSpeed = shipVelocity.length();
+        const showWarpStreaks = boosting && currentSpeed > 14;
+        warpTunnelGroup.visible = showWarpStreaks;
+        if (showWarpStreaks) {
+          warpTunnelGroup.position.copy(sr7.rootGroup.position);
+          warpTunnelGroup.lookAt(sr7.rootGroup.position.clone().add(shipForward));
+          warpCylMat.uniforms.uTime.value = clockTime;
+          warpCylMat.uniforms.uIntensity.value = 0.42;
+          warpLines.rotation.z = clockTime * 2.8;
+          warpMat.opacity = 0.48;
+        }
+
+        const targetFov = sc.cameraView === 'COCKPIT' ? (boosting ? 68 : 60) : boosting ? 56 : 46;
+        if (Math.abs(camera.fov - targetFov) > 0.1) {
+          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 6));
+          camera.updateProjectionMatrix();
+        }
+
+        // 5. Twin Ventral Plasma Pulse Cannons & Projectiles
+        if (sc.firePulseCount > lastFirePulseCount) {
+          lastFirePulseCount = sc.firePulseCount;
+          muzzleFlashAlpha = 1.0;
+          const boltScaleRatio = baseShipScale / 0.34;
+          const boltSpeed = Math.max(baseShipScale * 95, currentSpeed * 1.8 + baseShipScale * 90);
+          const boltVel = shipForward.clone().multiplyScalar(boltSpeed);
+          [-0.3, 0.3].forEach((sideX) => {
+            const boltMesh = new THREE.Mesh(pulseBoltGeo, pulseBoltMat);
+            boltMesh.scale.setScalar(boltScaleRatio);
+            const muzzleWorld = new THREE.Vector3(sideX, -0.36, -2.22);
+            sr7.rootGroup.localToWorld(muzzleWorld);
+            boltMesh.position.copy(muzzleWorld);
+            boltMesh.quaternion.copy(sr7.rootGroup.quaternion);
+            projectileGroup.add(boltMesh);
+            activePulseBolts.push({ mesh: boltMesh, velocity: boltVel.clone(), age: 0 });
+          });
+        }
+        muzzleFlashAlpha = Math.max(0, muzzleFlashAlpha - dt * 7.5);
+
+        for (let i = activePulseBolts.length - 1; i >= 0; i--) {
+          const bolt = activePulseBolts[i];
+          bolt.age += dt;
+          bolt.mesh.position.addScaledVector(bolt.velocity, dt);
+          if (bolt.age > 2.2) {
+            projectileGroup.remove(bolt.mesh);
+            activePulseBolts.splice(i, 1);
+          }
+        }
+
+        // 6. Camera Placement: First-Person Interactive Cockpit vs Third-Person Chase Orbit
+        if (sc.cameraView === 'COCKPIT') {
+          controls.enabled = false;
+          sr7.cockpitSeatAnchor.updateWorldMatrix(true, false);
+          const seatWorldPos = new THREE.Vector3();
+          sr7.cockpitSeatAnchor.getWorldPosition(seatWorldPos);
+          camera.position.copy(seatWorldPos);
+          camera.quaternion.copy(sr7.rootGroup.quaternion);
+          controls.target.copy(seatWorldPos).addScaledVector(shipForward, 6.0);
+        } else {
+          controls.enabled = true;
+          if (prevCameraView !== 'EXTERNAL') {
+            sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
+            const chaseWorld = new THREE.Vector3();
+            sr7.chaseCameraAnchor.getWorldPosition(chaseWorld);
+            camera.position.copy(chaseWorld);
+            controls.target.copy(sr7.rootGroup.position);
+          } else {
+            camera.position.add(shipDisplacement);
+            controls.target.add(shipDisplacement);
+          }
+          controls.update();
+        }
+        prevCameraView = sc.cameraView;
+
+        // 7. Compute Nearest Contacts & Ship-Relative Radar Bearings
+        const invShipQuat = sr7.rootGroup.quaternion.clone().invert();
+        const contactsUnsorted: NearbySpacecraftContact[] = [];
+        ALL_CELESTIAL_BODIES.forEach((b) => {
+          const bPos = bodyWorldPositions[b.id];
+          if (!bPos) return;
+          const dist = sr7.rootGroup.position.distanceTo(bPos);
+          const relLocal = bPos.clone().sub(sr7.rootGroup.position).applyQuaternion(invShipQuat);
+          const bearingDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.x, -relLocal.z));
+          const horizDist = Math.max(0.001, Math.hypot(relLocal.x, relLocal.z));
+          const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.y, horizDist));
+
+          let distFormatted = '';
+          if (dist < 40) {
+            const km = Math.round(dist * 12_500);
+            distFormatted = `${km.toLocaleString('pt-BR')} km`;
+          } else if (dist < 420) {
+            distFormatted = `${(dist * 0.25).toFixed(2)} UA`;
+          } else {
+            const ly = dist * 42;
+            distFormatted =
+              ly >= 1_000_000
+                ? `${(ly / 1_000_000).toFixed(2)} Mly`
+                : `${Math.round(ly).toLocaleString('pt-BR')} ly`;
+          }
+
+          contactsUnsorted.push({
+            id: b.id,
+            name: b.name,
+            category: b.category,
+            distanceUnits: dist,
+            distanceFormatted: distFormatted,
+            bearingDeg,
+            elevationDeg,
+          });
+        });
+        contactsUnsorted.sort((a, b) => a.distanceUnits - b.distanceUnits);
+        const nearestContact = contactsUnsorted[0];
+        const radarContacts = contactsUnsorted.slice(0, 7);
+
+        let speedFormatted = '0 km/s';
+        if (currentSpeed > 0.05) {
+          if (currentSpeed < 30) {
+            speedFormatted = `${Math.round(currentSpeed * 1_850).toLocaleString('pt-BR')} km/s`;
+          } else if (currentSpeed < 220) {
+            speedFormatted = `${(currentSpeed * 0.08).toFixed(1)} c`;
+          } else {
+            speedFormatted = `${Math.round(currentSpeed * 12).toLocaleString('pt-BR')} ly/s`;
+          }
+        }
+
+        const radarAgeSec =
+          sc.radarPulseTimestamp > 0 ? (now - sc.radarPulseTimestamp) / 1000 : 99;
+
+        sr7.updateAnimations({
+          dt,
+          clockTime,
+          throttle: sc.brakeRequested ? 0 : effectiveThrottle,
+          boostActive: boosting,
+          headlightsOn: sc.headlightsOn,
+          interiorLightsOn: sc.interiorLightsOn,
+          pitchInput,
+          rollInput,
+          yawInput,
+          radarPulseAgeSec: radarAgeSec,
+          muzzleFlashAlpha,
+          speedFormatted,
+          nearestName: nearestContact?.name || 'Espaço Profundo',
+          nearestDist: nearestContact?.distanceFormatted || '—',
+          sasEnabled: sc.sasEnabled,
+          autopilotActive: Boolean(autoTargetId),
+        });
+
+        // 8. Sync Live Telemetry to HUD (throttled ~9 Hz)
+        if (now - lastTelemetrySync > 110) {
+          lastTelemetrySync = now;
+          const shipEuler = new THREE.Euler().setFromQuaternion(sr7.rootGroup.quaternion, 'YXZ');
+          cb.onSyncSpacecraftTelemetry({
+            speedUnitsPerSec: currentSpeed,
+            speedFormatted,
+            fuelPercent: Math.max(12, Number((100 - Math.min(80, currentSpeed * 0.02)).toFixed(1))),
+            hullIntegrity: 100,
+            reactorTempC: Math.round(
+              320 + Math.abs(effectiveThrottle) * 240 + (boosting ? 380 : 0)
+            ),
+            pitchDeg: Math.round(THREE.MathUtils.radToDeg(shipEuler.x)),
+            yawDeg: Math.round(THREE.MathUtils.radToDeg(shipEuler.y)),
+            rollDeg: Math.round(THREE.MathUtils.radToDeg(shipEuler.z)),
+            nearestBodyId: nearestContact?.id || 'sun',
+            nearestBodyName: nearestContact?.name || 'Sol',
+            nearestDistanceFormatted: nearestContact?.distanceFormatted || '0 km',
+            nearbyContacts: radarContacts,
+            autopilotStatus,
+          });
+        }
+
+        const computedShipZoom: ZoomLevel =
+          distFromOrigin > galThresholds.fadeEnd
+            ? 'COSMIC_GALAXY'
+            : distFromOrigin > (st.scaleMode === 'TRUE_1_TO_1' ? 120 : 38)
+              ? 'SOLAR_SYSTEM'
+              : 'PLANETARY_APPROACH';
+        if (computedShipZoom !== st.zoomLevel) {
+          cb.onZoomLevelChange(computedShipZoom);
+        }
       } else {
+        sr7.rootGroup.visible = false;
+        wasSpacecraftActive = false;
+        controls.enabled = true;
+        controls.minDistance =
+          selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.00008, targetRadius * 1.18);
         wasWarpingLastFrame = false;
         warpTunnelGroup.visible = false;
         if (Math.abs(camera.fov - 46) > 0.1) {
@@ -1431,17 +2023,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const isExternalGalaxy =
           selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
 
-        if (hasInitializedTargetPos) {
+        if (hasInitializedTargetPos && prevAnimateScaleMode === st.scaleMode) {
           if (selectedBody.category !== 'galaxy') {
             const deltaTarget = new THREE.Vector3().subVectors(targetPos, previousTargetWorldPos);
-            const followWeight = 1.0 - THREE.MathUtils.smoothstep(distFromOrigin, 360, 850);
+            const followWeight =
+              1.0 - THREE.MathUtils.smoothstep(distFromOrigin, galThresholds.fadeStart * 1.8, galThresholds.fadeEnd * 2.2);
             camera.position.addScaledVector(deltaTarget, followWeight);
             controls.target.addScaledVector(deltaTarget, followWeight);
           }
         } else {
           controls.target.copy(targetPos);
           const initDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-          camera.position.copy(targetPos.clone().addScaledVector(initDir, targetRadius * 3.25));
+          camera.position.copy(targetPos.clone().addScaledVector(initDir, Math.max(0.00015, targetRadius * 3.25)));
+        }
+        const scaleSwitchedObservatory = prevAnimateScaleMode !== st.scaleMode;
+        if (scaleSwitchedObservatory) {
+          prevAnimateScaleMode = st.scaleMode;
         }
         previousTargetWorldPos.copy(targetPos);
         hasInitializedTargetPos = true;
@@ -1453,24 +2050,25 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
           // When zooming IN from Milky Way galactic scale, steer directly toward (0,0,0) [Sistema Solar in the Orion Arm]
           const zoomAnchor =
-            !isExternalGalaxy && step > 0 && distFromOrigin > 180
+            !isExternalGalaxy && step > 0 && distFromOrigin > galThresholds.fadeStart
               ? new THREE.Vector3(0, 0, 0)
               : controls.target;
           const offset = new THREE.Vector3().subVectors(camera.position, zoomAnchor);
           const factor = step > 0 ? 0.72 : 1.38;
           const minAllowed =
-            selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.08, targetRadius * 1.32);
-          const nextLen = THREE.MathUtils.clamp(offset.length() * factor, minAllowed, 38000);
+            selectedBody.id === 'milky-way' ? 2.2 : Math.max(0.00012, targetRadius * 1.24);
+          const maxLen = st.scaleMode === 'TRUE_1_TO_1' ? 190000 : 38000;
+          const nextLen = THREE.MathUtils.clamp(offset.length() * factor, minAllowed, maxLen);
           offset.setLength(nextLen);
           camera.position.copy(zoomAnchor).add(offset);
-          if (!isExternalGalaxy && step > 0 && distFromOrigin > 180) {
+          if (!isExternalGalaxy && step > 0 && distFromOrigin > galThresholds.fadeStart) {
             controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.32);
           }
         }
 
         if (cameraCommandRef.current.activeTransition) {
           const mult = cameraCommandRef.current.desiredDistanceMultiplier;
-          const desiredDist = Math.max(0.25, targetRadius * mult);
+          const desiredDist = Math.max(0.00015, targetRadius * mult);
 
           let offsetDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
           if (selectedBody.id === 'milky-way') {
@@ -1503,10 +2101,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
 
           const goalCamPos = targetPos.clone().addScaledVector(offsetDir, desiredDist);
-          camera.position.lerp(goalCamPos, 0.085);
-          controls.target.lerp(targetPos, 0.14);
-          if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.025) {
+          if (scaleSwitchedObservatory) {
+            camera.position.copy(goalCamPos);
+            controls.target.copy(targetPos);
             cameraCommandRef.current.activeTransition = false;
+          } else {
+            camera.position.lerp(goalCamPos, 0.085);
+            controls.target.lerp(targetPos, 0.14);
+            if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.025) {
+              cameraCommandRef.current.activeTransition = false;
+            }
           }
         } else {
           // Continuous Multi-Scale Orbit Pivot Interpolation:
@@ -1517,7 +2121,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           } else {
             const baseLocalTarget =
               selectedBody.id === 'milky-way' ? new THREE.Vector3(0, 0, 0) : targetPos;
-            const galacticCenterBlend = THREE.MathUtils.smoothstep(distFromOrigin, 380, 2100);
+            const galacticCenterBlend = THREE.MathUtils.smoothstep(
+              distFromOrigin,
+              galThresholds.fadeStart * 2.0,
+              galThresholds.fadeEnd * 4.0
+            );
             const desiredPivot = new THREE.Vector3().lerpVectors(
               baseLocalTarget,
               mwWorldPos,
@@ -1529,7 +2137,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             if (st.selectedBodyId === 'milky-way' && distFromOrigin < 140) {
               cameraCommandRef.current.suppressNextSelectionReset = true;
               cb.onSelectBody('sun', false);
-            } else if (selectedBody.category !== 'galaxy' && distFromOrigin > 950) {
+            } else if (
+              selectedBody.category !== 'galaxy' &&
+              distFromOrigin > galThresholds.solarHandoffDist
+            ) {
               cameraCommandRef.current.suppressNextSelectionReset = true;
               cb.onSelectBody('milky-way', false);
             }
@@ -1539,14 +2150,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         controls.update();
 
         const camDist = camera.position.distanceTo(controls.target);
-        const distInRadii = camDist / Math.max(0.01, targetRadius);
+        const distInRadii = camDist / Math.max(0.00005, targetRadius);
 
         let computedZoom: ZoomLevel = 'SOLAR_SYSTEM';
-        if (distFromOrigin > 480 || isExternalGalaxy) {
+        if (distFromOrigin > galThresholds.fadeEnd || isExternalGalaxy || selectedBody.id === 'milky-way') {
           computedZoom = 'COSMIC_GALAXY';
         } else if (selectedBody.id === 'sun' && distInRadii > 8.5) {
           computedZoom = 'SOLAR_SYSTEM';
-        } else if (distInRadii > 16.0 || selectedBody.id === 'milky-way') {
+        } else if (distInRadii > (st.scaleMode === 'TRUE_1_TO_1' ? 95.0 : 16.0)) {
           computedZoom = 'SOLAR_SYSTEM';
         } else if (distInRadii > 4.8) {
           computedZoom = 'PLANETARY_APPROACH';
@@ -1570,14 +2181,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         const isExternalGalaxy =
           selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
-        const isGalacticScaleView = distFromOrigin > 320 || isExternalGalaxy;
+        const isGalacticScaleView =
+          isExternalGalaxy ||
+          selectedBody.id === 'milky-way' ||
+          distFromOrigin > galThresholds.fadeStart * 1.45;
 
         // Calculate real-time vertical field-of-view scale (Cosmoscope-style "↕ 157.377 ly" / "UA" / "km")
-        const activeCamDist = Math.max(0.1, camera.position.distanceTo(controls.target));
+        const activeCamDist = Math.max(0.00005, camera.position.distanceTo(controls.target));
         const fovSpanUnits =
           2.0 * activeCamDist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
         let formattedScale = '';
-        if (distFromOrigin > 210 || isExternalGalaxy) {
+        if (isGalacticScaleView) {
           const spanLy = fovSpanUnits * 59.8;
           if (spanLy >= 1_000_000) {
             formattedScale = `${(spanLy / 1_000_000).toLocaleString('pt-BR', {
@@ -1591,14 +2205,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               maximumFractionDigits: 1,
             })} ly`;
           }
-        } else if (st.zoomLevel === 'SOLAR_SYSTEM' || distFromOrigin > 32) {
-          const spanAU = Math.max(0.1, fovSpanUnits * 0.34);
+        } else if (st.zoomLevel === 'SOLAR_SYSTEM') {
+          const spanAU =
+            st.scaleMode === 'TRUE_1_TO_1'
+              ? Math.max(0.01, fovSpanUnits / 149.59787)
+              : st.scaleMode === 'PROPORTIONAL_DISTANCES'
+                ? Math.max(0.05, fovSpanUnits / 18.0)
+                : Math.max(0.1, fovSpanUnits * 0.34);
           formattedScale = `${spanAU.toLocaleString('pt-BR', {
-            minimumFractionDigits: 1,
-            maximumFractionDigits: 1,
+            minimumFractionDigits: spanAU < 1 ? 2 : 1,
+            maximumFractionDigits: spanAU < 1 ? 2 : 1,
           })} UA`;
         } else {
-          const bodyKmPerUnit = selectedBody.meanRadiusKm / Math.max(0.005, targetRadius);
+          const bodyKmPerUnit =
+            st.scaleMode === 'TRUE_1_TO_1'
+              ? 1_000_000
+              : selectedBody.meanRadiusKm / Math.max(0.00005, targetRadius);
           const spanKm = Math.max(50, Math.round(fovSpanUnits * bodyKmPerUnit));
           formattedScale = `${spanKm.toLocaleString('pt-BR')} km`;
         }
@@ -1841,10 +2463,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mousemove', handlePointerMove);
       controls.removeEventListener('start', stopAutoCamera);
       renderer.domElement.removeEventListener('wheel', handleWheelInterrupt);
       renderer.domElement.removeEventListener('mousedown', handlePointerDown);
       renderer.domElement.removeEventListener('mouseup', handlePointerUp);
+      renderer.domElement.removeEventListener('touchstart', handleTouchStart);
+      renderer.domElement.removeEventListener('touchmove', handleTouchMove);
+      renderer.domElement.removeEventListener('touchend', handleTouchEnd);
       controls.dispose();
       renderer.dispose();
     };
@@ -1855,7 +2483,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       {/* Cosmoscope-Style Multi-Scale Switcher & Live Vertical Scale Readout ("↕ 157.377 ly") */}
-      <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
+      {!spacecraftControl.isActive && (
+        <>
+        <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
         <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
           <button
             onClick={() => {
@@ -1964,6 +2594,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           <Minus className="w-4 h-4" />
         </button>
       </div>
+      </>
+      )}
 
       {/* Clean 3D-Projected Object Markers */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -2030,7 +2662,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             return (
               <button
                 key={lbl.id}
-                onClick={() => onSelectBody(lbl.payloadId, false)}
+                onClick={() => {
+                  if (spacecraftControl.isActive) {
+                    onUpdateSpacecraftControl((p) => ({
+                      ...p,
+                      brakeRequested: false,
+                      autopilotTargetId: lbl.payloadId,
+                    }));
+                  } else {
+                    onSelectBody(lbl.payloadId, false);
+                  }
+                }}
                 style={{
                   transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -50%)`,
                 }}
@@ -2048,9 +2690,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 key={lbl.id}
                 onClick={() => {
                   if (isSolarSystemMarker) {
-                    onSelectBody('sun', false);
-                    cameraCommandRef.current.desiredDistanceMultiplier = 18.0;
-                    cameraCommandRef.current.activeTransition = true;
+                    if (spacecraftControl.isActive) {
+                      onUpdateSpacecraftControl((p) => ({
+                        ...p,
+                        brakeRequested: false,
+                        autopilotTargetId: 'sun',
+                      }));
+                    } else {
+                      onSelectBody('sun', false);
+                      cameraCommandRef.current.desiredDistanceMultiplier = 18.0;
+                      cameraCommandRef.current.activeTransition = true;
+                    }
                   }
                 }}
                 style={{
@@ -2076,7 +2726,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           return (
             <button
               key={lbl.id}
-              onClick={() => onSelectBody(lbl.payloadId, lbl.payloadId !== selectedBodyId)}
+              onClick={() => {
+                if (spacecraftControl.isActive) {
+                  onUpdateSpacecraftControl((p) => ({
+                    ...p,
+                    brakeRequested: false,
+                    autopilotTargetId: lbl.payloadId,
+                  }));
+                } else {
+                  onSelectBody(lbl.payloadId, lbl.payloadId !== selectedBodyId);
+                }
+              }}
               style={{
                 transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)`,
               }}

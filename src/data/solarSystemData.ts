@@ -64,9 +64,31 @@ export function getScaledRadius(body: CelestialBodyData, scaleMode: ScaleMode): 
     case 'PROPORTIONAL_DISTANCES':
       return body.visualRadiusExploration * 0.85;
     case 'TRUE_1_TO_1': {
-      // 1 scene unit = 1,000,000 km -> Earth is 0.006371 units, Sun is 0.696 units, 1 AU is 149.6 units
-      return Math.max(0.004, body.meanRadiusKm / 1_000_000);
+      // 1 scene unit = 1,000,000 km -> Earth = 0.006371, Moon = 0.001737, Mars = 0.00339, Sun = 0.6957, 1 AU = 149.6
+      // Floor at 0.0001 (100 km) preserves exact 1:1 proportions for all planets, dwarfs & major moons.
+      return Math.max(0.0001, body.meanRadiusKm / 1_000_000);
     }
+  }
+}
+
+/**
+ * Returns [fadeStart, fadeEnd] distances from (0,0,0) for transitioning from Solar System to Galactic view,
+ * ensuring outer planets in TRUE_1_TO_1 (Saturn ~1427u, Neptune ~4500u, Pluto ~5900u) never vanish or flip to galaxy view.
+ */
+export function getGalacticFadeThresholds(scaleMode: ScaleMode): {
+  fadeStart: number;
+  fadeEnd: number;
+  solarHandoffDist: number;
+} {
+  switch (scaleMode) {
+    case 'TRUE_1_TO_1':
+      return { fadeStart: 82000, fadeEnd: 135000, solarHandoffDist: 140000 };
+    case 'PROPORTIONAL_DISTANCES':
+      return { fadeStart: 1550, fadeEnd: 2800, solarHandoffDist: 3200 };
+    case 'EXPLORATION':
+    case 'TRUE_SIZES':
+    default:
+      return { fadeStart: 180, fadeEnd: 520, solarHandoffDist: 950 };
   }
 }
 
@@ -87,17 +109,23 @@ export function getScaledOrbitalRadius(body: CelestialBodyData, scaleMode: Scale
     return parentRadius * 1.35 + body.explorationDistanceUnits;
   }
 
+  // Handle hyperbolic interstellar trajectories (negative semiMajorAxisAU like 1I/'Oumuamua)
+  const effectiveAU =
+    body.orbit.semiMajorAxisAU > 0
+      ? body.orbit.semiMajorAxisAU
+      : Math.max(1.5, Math.abs(body.distanceFromSunAU || 3.5));
+
   switch (scaleMode) {
     case 'EXPLORATION':
     case 'TRUE_SIZES':
       return body.explorationDistanceUnits;
     case 'PROPORTIONAL_DISTANCES': {
-      // 1 AU = 22 scene units + Sun offset of 8 units
-      return 8.0 + body.orbit.semiMajorAxisAU * 18.0;
+      // 1 AU = 18 scene units + Sun offset of 8 units
+      return 8.0 + effectiveAU * 18.0;
     }
     case 'TRUE_1_TO_1': {
       // 1 scene unit = 1,000,000 km => 1 AU = 149.59787 units
-      return body.orbit.semiMajorAxisAU * 149.59787;
+      return effectiveAU * 149.59787;
     }
   }
 }
@@ -140,13 +168,14 @@ export function computeKeplerianPosition3D(
 
   const daysSinceJ2000 = (timeMs - J2000_EPOCH_MS) / 86_400_000;
   const {
-    eccentricity: e,
+    eccentricity: rawEccentricity,
     inclinationDeg,
     longitudeOfAscendingNodeDeg,
     argumentOfPerihelionDeg,
     meanAnomalyAtEpochDeg,
     orbitalPeriodDays,
   } = body.orbit;
+  const e = rawEccentricity >= 1.0 ? 0.92 : rawEccentricity;
 
   const a = getScaledOrbitalRadius(body, scaleMode);
   if (orbitalPeriodDays === 0 || a === 0) return [0, 0, 0];
@@ -207,11 +236,12 @@ export function generateKeplerianOrbitCurvePoints(
 
   const a = getScaledOrbitalRadius(body, scaleMode);
   const {
-    eccentricity: e,
+    eccentricity: rawEccentricity,
     inclinationDeg,
     longitudeOfAscendingNodeDeg,
     argumentOfPerihelionDeg,
   } = body.orbit;
+  const e = rawEccentricity >= 1.0 ? 0.92 : rawEccentricity;
 
   const degToRad = Math.PI / 180;
   const i_rad = inclinationDeg * degToRad;

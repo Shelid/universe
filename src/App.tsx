@@ -26,11 +26,17 @@ import {
   SatelliteCategory,
   SatelliteRecord,
   ScaleMode,
+  SpacecraftControlState,
+  SpacecraftTelemetry,
   SpaceMission,
   SurfaceLandmark,
   WarpFlightState,
   ZoomLevel,
 } from './types/astronomy';
+import {
+  SpacecraftCockpitHUD,
+  VirtualSteerInput,
+} from './components/SpacecraftCockpitHUD';
 import {
   ALL_CELESTIAL_BODIES,
   getCelestialBody,
@@ -147,12 +153,66 @@ export function App() {
     apparentSpeedC: 0,
   });
 
+  // SR-7 Explorer Spacecraft & Interactive 3D Cockpit Flight State
+  const [spacecraftControl, setSpacecraftControl] = useState<SpacecraftControlState>({
+    isActive: false,
+    cameraView: 'COCKPIT',
+    throttle: 0,
+    boostActive: false,
+    headlightsOn: true,
+    sasEnabled: true,
+    shieldsOn: true,
+    radarPulseTimestamp: 0,
+    autopilotTargetId: null,
+    brakeRequested: false,
+    firePulseCount: 0,
+    interiorLightsOn: true,
+  });
+
+  const [spacecraftTelemetry, setSpacecraftTelemetry] = useState<SpacecraftTelemetry>({
+    speedUnitsPerSec: 0,
+    speedFormatted: '0 km/s',
+    fuelPercent: 100,
+    hullIntegrity: 100,
+    reactorTempC: 340,
+    pitchDeg: 0,
+    yawDeg: 0,
+    rollDeg: 0,
+    nearestBodyId: 'earth',
+    nearestBodyName: 'Terra',
+    nearestDistanceFormatted: '0 km',
+    nearbyContacts: [],
+    autopilotStatus: 'OFF',
+  });
+
+  const [virtualSteerInput, setVirtualSteerInput] = useState<VirtualSteerInput>({
+    pitch: 0,
+    yaw: 0,
+    roll: 0,
+    forward: 0,
+  });
+
   useEffect(() => {
     refreshCatalogFromCelesTrak(VERIFIED_SATELLITE_CATALOG).then((res) => {
       setSatelliteCatalog(res.catalog);
       setIsLiveCelesTrak(res.isLiveCelesTrak);
       setTleUpdatedAtIso(res.updatedAtIso);
     });
+  }, []);
+
+  const launchSpacecraftSR7 = useCallback(() => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    setIsDossierOpen(false);
+    setIsExploringInterior(false);
+    setWarpState((w) => ({ ...w, isActive: false, stage: 'IDLE' }));
+    setSpacecraftControl((prev) => ({
+      ...prev,
+      isActive: true,
+      cameraView: 'COCKPIT',
+      throttle: 0,
+      brakeRequested: false,
+      autopilotTargetId: null,
+    }));
   }, []);
 
   const handleSyncSimulationTime = useCallback((nextTimeMs: number) => {
@@ -422,10 +482,15 @@ export function App() {
         }}
         warpState={warpState}
         onUpdateWarpState={setWarpState}
+        spacecraftControl={spacecraftControl}
+        onUpdateSpacecraftControl={setSpacecraftControl}
+        onSyncSpacecraftTelemetry={setSpacecraftTelemetry}
+        virtualSteerInput={virtualSteerInput}
       />
 
-      {/* 2. STREAMLINED SINGLE-ROW TOP BAR */}
-      <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
+      {/* 2. STREAMLINED RESPONSIVE TOP BAR */}
+      {!spacecraftControl.isActive && (
+      <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-2 sm:px-4 py-2 sm:py-3 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
         {/* Left: Brand Identity + Zoom Level Pill */}
         <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/85 backdrop-blur-xl border border-white/10 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl shadow-lg">
           <div className="flex items-center gap-1.5 sm:gap-2 pr-2 sm:pr-2.5 sm:border-r border-white/10">
@@ -475,11 +540,11 @@ export function App() {
           </div>
         </div>
 
-        {/* Right: Search + Missions + Layers Popover + Fullscreen */}
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
+        {/* Right: Search + Pilot SR-7 + Missions + Layers Popover + Fullscreen */}
+        <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
 
           {/* Search Omnibox */}
-          <div className="relative w-32 sm:w-64">
+          <div className="relative w-24 sm:w-56">
             <div className="flex items-center bg-slate-950/85 backdrop-blur-xl border border-white/10 focus-within:border-sky-400 rounded-xl px-2 sm:px-3 py-1.5 shadow-lg">
               <Search className="w-3.5 h-3.5 text-slate-400 mr-1.5 sm:mr-2 shrink-0" />
               <input
@@ -526,6 +591,16 @@ export function App() {
               </div>
             )}
           </div>
+
+          <button
+            onClick={launchSpacecraftSR7}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-red-600/90 to-orange-500/90 hover:from-red-500 hover:to-orange-400 border border-amber-300/60 text-xs font-bold text-white backdrop-blur-xl shadow-[0_0_20px_rgba(239,68,68,0.45)] transition-all"
+            title="Entrar na Cabine 3D da Nave SR-7 Explorer e Navegar Livremente pelo Espaço"
+          >
+            <Rocket className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+            <span className="hidden sm:inline">Pilotar Nave SR-7</span>
+            <span className="sm:hidden">Nave SR-7</span>
+          </button>
 
           <button
             onClick={() => setIsMissionsModalOpen(true)}
@@ -594,6 +669,22 @@ export function App() {
                     />
                   </label>
                 ))}
+
+                <div className="pt-2 border-t border-white/10 lg:hidden">
+                  <div className="text-[10px] font-mono uppercase text-amber-300 mb-1">
+                    Escala do Universo
+                  </div>
+                  <select
+                    value={scaleMode}
+                    onChange={(e) => setScaleMode(e.target.value as ScaleMode)}
+                    className="w-full bg-slate-900 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none"
+                  >
+                    <option value="EXPLORATION">Escala Adaptada (Exploração)</option>
+                    <option value="TRUE_SIZES">Proporção Real de Tamanhos</option>
+                    <option value="PROPORTIONAL_DISTANCES">Distâncias Reais (UA)</option>
+                    <option value="TRUE_1_TO_1">Escala Científica 1:1 Exata</option>
+                  </select>
+                </div>
               </div>
             )}
           </div>
@@ -611,9 +702,10 @@ export function App() {
           </button>
         </div>
       </header>
+      )}
 
       {/* 3. SLEEK FLOATING TELEMETRY CARD (Closeable on Smartphone & Desktop!) */}
-      {!isDossierOpen && !warpState.isActive && (
+      {!isDossierOpen && !warpState.isActive && !spacecraftControl.isActive && (
         <div className="pointer-events-none fixed left-3 right-3 sm:left-auto sm:right-4 top-16 z-20 flex flex-col items-end gap-2">
           {/* Selected Satellite Quick Card */}
           {selectedBodyId === 'earth' && currentSelectedSatellite && (
@@ -784,6 +876,14 @@ export function App() {
                   </span>
                 </button>
               )}
+
+              <button
+                onClick={launchSpacecraftSR7}
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-red-600/85 to-orange-500/85 hover:from-red-500 hover:to-orange-400 border border-amber-300/50 text-white text-xs font-bold shadow-[0_0_16px_rgba(239,68,68,0.3)] transition-all"
+              >
+                <Rocket className="w-3.5 h-3.5 text-amber-200" />
+                <span>Pilotar Nave SR-7 Explorer</span>
+              </button>
             </div>
           ) : (
             <button
@@ -843,8 +943,18 @@ export function App() {
       </div>
 
       {/* 5. UNIFIED, MINIMALIST BOTTOM PLANETARY DOCK & TIME CONTROLLER */}
-      {!warpState.isActive && (
+      {!warpState.isActive && !spacecraftControl.isActive && (
         <footer className="pointer-events-none fixed bottom-3 inset-x-3 z-20 flex flex-wrap items-center justify-center gap-2">
+          {/* Quick SR-7 Spacecraft Flight Mode Launcher Pill */}
+          <button
+            onClick={launchSpacecraftSR7}
+            className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-red-600/90 to-orange-500/90 hover:from-red-500 hover:to-orange-400 border border-amber-300/60 text-xs font-bold text-white shadow-[0_0_18px_rgba(239,68,68,0.4)] backdrop-blur-xl transition-all"
+            title="Entrar na Cabine 3D da Nave SR-7 Explorer e Navegar Livremente"
+          >
+            <Rocket className="w-3.5 h-3.5 text-amber-200" />
+            <span>Pilotar Nave SR-7</span>
+          </button>
+
           {/* Compact Time Speed Pill */}
           <div className="pointer-events-auto flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-xl border border-white/10 px-3 py-1.5 rounded-2xl shadow-xl">
             <button
@@ -970,6 +1080,25 @@ export function App() {
 
       {/* 6. CINEMATIC WARP SPACE TRAVEL HUD */}
       <WarpOverlayHUD warpState={warpState} onUpdateWarpState={setWarpState} />
+
+      {/* 6B. SR-7 EXPLORER 3D COCKPIT & FLIGHT CONTROL HUD */}
+      {spacecraftControl.isActive && (
+        <SpacecraftCockpitHUD
+          controlState={spacecraftControl}
+          telemetry={spacecraftTelemetry}
+          onUpdateControl={setSpacecraftControl}
+          onExitSpacecraft={() => {
+            setSpacecraftControl((prev) => ({
+              ...prev,
+              isActive: false,
+              throttle: 0,
+              boostActive: false,
+              autopilotTargetId: null,
+            }));
+          }}
+          onVirtualSteerChange={setVirtualSteerInput}
+        />
+      )}
 
       {/* 7. LEVEL 4 EARTH SATELLITE SURFACE EXPLORER MODAL */}
       <EarthSurfaceExplorerModal

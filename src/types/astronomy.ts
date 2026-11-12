@@ -319,3 +319,46 @@ export interface WarpFlightState {
   apparentSpeedC: number;
 }
 
+export type SpacecraftCameraView = 'COCKPIT' | 'EXTERNAL';
+
+export interface SpacecraftControlState {
+  isActive: boolean;
+  cameraView: SpacecraftCameraView;
+  throttle: number; // -0.5 (reverse) to 1.0 (full forward)
+  boostActive: boolean; // High-speed interplanetary / galactic warp cruise
+  headlightsOn: boolean;
+  sasEnabled: boolean; // Inertial flight stabilization / auto-damping
+  shieldsOn: boolean;
+  radarPulseTimestamp: number;
+  autopilotTargetId: string | null;
+  brakeRequested: boolean;
+  firePulseCount: number; // Triggers ventral telemetry/plasma cannons
+  interiorLightsOn: boolean;
+}
+
+export interface NearbySpacecraftContact {
+  id: string;
+  name: string;
+  category: BodyCategory;
+  distanceUnits: number;
+  distanceFormatted: string;
+  bearingDeg: number; // Relative horizontal bearing (-180 to 180)
+  elevationDeg: number;
+}
+
+export interface SpacecraftTelemetry {
+  speedUnitsPerSec: number;
+  speedFormatted: string;
+  fuelPercent: number;
+  hullIntegrity: number;
+  reactorTempC: number;
+  pitchDeg: number;
+  yawDeg: number;
+  rollDeg: number;
+  nearestBodyId: string;
+  nearestBodyName: string;
+  nearestDistanceFormatted: string;
+  nearbyContacts: NearbySpacecraftContact[];
+  autopilotStatus: 'OFF' | 'ALIGNING' | 'CRUISING' | 'ARRIVED';
+}
+
