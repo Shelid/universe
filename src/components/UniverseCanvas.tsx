@@ -1328,8 +1328,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const warpLines = new THREE.LineSegments(warpGeo, warpMat);
     warpTunnelGroup.add(warpLines);
 
-    // SR-7 EXPLORER 3D SPACECRAFT & INTERACTIVE COCKPIT + VENTRAL PULSE PROJECTILES
-    const sr7 = createSR7Spacecraft3DGroup();
+    // SR-7 EXPLORER 3D SPACECRAFT & INTERACTIVE 4K COCKPIT + VENTRAL PULSE PROJECTILES
+    const sr7 = createSR7Spacecraft3DGroup({ maxAnisotropy });
     sr7.rootGroup.scale.setScalar(0.34);
     sr7.rootGroup.visible = false;
     scene.add(sr7.rootGroup);
@@ -2409,21 +2409,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         );
         const adaptiveCruise = autoPos
           ? THREE.MathUtils.clamp(
-              sr7.rootGroup.position.distanceTo(autoPos) * 0.55,
-              currentShipScale * 5.0,
-              2800.0
-            )
+            sr7.rootGroup.position.distanceTo(autoPos) * 0.55,
+            currentShipScale * 5.0,
+            2800.0
+          )
           : !boosting
             ? THREE.MathUtils.clamp(
-                Math.max(currentShipScale * 16.0, nearestClearance * 0.85),
-                currentShipScale * 16.0,
-                520.0
-              )
+              Math.max(currentShipScale * 16.0, nearestClearance * 0.85),
+              currentShipScale * 16.0,
+              520.0
+            )
             : THREE.MathUtils.clamp(
-                Math.max(currentShipScale * 38.0, nearestClearance * 1.6),
-                currentShipScale * 38.0,
-                3200.0
-              );
+              Math.max(currentShipScale * 38.0, nearestClearance * 1.6),
+              currentShipScale * 38.0,
+              3200.0
+            );
 
         const maxSpeed = adaptiveCruise * THREE.MathUtils.lerp(1.0, 3.8, boostBlend);
         const shipForward = _tmpV1.set(0, 0, -1).applyQuaternion(sr7.rootGroup.quaternion).normalize();
@@ -2482,10 +2482,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const targetFov =
           sc.cameraView === 'COCKPIT'
             ? THREE.MathUtils.clamp(
-                THREE.MathUtils.lerp(76, 85, boostBlend) + cockpitFovOffset,
-                44,
-                94
-              )
+              THREE.MathUtils.lerp(76, 85, boostBlend) + cockpitFovOffset,
+              44,
+              94
+            )
             : THREE.MathUtils.lerp(48, 57, boostBlend);
         if (Math.abs(camera.fov - targetFov) > 0.1) {
           camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 6.5));
@@ -3187,10 +3187,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           st.spacecraftControl.cameraView === 'COCKPIT'
             ? THREE.MathUtils.clamp(currentShipScale * 0.032, 1e-8, 0.001)
             : THREE.MathUtils.clamp(
-                Math.min(activeCamDist * 0.012, currentShipScale * 0.25),
-                1e-8,
-                0.01
-              );
+              Math.min(activeCamDist * 0.012, currentShipScale * 0.25),
+              1e-8,
+              0.01
+            );
       }
       if (Math.abs(targetNear - lastAdaptiveNear) > lastAdaptiveNear * 0.15) {
         lastAdaptiveNear = targetNear;
@@ -3601,9 +3601,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       const fontsPromise =
         typeof document !== 'undefined' && 'fonts' in document
           ? Promise.race([
-              document.fonts.ready,
-              new Promise<void>((res) => window.setTimeout(res, 650)),
-            ])
+            document.fonts.ready,
+            new Promise<void>((res) => window.setTimeout(res, 650)),
+          ])
           : Promise.resolve();
 
       fontsPromise.finally(() => {
@@ -3722,113 +3722,110 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       {/* Cosmoscope-Style Multi-Scale Switcher & Live Vertical Scale Readout ("↕ 157.377 ly") */}
       {!spacecraftControl.isActive && (
         <>
-        <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
-        <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
-          <button
-            onClick={() => {
-              const selCat = getCelestialBody(selectedBodyId).category;
-              if (selCat === 'galaxy' || selectedBodyId === 'sun') {
-                onSelectBody('earth', false);
-              } else {
-                cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
-                cameraCommandRef.current.activeTransition = true;
-              }
-            }}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
-              zoomLevel !== 'SOLAR_SYSTEM' && zoomLevel !== 'COSMIC_GALAXY'
-                ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-            title="Escala Planetária (Ver Planeta de Perto)"
-          >
-            <span>🌍</span>
-            <span className="hidden sm:inline">Planeta</span>
-          </button>
-          <button
-            onClick={() => {
-              if (selectedBodyId === 'sun') {
-                cameraCommandRef.current.desiredDistanceMultiplier = 520.0;
-                cameraCommandRef.current.activeTransition = true;
-              } else {
-                overrideDistanceMultiplierRef.current = 520.0;
-                onSelectBody('sun', false);
-              }
-            }}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
-              zoomLevel === 'SOLAR_SYSTEM'
-                ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-            title="Escala do Sistema Solar (Órbitas Planetárias)"
-          >
-            <span>🪐</span>
-            <span className="hidden sm:inline">Sistema Solar</span>
-          </button>
-          <button
-            onClick={() => {
-              onSelectBody('milky-way', false);
-              cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
-              cameraCommandRef.current.activeTransition = true;
-            }}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
-              zoomLevel === 'COSMIC_GALAXY'
-                ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-            title="Escala Galáctica (Via Láctea 3D)"
-          >
-            <span>🌌</span>
-            <span className="hidden sm:inline">Galáxia</span>
-          </button>
-        </div>
+          <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
+              <button
+                onClick={() => {
+                  const selCat = getCelestialBody(selectedBodyId).category;
+                  if (selCat === 'galaxy' || selectedBodyId === 'sun') {
+                    onSelectBody('earth', false);
+                  } else {
+                    cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
+                    cameraCommandRef.current.activeTransition = true;
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel !== 'SOLAR_SYSTEM' && zoomLevel !== 'COSMIC_GALAXY'
+                    ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                  }`}
+                title="Escala Planetária (Ver Planeta de Perto)"
+              >
+                <span>🌍</span>
+                <span className="hidden sm:inline">Planeta</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedBodyId === 'sun') {
+                    cameraCommandRef.current.desiredDistanceMultiplier = 520.0;
+                    cameraCommandRef.current.activeTransition = true;
+                  } else {
+                    overrideDistanceMultiplierRef.current = 520.0;
+                    onSelectBody('sun', false);
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'SOLAR_SYSTEM'
+                    ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                  }`}
+                title="Escala do Sistema Solar (Órbitas Planetárias)"
+              >
+                <span>🪐</span>
+                <span className="hidden sm:inline">Sistema Solar</span>
+              </button>
+              <button
+                onClick={() => {
+                  onSelectBody('milky-way', false);
+                  cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
+                  cameraCommandRef.current.activeTransition = true;
+                }}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'COSMIC_GALAXY'
+                    ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                  }`}
+                title="Escala Galáctica (Via Láctea 3D)"
+              >
+                <span>🌌</span>
+                <span className="hidden sm:inline">Galáxia</span>
+              </button>
+            </div>
 
-        <div
-          className="px-3 py-1.5 rounded-full bg-slate-950/75 backdrop-blur-xl border border-white/12 text-[11px] font-mono text-slate-200 shadow-xl flex items-center gap-1.5"
-          title="Escala Vertical do Campo de Visão Atual"
-        >
-          <span className="text-sky-400 font-bold">↕</span>
-          <span>{scaleReadout}</span>
-        </div>
-      </div>
+            <div
+              className="px-3 py-1.5 rounded-full bg-slate-950/75 backdrop-blur-xl border border-white/12 text-[11px] font-mono text-slate-200 shadow-xl flex items-center gap-1.5"
+              title="Escala Vertical do Campo de Visão Atual"
+            >
+              <span className="text-sky-400 font-bold">↕</span>
+              <span>{scaleReadout}</span>
+            </div>
+          </div>
 
-      {/* Sleek Camera Zoom Controls on Left Edge */}
-      <div className="fixed left-3.5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-slate-950/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl shadow-xl">
-        <button
-          onClick={() => {
-            cameraCommandRef.current.manualZoomStep = 1;
-          }}
-          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
-          title="Aproximar Câmera (Zoom +)"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => {
-            const sel = getCelestialBody(selectedBodyId);
-            cameraCommandRef.current.desiredDistanceMultiplier =
-              selectedBodyId === 'milky-way'
-                ? 1.65
-                : sel.category === 'galaxy'
-                  ? 2.05
-                  : 3.4;
-            cameraCommandRef.current.activeTransition = true;
-          }}
-          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors border-y border-white/5"
-          title="Centralizar Astro"
-        >
-          <Focus className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => {
-            cameraCommandRef.current.manualZoomStep = -1;
-          }}
-          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
-          title="Afastar Câmera (Zoom -)"
-        >
-          <Minus className="w-4 h-4" />
-        </button>
-      </div>
-      </>
+          {/* Sleek Camera Zoom Controls on Left Edge */}
+          <div className="fixed left-3.5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-slate-950/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl shadow-xl">
+            <button
+              onClick={() => {
+                cameraCommandRef.current.manualZoomStep = 1;
+              }}
+              className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+              title="Aproximar Câmera (Zoom +)"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                const sel = getCelestialBody(selectedBodyId);
+                cameraCommandRef.current.desiredDistanceMultiplier =
+                  selectedBodyId === 'milky-way'
+                    ? 1.65
+                    : sel.category === 'galaxy'
+                      ? 2.05
+                      : 3.4;
+                cameraCommandRef.current.activeTransition = true;
+              }}
+              className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors border-y border-white/5"
+              title="Centralizar Astro"
+            >
+              <Focus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                cameraCommandRef.current.manualZoomStep = -1;
+              }}
+              className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+              title="Afastar Câmera (Zoom -)"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+          </div>
+        </>
       )}
 
       {/* Clean 3D-Projected Object Markers */}
@@ -3846,11 +3843,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 style={{
                   transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -120%)`,
                 }}
-                className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono transition-all border backdrop-blur-md ${
-                  isSelectedSat
+                className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono transition-all border backdrop-blur-md ${isSelectedSat
                     ? 'bg-sky-500/35 border-sky-300 text-white shadow-[0_0_18px_rgba(56,189,248,0.65)] z-30'
                     : 'bg-slate-950/75 border-white/15 text-slate-200 hover:border-sky-400 hover:bg-slate-900/95 z-20'
-                }`}
+                  }`}
               >
                 <span
                   className="w-2 h-2 rounded-full"
@@ -3874,16 +3870,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 style={{
                   transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)`,
                 }}
-                className={`pointer-events-auto absolute flex flex-col items-center group ${
-                  isSelectedLm ? 'z-30' : 'z-20'
-                }`}
+                className={`pointer-events-auto absolute flex flex-col items-center group ${isSelectedLm ? 'z-30' : 'z-20'
+                  }`}
               >
                 <div
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium border backdrop-blur-md whitespace-nowrap transition-colors ${
-                    isSelectedLm
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium border backdrop-blur-md whitespace-nowrap transition-colors ${isSelectedLm
                       ? 'bg-amber-500/30 border-amber-300 text-amber-100'
                       : 'bg-slate-950/75 border-amber-500/40 text-amber-200/90 group-hover:border-amber-300'
-                  }`}
+                    }`}
                 >
                   ⌖ {lbl.name}
                 </div>
@@ -3942,11 +3936,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 style={{
                   transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)`,
                 }}
-                className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs tracking-wide transition-all ${
-                  isSolarSystemMarker
+                className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs tracking-wide transition-all ${isSolarSystemMarker
                     ? 'bg-sky-500/25 border border-sky-400/60 text-white font-semibold shadow-[0_0_16px_rgba(56,189,248,0.5)] hover:bg-sky-500/45 z-30 cursor-pointer'
                     : 'text-slate-100/90 hover:text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)] z-20'
-                }`}
+                  }`}
               >
                 {isSolarSystemMarker && (
                   <span

@@ -71,11 +71,11 @@ export function detectAutoQualityTier(): ResolvedQualityTier {
     return 'low';
   }
 
-  if (cores <= 4 || memGb <= 4) {
+  if (cores <= 2 || memGb <= 2) {
     return 'low';
   }
 
-  if (cores <= 6 || memGb <= 6) {
+  if (cores <= 4 || memGb <= 4) {
     return 'medium';
   }
 
@@ -95,7 +95,7 @@ export function resolvePerformanceProfile(
           ? 'high'
           : detectAutoQualityTier();
 
-  // Downgrade AUTO if the active WebGL adapter reports software rendering or weak integrated hardware
+  // Downgrade AUTO only when the active WebGL adapter reports software rendering or weak mobile GPU
   if (pref === 'AUTO' && renderer) {
     try {
       const gl = renderer.getContext();
@@ -103,9 +103,9 @@ export function resolvePerformanceProfile(
       const gpuStr = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '') : '';
       if (/SwiftShader|llvmpipe|Software|Microsoft Basic Render/i.test(gpuStr)) {
         tier = 'low';
-      } else if (/Mali-G5|Mali-T|Adreno \(TM\) [345]|PowerVR|Intel\(R\) HD Graphics/i.test(gpuStr)) {
+      } else if (/Mali-G5|Mali-T|Adreno \(TM\) [345]|PowerVR/i.test(gpuStr)) {
         tier = 'low';
-      } else if (/Intel\(R\) UHD|Intel Iris|Adreno \(TM\) 6|Mali-G7/i.test(gpuStr) && tier === 'high') {
+      } else if (/Adreno \(TM\) 6|Mali-G7/i.test(gpuStr) && tier === 'high') {
         tier = 'medium';
       }
     } catch {
@@ -113,14 +113,12 @@ export function resolvePerformanceProfile(
     }
   }
 
-  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-
   if (tier === 'low') {
     return {
       tier: 'low',
-      maxDpr: 1.15,
-      antialias: dpr < 1.5,
-      maxAnisotropy: 2,
+      maxDpr: 1.5,
+      antialias: true,
+      maxAnisotropy: 4,
       maxTextureSize: 2048,
       use2kTextures: true,
       skyboxCubeSize: 512,
@@ -145,11 +143,11 @@ export function resolvePerformanceProfile(
   if (tier === 'medium') {
     return {
       tier: 'medium',
-      maxDpr: 1.5,
+      maxDpr: 2.0,
       antialias: true,
-      maxAnisotropy: 4,
-      maxTextureSize: 2048,
-      use2kTextures: true,
+      maxAnisotropy: 8,
+      maxTextureSize: 4096,
+      use2kTextures: false,
       skyboxCubeSize: 768,
       sphereUltraSegments: [64, 48],
       sphereMoonSegments: [40, 28],
@@ -171,9 +169,9 @@ export function resolvePerformanceProfile(
 
   return {
     tier: 'high',
-    maxDpr: 2.0,
+    maxDpr: 2.5,
     antialias: true,
-    maxAnisotropy: 8,
+    maxAnisotropy: 16,
     maxTextureSize: 4096,
     use2kTextures: false,
     skyboxCubeSize: 1024,
