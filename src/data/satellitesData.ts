@@ -381,6 +381,93 @@ export function geodeticToEarthLocal3D(
 }
 
 /**
+ * Propagates a single satellite record to the target Date using SGP4 orbital mechanics.
+ */
+export function propagateSingleSatellite(
+  sat: SatelliteRecord,
+  targetDate: Date,
+  earthSceneRadius: number,
+  computeTrack = false
+): PropagatedSatellite {
+  const gmst = satellite.gstime(targetDate);
+  try {
+    const satrec = satellite.twoline2satrec(sat.tleLine1, sat.tleLine2);
+    const posVel = satellite.propagate(satrec, targetDate);
+
+    if (
+      !posVel.position ||
+      typeof posVel.position === 'boolean' ||
+      !posVel.velocity ||
+      typeof posVel.velocity === 'boolean'
+    ) {
+      throw new Error('SGP4 propagation returned invalid state vector');
+    }
+
+    const geodetic = satellite.eciToGeodetic(posVel.position, gmst);
+    const latitudeDeg = satellite.degreesLat(geodetic.latitude);
+    const longitudeDeg = satellite.degreesLong(geodetic.longitude);
+    const altitudeKm = Math.max(180, geodetic.height);
+
+    const vx = posVel.velocity.x;
+    const vy = posVel.velocity.y;
+    const vz = posVel.velocity.z;
+    const velocityKmS = Math.sqrt(vx * vx + vy * vy + vz * vz);
+
+    const inclinationDeg = (satrec.inclo * 180) / Math.PI;
+    const periodMinutes = (2 * Math.PI) / satrec.no;
+
+    const position3D = geodeticToEarthLocal3D(
+      latitudeDeg,
+      longitudeDeg,
+      altitudeKm,
+      earthSceneRadius
+    );
+
+    const orbitTrack3D: [number, number, number][] = [];
+    if (computeTrack) {
+      const steps = 64;
+      const periodMs = periodMinutes * 60 * 1000;
+      for (let i = 0; i <= steps; i++) {
+        const stepTime = new Date(targetDate.getTime() + (i / steps) * periodMs);
+        const stepGmst = satellite.gstime(stepTime);
+        const stepPV = satellite.propagate(satrec, stepTime);
+        if (stepPV.position && typeof stepPV.position !== 'boolean') {
+          const stepGeo = satellite.eciToGeodetic(stepPV.position, stepGmst);
+          const sLat = satellite.degreesLat(stepGeo.latitude);
+          const sLon = satellite.degreesLong(stepGeo.longitude);
+          const sAlt = Math.max(180, stepGeo.height);
+          orbitTrack3D.push(geodeticToEarthLocal3D(sLat, sLon, sAlt, earthSceneRadius));
+        }
+      }
+    }
+
+    return {
+      ...sat,
+      latitudeDeg,
+      longitudeDeg,
+      altitudeKm,
+      velocityKmS,
+      inclinationDeg,
+      periodMinutes,
+      position3D,
+      orbitTrack3D,
+    };
+  } catch {
+    return {
+      ...sat,
+      latitudeDeg: 0,
+      longitudeDeg: 0,
+      altitudeKm: 420,
+      velocityKmS: 7.66,
+      inclinationDeg: 51.6,
+      periodMinutes: 92.8,
+      position3D: geodeticToEarthLocal3D(0, 0, 420, earthSceneRadius),
+      orbitTrack3D: [],
+    };
+  }
+}
+
+/**
  * Propagates all satellites in the catalog to the target Date using real SGP4/SDP4 orbital mechanics (`satellite.js`).
  */
 export function propagateSatelliteCatalog(
@@ -389,108 +476,47 @@ export function propagateSatelliteCatalog(
   earthSceneRadius: number,
   orbitTrackTarget: boolean | string | null = true
 ): PropagatedSatellite[] {
-  const gmst = satellite.gstime(targetDate);
-
   return catalog.map((sat) => {
-    try {
-      const satrec = satellite.twoline2satrec(sat.tleLine1, sat.tleLine2);
-      const posVel = satellite.propagate(satrec, targetDate);
+    const shouldComputeTrack =
+      orbitTrackTarget === true ||
+      (typeof orbitTrackTarget === 'string' && orbitTrackTarget === sat.id);
+    return propagateSingleSatellite(sat, targetDate, earthSceneRadius, shouldComputeTrack);
+  });
+}
 
-      if (
-        !posVel.position ||
-        typeof posVel.position === 'boolean' ||
-        !posVel.velocity ||
-        typeof posVel.velocity === 'boolean'
-      ) {
-        throw new Error('SGP4 propagation returned invalid state vector');
-      }
+type CachedTleOverride = Pick<SatelliteRecord, 'tleLine1' | 'tleLine2' | 'tleEpochIso' | 'sourceName'>;
 
-      const geodetic = satellite.eciToGeodetic(posVel.position, gmst);
-      const latitudeDeg = satellite.degreesLat(geodetic.latitude);
-      const longitudeDeg = satellite.degreesLong(geodetic.longitude);
-      const altitudeKm = Math.max(180, geodetic.height);
-
-      const vx = posVel.velocity.x;
-      const vy = posVel.velocity.y;
-      const vz = posVel.velocity.z;
-      const velocityKmS = Math.sqrt(vx * vx + vy * vy + vz * vz);
-
-      // Extract inclination (rad -> deg) and mean motion (rad/min -> period in min) from satrec
-      const inclinationDeg = (satrec.inclo * 180) / Math.PI;
-      const periodMinutes = (2 * Math.PI) / satrec.no;
-
-      const position3D = geodeticToEarthLocal3D(
-        latitudeDeg,
-        longitudeDeg,
-        altitudeKm,
-        earthSceneRadius
-      );
-
-      const shouldComputeTrack =
-        orbitTrackTarget === true ||
-        (typeof orbitTrackTarget === 'string' && orbitTrackTarget === sat.id);
-
-      const orbitTrack3D: [number, number, number][] = [];
-      if (shouldComputeTrack) {
-        const steps = 64;
-        const periodMs = periodMinutes * 60 * 1000;
-        for (let i = 0; i <= steps; i++) {
-          const stepTime = new Date(targetDate.getTime() + (i / steps) * periodMs);
-          const stepGmst = satellite.gstime(stepTime);
-          const stepPV = satellite.propagate(satrec, stepTime);
-          if (stepPV.position && typeof stepPV.position !== 'boolean') {
-            const stepGeo = satellite.eciToGeodetic(stepPV.position, stepGmst);
-            const sLat = satellite.degreesLat(stepGeo.latitude);
-            const sLon = satellite.degreesLong(stepGeo.longitude);
-            const sAlt = Math.max(180, stepGeo.height);
-            orbitTrack3D.push(geodeticToEarthLocal3D(sLat, sLon, sAlt, earthSceneRadius));
-          }
-        }
-      }
-
-      return {
-        ...sat,
-        latitudeDeg,
-        longitudeDeg,
-        altitudeKm,
-        velocityKmS,
-        inclinationDeg,
-        periodMinutes,
-        position3D,
-        orbitTrack3D,
-      };
-    } catch {
-      // Safe deterministic fallback if a TLE is very far from epoch
-      return {
-        ...sat,
-        latitudeDeg: 0,
-        longitudeDeg: 0,
-        altitudeKm: 420,
-        velocityKmS: 7.66,
-        inclinationDeg: 51.6,
-        periodMinutes: 92.8,
-        position3D: geodeticToEarthLocal3D(0, 0, 420, earthSceneRadius),
-        orbitTrack3D: [],
-      };
-    }
+function applyTleOverrides(
+  baseCatalog: SatelliteRecord[],
+  overridesByNorad: Record<number, CachedTleOverride>
+): SatelliteRecord[] {
+  // Always keep every record declared in baseCatalog (e.g. sat-orbital-gateway) intact
+  // and only overlay fresh TLE elements for matching NORAD IDs.
+  return baseCatalog.map((item) => {
+    const patch = overridesByNorad[item.noradId];
+    return patch ? { ...item, ...patch } : item;
   });
 }
 
 /**
  * Attempts to fetch live updated TLE records from CelesTrak GP API for our catalog.
- * If offline or blocked by CORS/network, gracefully retains the verified NORAD TLE snapshot.
+ * Merges live TLE patches onto `baseCatalog` so static entries like Orbital Gateway are never lost.
  */
 export async function refreshCatalogFromCelesTrak(
   baseCatalog: SatelliteRecord[]
 ): Promise<{ catalog: SatelliteRecord[]; isLiveCelesTrak: boolean; updatedAtIso: string }> {
-  const CACHE_KEY = 'universe_explorer_tle_cache_v1';
+  const CACHE_KEY = 'universe_explorer_tle_cache_v2';
   try {
     const cachedRaw = localStorage.getItem(CACHE_KEY);
     if (cachedRaw) {
       const parsed = JSON.parse(cachedRaw);
-      if (Date.now() - parsed.timestamp < 6 * 3600 * 1000 && Array.isArray(parsed.catalog)) {
+      if (
+        Date.now() - parsed.timestamp < 6 * 3600 * 1000 &&
+        parsed.overrides &&
+        typeof parsed.overrides === 'object'
+      ) {
         return {
-          catalog: parsed.catalog,
+          catalog: applyTleOverrides(baseCatalog, parsed.overrides),
           isLiveCelesTrak: true,
           updatedAtIso: new Date(parsed.timestamp).toISOString(),
         };
@@ -501,7 +527,6 @@ export async function refreshCatalogFromCelesTrak(
   }
 
   try {
-    // Query ISS (25544) from CelesTrak to verify live connectivity quickly
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3500);
     const response = await fetch(
@@ -517,21 +542,19 @@ export async function refreshCatalogFromCelesTrak(
         .map((l) => l.trim())
         .filter(Boolean);
       if (lines.length >= 3 && lines[1].startsWith('1 25544') && lines[2].startsWith('2 25544')) {
-        const updatedCatalog = baseCatalog.map((item) =>
-          item.noradId === 25544
-            ? {
-                ...item,
-                tleLine1: lines[1],
-                tleLine2: lines[2],
-                tleEpochIso: new Date().toISOString(),
-                sourceName: 'CelesTrak Live GP API (NORAD CATNR 25544)',
-              }
-            : item
-        );
+        const overrides: Record<number, CachedTleOverride> = {
+          25544: {
+            tleLine1: lines[1],
+            tleLine2: lines[2],
+            tleEpochIso: new Date().toISOString(),
+            sourceName: 'CelesTrak Live GP API (NORAD CATNR 25544)',
+          },
+        };
+        const updatedCatalog = applyTleOverrides(baseCatalog, overrides);
         try {
           localStorage.setItem(
             CACHE_KEY,
-            JSON.stringify({ timestamp: Date.now(), catalog: updatedCatalog })
+            JSON.stringify({ timestamp: Date.now(), overrides })
           );
         } catch {
           // ignore

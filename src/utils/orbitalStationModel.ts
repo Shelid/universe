@@ -49,12 +49,12 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
   const beaconMeshes: THREE.Mesh[] = [];
 
   // Measured exact center offset & flat Laboratory dorsal walkway height (`hitY = 0.080`)
-  const walkSpawnLocal = new THREE.Vector3(0, 0.08, 8.5);
-  const shipApproachLocal = new THREE.Vector3(-12.5, 5.2, 16.5);
+  const walkSpawnLocal = new THREE.Vector3(0, 0.08, 10.5);
+  const shipApproachLocal = new THREE.Vector3(-15.5, 4.2, 14.5);
 
   // Subtle floodlighting so dorsal decks, modules, and solar arrays read cleanly in Earth eclipse too
   const floodLight = new THREE.PointLight('#e0f2fe', 0.0, 0.1, 0.0);
-  floodLight.position.set(0, 7.5, 4.0);
+  floodLight.position.set(2.5, 9.5, 6.0);
   rootGroup.add(floodLight);
 
   const cupolaLight = new THREE.PointLight('#fbbf24', 0.0, 0.1, 0.0);
@@ -185,7 +185,8 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
           resolve();
         },
         undefined,
-        () => {
+        (err) => {
+          console.warn('Falha ao carregar /models/orbital-station.glb:', err);
           resolve();
         }
       );
@@ -207,10 +208,10 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
     dockRingMat.opacity = 0.36 + 0.2 * Math.sin(clockTime * 2.4);
 
     if (isCloseInspection) {
-      floodLight.intensity = 2.6;
-      floodLight.distance = Math.max(0.001, worldScale * 75);
-      cupolaLight.intensity = 1.8;
-      cupolaLight.distance = Math.max(0.001, worldScale * 18);
+      floodLight.intensity = 3.2;
+      floodLight.distance = Math.max(0.001, worldScale * 95);
+      cupolaLight.intensity = 2.1;
+      cupolaLight.distance = Math.max(0.001, worldScale * 24);
     } else {
       floodLight.intensity = 0;
       cupolaLight.intensity = 0;
@@ -266,7 +267,7 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
     raycastMeshes,
     walkSpawnLocal,
     shipApproachLocal,
-    stationFocusDistanceLocal: 42,
+    stationFocusDistanceLocal: 34,
     beaconMeshes,
     floodLight,
     cupolaLight,

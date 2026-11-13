@@ -64,11 +64,13 @@ import {
 } from './data/solarSystemData';
 import {
   propagateSatelliteCatalog,
+  propagateSingleSatellite,
   refreshCatalogFromCelesTrak,
   VERIFIED_SATELLITE_CATALOG,
 } from './data/satellitesData';
 import { StationDeployCommand, UniverseCanvas } from './components/UniverseCanvas';
 import { LoadingScreen } from './components/LoadingScreen';
+import { LobbyStartDestination, MainMenuLobby } from './components/MainMenuLobby';
 import { UniverseLogo } from './components/UniverseLogo';
 import { ScientificDossierPanel } from './components/ScientificDossierPanel';
 import { EarthSurfaceExplorerModal } from './components/EarthSurfaceExplorerModal';
@@ -100,6 +102,9 @@ export function App() {
   // Closed by default so the initial screen is clean, spacious, and cinematic!
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
   const [isQuickCardOpen, setIsQuickCardOpen] = useState<boolean>(false);
+  const [isMainMenuOpen, setIsMainMenuOpen] = useState<boolean>(true);
+  const [lobbyStartDestination, setLobbyStartDestination] =
+    useState<LobbyStartDestination>('EXPLORE');
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState<boolean>(false);
   const [commandMenuTab, setCommandMenuTab] = useState<CommandMenuTab>('hangar');
   const [selectedShipId, setSelectedShipId] = useState<SpacecraftVariantId>(() =>
@@ -348,6 +353,7 @@ export function App() {
         if (e.key === 'Escape') setIsCommandMenuOpen(false);
         return;
       }
+      if (isMainMenuOpen) return;
       const key = e.key.toLowerCase();
       if (key === 'm' || e.key === 'Tab') {
         e.preventDefault();
@@ -368,7 +374,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [evaActive, evaVisorLightOn, spacecraftControl.isActive]);
+  }, [evaActive, evaVisorLightOn, isMainMenuOpen, spacecraftControl.isActive]);
 
   const handleSyncSimulationTime = useCallback((nextTimeMs: number) => {
     setSimulationTimeMs(nextTimeMs);
@@ -430,6 +436,8 @@ export function App() {
     (mode: 'ORBIT_INSPECT' | 'SHIP_DOCK' | 'EVA_WALK') => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       spaceAudio.unlock();
+      setIsMainMenuOpen(false);
+      setIsCommandMenuOpen(false);
       setSelectedBodyId('earth');
       setZoomLevel('ORBITAL_EXPLORATION');
       setIsDossierOpen(false);
@@ -439,8 +447,14 @@ export function App() {
       setEnabledSatelliteCategories((prev) => ({ ...prev, SPACE_STATIONS: true }));
 
       const gatewaySat =
-        propagatedSatellites.find((s) => s.id === 'sat-orbital-gateway') || null;
-      if (gatewaySat) setSelectedSatellite(gatewaySat);
+        propagatedSatellites.find((s) => s.id === 'sat-orbital-gateway') ||
+        propagateSingleSatellite(
+          VERIFIED_SATELLITE_CATALOG[0],
+          satellitePropagationDate,
+          earthRadiusScene,
+          true
+        );
+      setSelectedSatellite(gatewaySat);
 
       if (mode === 'SHIP_DOCK') {
         spaceAudio.playShipStartup();
@@ -465,13 +479,55 @@ export function App() {
         }));
         setEvaActive(true);
       } else {
+        spaceAudio.playSelectBody('planet');
         setEvaActive(false);
         setSpacecraftControl((prev) => ({ ...prev, isActive: false, throttle: 0 }));
       }
       setStationDeployCommand((prev) => ({ seq: prev.seq + 1, mode }));
     },
-    [propagatedSatellites]
+    [earthRadiusScene, propagatedSatellites, satellitePropagationDate]
   );
+
+  const handleReturnToLobby = useCallback(() => {
+    setIsCommandMenuOpen(false);
+    setIsDossierOpen(false);
+    setIsQuickCardOpen(false);
+    setIsExploringInterior(false);
+    setEvaActive(false);
+    setSpacecraftControl((prev) => ({
+      ...prev,
+      isActive: false,
+      throttle: 0,
+      boostActive: false,
+      autopilotTargetId: null,
+    }));
+    setWarpState((w) => ({ ...w, isActive: false, stage: 'IDLE' }));
+    setIsMainMenuOpen(true);
+  }, []);
+
+  const handleStartFromLobby = useCallback(() => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    spaceAudio.unlock();
+    if (lobbyStartDestination === 'STATION_ORBIT') {
+      handleDeployToStation('ORBIT_INSPECT');
+      return;
+    }
+    if (lobbyStartDestination === 'SPACECRAFT_COCKPIT') {
+      setIsMainMenuOpen(false);
+      setSelectedSatellite(null);
+      launchSpacecraftSR7(true);
+      return;
+    }
+    if (lobbyStartDestination === 'EVA_STATION') {
+      handleDeployToStation('EVA_WALK');
+      return;
+    }
+    setIsMainMenuOpen(false);
+    setSelectedSatellite(null);
+    setSelectedBodyId('earth');
+    setZoomLevel('PLANETARY_APPROACH');
+    switchPlayerMode('EXPLORE');
+  }, [handleDeployToStation, launchSpacecraftSR7, lobbyStartDestination, switchPlayerMode]);
 
   const selectedBody = useMemo(() => getCelestialBody(selectedBodyId), [selectedBodyId]);
 
@@ -608,6 +664,7 @@ export function App() {
         selectedShipId={selectedShipId}
         selectedCharacterId={selectedCharacterId}
         stationDeployCommand={stationDeployCommand}
+        lobbyShowcaseActive={isMainMenuOpen && !warpState.isActive}
         qualityPreference={qualityPreference}
         onResolvedQualityChange={setResolvedQualityTier}
         onBootProgress={setBootProgress}
@@ -623,7 +680,33 @@ export function App() {
         />
       )}
 
+      {/* 1C. PRE-GAME HANGAR / ORBITAL LOBBY SHOWCASING 3D SHIP & ASTRONAUT */}
+      {!showLoadingScreen && isMainMenuOpen && (
+        <MainMenuLobby
+          isOpen={true}
+          startDestination={lobbyStartDestination}
+          onChangeStartDestination={setLobbyStartDestination}
+          selectedShipId={selectedShipId}
+          onSelectShip={(id) => {
+            setSelectedShipId(id);
+            saveShipVariant(id);
+          }}
+          selectedCharacterId={selectedCharacterId}
+          onSelectCharacter={(id) => {
+            setSelectedCharacterId(id);
+            saveCharacterVariant(id);
+          }}
+          qualityPreference={qualityPreference}
+          resolvedQualityTier={resolvedQualityTier}
+          onChangeQuality={handleChangeQualityPreference}
+          isAudioMuted={isAudioMuted}
+          onToggleAudioMuted={toggleAudioMuted}
+          onStartGame={handleStartFromLobby}
+        />
+      )}
+
       {/* 2. AAA GAME TOP HUD BAR */}
+      {!isMainMenuOpen && (
       <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2">
         {/* Left: Compact Brand + Selected Body Focus + Estação Orbital Quick Deploy */}
         <div className="pointer-events-auto flex items-center gap-1.5">
@@ -654,9 +737,9 @@ export function App() {
           </button>
 
           <button
-            onClick={() => handleDeployToStation('EVA_WALK')}
+            onClick={() => handleDeployToStation('ORBIT_INSPECT')}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-cyan-500/18 hover:bg-cyan-500/32 border border-cyan-400/45 text-[11px] font-semibold text-cyan-100 backdrop-blur-xl shadow-lg transition-all"
-            title="Caminhar na Estação Espacial em Órbita da Terra (EVA)"
+            title="Ir para a Estação Espacial em Órbita da Terra (Inspecionar, Aproximar ou Caminhar em EVA)"
           >
             <Satellite className="w-3.5 h-3.5 text-cyan-300" />
             <span>Estação Orbital</span>
@@ -745,9 +828,10 @@ export function App() {
           </button>
         </div>
       </header>
+      )}
 
       {/* 3. SLEEK FLOATING BODY SUMMARY (Explorer Mode Only, Collapsed by Default) */}
-      {!isDossierOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
+      {!isMainMenuOpen && !isDossierOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
         <div className="pointer-events-none fixed left-3 right-3 sm:left-auto sm:right-4 top-14 z-20 flex flex-col items-end gap-2">
           {/* Selected Satellite Quick Card */}
           {selectedBodyId === 'earth' && currentSelectedSatellite && (
@@ -981,7 +1065,7 @@ export function App() {
       </div>
 
       {/* 5. MINIMALIST BOTTOM PLANETARY QUICK-STRIP (Explorer Mode Only) */}
-      {!warpState.isActive && playerMode === 'EXPLORE' && (
+      {!isMainMenuOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
         <footer className="pointer-events-none fixed bottom-3 inset-x-3 z-20 flex items-center justify-center">
           <div className="pointer-events-auto flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 px-2 py-1 rounded-full shadow-xl overflow-x-auto max-w-full">
             {solarMainStrip.map((body) => {
@@ -1031,7 +1115,7 @@ export function App() {
       <WarpOverlayHUD warpState={warpState} onUpdateWarpState={setWarpState} />
 
       {/* 6B. LIGHT FIGHTER 3D COCKPIT & FLIGHT CONTROL HUD */}
-      {spacecraftControl.isActive && (
+      {!isMainMenuOpen && spacecraftControl.isActive && (
         <SpacecraftCockpitHUD
           controlState={spacecraftControl}
           telemetry={spacecraftTelemetry}
@@ -1048,7 +1132,7 @@ export function App() {
       )}
 
       {/* 6C. RIGGED ASTRONAUT EVA SPACEWALK HUD */}
-      {playerMode === 'EVA' && (
+      {!isMainMenuOpen && playerMode === 'EVA' && (
         <EVACharacterHUD
           visorLightOn={evaVisorLightOn}
           onToggleVisorLight={() => {
@@ -1130,6 +1214,7 @@ export function App() {
         }}
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
+        onReturnToLobby={handleReturnToLobby}
       />
 
       {/* 7. LEVEL 4 EARTH SATELLITE SURFACE EXPLORER MODAL */}

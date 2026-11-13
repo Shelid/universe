@@ -84,6 +84,7 @@ interface GameCommandMenuProps {
   onChangeAudioVolume: (vol: number) => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  onReturnToLobby?: () => void;
 }
 
 const BODY_CATEGORIES: Array<{ id: 'all' | BodyCategory; label: string }> = [
@@ -208,6 +209,7 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
   onChangeAudioVolume,
   isFullscreen,
   onToggleFullscreen,
+  onReturnToLobby,
 }) => {
   const [activeTab, setActiveTab] = useState<CommandMenuTab>(initialTab || 'hangar');
   const [searchQuery, setSearchQuery] = useState('');
@@ -306,6 +308,20 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                 );
               })}
             </div>
+
+            {onReturnToLobby && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onReturnToLobby();
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 text-xs font-semibold transition-colors"
+                title="Voltar à Tela Inicial (Nave & Personagem 3D)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sky-300" />
+                <span className="hidden sm:inline">Tela Inicial</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}

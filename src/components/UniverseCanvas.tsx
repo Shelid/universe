@@ -58,6 +58,7 @@ import {
 import { createSR7Spacecraft3DGroup, SR7SpacecraftRefs } from '../utils/sr7SpacecraftModel';
 import { createAstronautCharacter3D, AstronautCharacterRefs } from '../utils/astronautCharacterModel';
 import { createOrbitalStation3DGroup } from '../utils/orbitalStationModel';
+import { propagateSingleSatellite, VERIFIED_SATELLITE_CATALOG } from '../data/satellitesData';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
 import { EVAVirtualInput } from './EVACharacterHUD';
@@ -110,6 +111,7 @@ interface UniverseCanvasProps {
   selectedShipId?: SpacecraftVariantId;
   selectedCharacterId?: CharacterVariantId;
   stationDeployCommand?: StationDeployCommand;
+  lobbyShowcaseActive?: boolean;
 }
 
 interface ScreenLabel {
@@ -278,6 +280,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   selectedShipId = 'sr7-vanguard',
   selectedCharacterId = 'cmd-artemis',
   stationDeployCommand,
+  lobbyShowcaseActive = false,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
@@ -332,6 +335,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     selectedShipId,
     selectedCharacterId,
     stationDeployCommand,
+    lobbyShowcaseActive,
   });
 
   const callbacksRef = useRef({
@@ -379,6 +383,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       selectedShipId,
       selectedCharacterId,
       stationDeployCommand,
+      lobbyShowcaseActive,
     };
   });
 
@@ -448,7 +453,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   }, [isExploringInterior]);
 
   useEffect(() => {
-    if (selectedSatelliteId && selectedBodyId === 'earth') {
+    if (
+      selectedSatelliteId &&
+      selectedBodyId === 'earth' &&
+      selectedSatelliteId !== 'sat-orbital-gateway'
+    ) {
       cameraCommandRef.current.activeTransition = true;
       cameraCommandRef.current.desiredDistanceMultiplier = 1.95;
     }
@@ -1389,7 +1398,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const _evaGroundHit = new THREE.Vector3();
     const _evaRelVec = new THREE.Vector3();
     let activeNearPlane = 0.00005;
+    const gatewayRecordFallback = VERIFIED_SATELLITE_CATALOG[0];
 
+    let wasLobbyShowcaseActive = false;
     let wasEvaActive = false;
     let evaAttachedToShip = true;
     const evaVelocity = new THREE.Vector3();
@@ -2025,14 +2036,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
       }
 
-      // Position Earth Satellites 3D Spacecraft Models (True 1:1 Altitudes & Cached Orbit Track)
+      // Position Earth Satellites 3D Spacecraft Models & Guaranteed Assembled Orbital Station in LEO
       const earthPos = bodyWorldPositions['earth'];
       hasOrbitalStationPos = false;
       if (earthPos) {
         satelliteGroup.position.copy(earthPos);
+        const pendingStationCmd =
+          st.stationDeployCommand && st.stationDeployCommand.seq !== prevStationDeploySeq;
+        const isStationFocused =
+          st.selectedSatelliteId === 'sat-orbital-gateway' ||
+          Boolean(pendingStationCmd) ||
+          Boolean(st.lobbyShowcaseActive);
         const nearEarthForSats =
           st.selectedBodyId === 'earth' || camera.position.distanceTo(earthPos) < 0.16;
-        const showEarthSats = nearEarthForSats && !st.isExploringInterior;
+        const showEarthSats = (nearEarthForSats || isStationFocused) && !st.isExploringInterior;
         satelliteGroup.visible = showEarthSats;
 
         if (showEarthSats) {
@@ -2043,49 +2060,58 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             0.0000028,
             0.00175
           );
-          orbitalStationWorldScale = earthShipRefScale * 0.6;
+          orbitalStationWorldScale = earthShipRefScale * 0.72;
+
+          let positionedGateway = false;
+          const positionGatewayModel = (satPos: [number, number, number]) => {
+            if (!satModelMap['sat-orbital-gateway']) {
+              satModelMap['sat-orbital-gateway'] = orbitalStation.rootGroup;
+              satelliteGroup.add(orbitalStation.rootGroup);
+            }
+            const model = orbitalStation.rootGroup;
+            model.visible =
+              nearEarthForSats || isStationFocused || Boolean(st.enabledSatelliteCategories['SPACE_STATIONS']);
+            if (model.visible) {
+              model.position.set(satPos[0], satPos[1], satPos[2]);
+              // Orient Nadir Cupola (-Y) toward Earth and horizontal solar truss tangent to LEO orbit
+              _stationYAxis.set(satPos[0], satPos[1], satPos[2]).normalize();
+              _stationZAxis.crossVectors(_worldUp, _stationYAxis);
+              if (_stationZAxis.lengthSq() < 1e-6) _stationZAxis.set(0, 0, 1);
+              _stationZAxis.normalize();
+              _stationXAxis.crossVectors(_stationYAxis, _stationZAxis).normalize();
+              _stationBasisMat.makeBasis(_stationXAxis, _stationYAxis, _stationZAxis);
+              model.quaternion.setFromRotationMatrix(_stationBasisMat);
+              model.scale.setScalar(orbitalStationWorldScale);
+
+              orbitalStationWorldPos.copy(earthPos).add(model.position);
+              hasOrbitalStationPos = true;
+
+              const isCloseToStation =
+                isStationFocused ||
+                camera.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 145;
+              orbitalStation.update(clockTime, isCloseToStation, orbitalStationWorldScale);
+            }
+            positionedGateway = true;
+          };
 
           st.propagatedSatellites.forEach((sat) => {
+            if (sat.id === 'sat-orbital-gateway') {
+              positionGatewayModel(sat.position3D);
+              return;
+            }
             let model = satModelMap[sat.id];
             if (!model) {
-              model =
-                sat.id === 'sat-orbital-gateway'
-                  ? orbitalStation.rootGroup
-                  : createDetailedSatellite3DGroup(sat);
+              model = createDetailedSatellite3DGroup(sat);
               satelliteGroup.add(model);
               satModelMap[sat.id] = model;
             }
-            const catVisible = !!st.enabledSatelliteCategories[sat.category];
+            const catVisible = nearEarthForSats && !!st.enabledSatelliteCategories[sat.category];
             model.visible = catVisible;
             if (catVisible) {
               model.position.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]);
-              if (sat.id === 'sat-orbital-gateway') {
-                // Orient Nadir Cupola (-Y) toward Earth and horizontal solar truss tangent to LEO orbit
-                _stationYAxis
-                  .set(sat.position3D[0], sat.position3D[1], sat.position3D[2])
-                  .normalize();
-                _stationZAxis.crossVectors(_worldUp, _stationYAxis);
-                if (_stationZAxis.lengthSq() < 1e-6) _stationZAxis.set(0, 0, 1);
-                _stationZAxis.normalize();
-                _stationXAxis.crossVectors(_stationYAxis, _stationZAxis).normalize();
-                _stationBasisMat.makeBasis(_stationXAxis, _stationYAxis, _stationZAxis);
-                model.quaternion.setFromRotationMatrix(_stationBasisMat);
-                model.scale.setScalar(orbitalStationWorldScale);
-
-                orbitalStationWorldPos
-                  .copy(earthPos)
-                  .add(model.position);
-                hasOrbitalStationPos = true;
-
-                const isCloseToStation =
-                  st.selectedSatelliteId === 'sat-orbital-gateway' ||
-                  camera.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 130;
-                orbitalStation.update(clockTime, isCloseToStation, orbitalStationWorldScale);
-              } else {
-                model.lookAt(earthPos);
-                const isSelSat = sat.id === st.selectedSatelliteId;
-                model.scale.setScalar((isSelSat ? 1.15 : 0.72) * satRadiusScale);
-              }
+              model.lookAt(earthPos);
+              const isSelSat = sat.id === st.selectedSatelliteId;
+              model.scale.setScalar((isSelSat ? 1.15 : 0.72) * satRadiusScale);
             }
 
             const faintOrbit = satFaintOrbitMap[sat.id];
@@ -2094,9 +2120,27 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             }
           });
 
-          const selectedSat = st.propagatedSatellites.find(
-            (s) => s.id === st.selectedSatelliteId
-          );
+          // Fallback guarantee: always mount Orbital Station even if stale cache omitted it
+          if (!positionedGateway && gatewayRecordFallback) {
+            const fallbackSat = propagateSingleSatellite(
+              gatewayRecordFallback,
+              new Date(currentSimTimeMs),
+              currentEarthRadius,
+              false
+            );
+            positionGatewayModel(fallbackSat.position3D);
+          }
+
+          const selectedSat =
+            st.propagatedSatellites.find((s) => s.id === st.selectedSatelliteId) ||
+            (st.selectedSatelliteId === 'sat-orbital-gateway' && gatewayRecordFallback
+              ? propagateSingleSatellite(
+                  gatewayRecordFallback,
+                  new Date(currentSimTimeMs),
+                  currentEarthRadius,
+                  true
+                )
+              : undefined);
           if (selectedSat && selectedSat.orbitTrack3D.length > 1) {
             if (
               lastDrawnSatTrackId !== selectedSat.id ||
@@ -2120,8 +2164,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       // Dynamic logarithmic near plane adjustment for sub-meter EVA / Station hull close-ups
       const wantUltraCloseNear =
         st.evaActive ||
+        st.lobbyShowcaseActive ||
         (st.selectedBodyId === 'earth' && st.selectedSatelliteId === 'sat-orbital-gateway');
-      const desiredNear = wantUltraCloseNear ? 0.000002 : 0.00005;
+      const desiredNear = wantUltraCloseNear ? 0.0000018 : 0.00005;
       if (Math.abs(desiredNear - activeNearPlane) > 1e-7) {
         activeNearPlane = desiredNear;
         camera.near = desiredNear;
@@ -2138,6 +2183,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           0.00175
         );
         currentShipScale = earthShipScale;
+        const resetControlsDamping = (nextTarget: THREE.Vector3) => {
+          const prevDamping = controls.enableDamping;
+          controls.enableDamping = false;
+          controls.target.copy(nextTarget);
+          controls.update();
+          controls.enableDamping = prevDamping;
+        };
+
         if (stationCmd.mode === 'SHIP_DOCK') {
           _tmpV1
             .copy(orbitalStation.shipApproachLocal)
@@ -2153,11 +2206,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           lastSyncedReactThrottle = 0;
           prevSpaceParkedValid = true;
           wasSpacecraftActive = true;
+          wasLobbyShowcaseActive = false;
           sr7.rootGroup.scale.setScalar(currentShipScale);
           sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
           sr7.chaseCameraAnchor.getWorldPosition(_tmpV2);
           camera.position.copy(_tmpV2);
-          controls.target.copy(sr7.rootGroup.position);
+          resetControlsDamping(sr7.rootGroup.position);
         } else if (stationCmd.mode === 'EVA_WALK') {
           _tmpV1
             .copy(orbitalStation.shipApproachLocal)
@@ -2168,31 +2222,52 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sr7.rootGroup.scale.setScalar(currentShipScale);
           prevSpaceParkedValid = true;
 
-          // Spawn Astronaut directly on top of the Orbital Station Central Hub/Node Bridge
+          if (evaAttachedToShip) {
+            scene.add(astronaut.rootGroup);
+            evaAttachedToShip = false;
+          }
+
+          // Spawn Astronaut directly upright on the flat Laboratory dorsal deck facing -Z across Central Hub & Airlock
           _tmpV2
             .copy(orbitalStation.walkSpawnLocal)
             .multiplyScalar(orbitalStationWorldScale)
             .applyQuaternion(orbitalStation.rootGroup.quaternion);
           astronaut.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV2);
-
-          // Align upright along station dorsal zenith (+Y) facing +Z forward toward Lab & Crew Ferry
-          _tmpQuat1.copy(orbitalStation.rootGroup.quaternion);
-          const _flipYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-          astronaut.rootGroup.quaternion.copy(_tmpQuat1).multiply(_flipYaw);
+          astronaut.rootGroup.quaternion.copy(orbitalStation.rootGroup.quaternion);
           evaVelocity.set(0, 0, 0);
           wasEvaActive = true;
+          wasLobbyShowcaseActive = false;
 
           _tmpV3.set(0, 1, 0).applyQuaternion(orbitalStation.rootGroup.quaternion).normalize();
           _tmpV4.set(0, 0, -1).applyQuaternion(astronaut.rootGroup.quaternion).normalize();
+          _tmpV5.set(1, 0, 0).applyQuaternion(astronaut.rootGroup.quaternion).normalize();
           camera.position
             .copy(astronaut.rootGroup.position)
-            .addScaledVector(_tmpV3, currentShipScale * 1.9)
+            .addScaledVector(_tmpV3, currentShipScale * 1.45)
+            .addScaledVector(_tmpV5, currentShipScale * 0.48)
             .addScaledVector(_tmpV4, -currentShipScale * 4.2);
-          controls.target
+          _tmpV6
             .copy(astronaut.rootGroup.position)
             .addScaledVector(_tmpV3, currentShipScale * 0.55);
+          resetControlsDamping(_tmpV6);
         } else {
-          cameraCommandRef.current.activeTransition = true;
+          // ORBIT_INSPECT: immediately frame the 12-module Orbital Station with Earth behind it
+          wasLobbyShowcaseActive = false;
+          cameraCommandRef.current.activeTransition = false;
+          if (earthPos) {
+            previousTargetWorldPos.copy(earthPos);
+            hasInitializedTargetPos = true;
+          }
+          const gatewayDist = orbitalStationWorldScale * orbitalStation.stationFocusDistanceLocal;
+          const localViewDir = _tmpV3
+            .set(-0.68, 0.42, 0.60)
+            .normalize()
+            .applyQuaternion(orbitalStation.rootGroup.quaternion);
+          camera.position
+            .copy(orbitalStationWorldPos)
+            .addScaledVector(localViewDir, gatewayDist);
+          controls.minDistance = Math.max(1e-6, orbitalStationWorldScale * 4.5);
+          resetControlsDamping(orbitalStationWorldPos);
         }
       }
 
@@ -2301,6 +2376,147 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             }));
           }
         }
+      } else if (st.lobbyShowcaseActive) {
+        // ====================================================================
+        // PRE-GAME AAA 3D TITLE LOBBY SHOWCASE (Hero Starfighter + Astronaut)
+        // ====================================================================
+        wasWarpingLastFrame = false;
+        wasSpacecraftActive = false;
+        wasEvaActive = false;
+        prevSpaceParkedValid = false;
+        warpTunnelGroup.visible = false;
+        spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
+
+        if (Math.abs(camera.fov - 42) > 0.1) {
+          camera.fov = 42;
+          camera.updateProjectionMatrix();
+        }
+
+        const earthShowPos = bodyWorldPositions['earth'] || _originVec;
+        const earthShowRadius = Math.max(0.00015, getScaledRadius(getCelestialBody('earth'), st.scaleMode));
+        const lobbyScale =
+          THREE.MathUtils.clamp(earthShowRadius * 0.0038, 0.0000028, 0.00175) * 1.15;
+        currentShipScale = lobbyScale;
+
+        const sunlitDir = computeSunlitCameraOffsetDir(earthShowPos, 'earth', _tmpV1);
+        const stagingCenter = _tmpV2.copy(earthShowPos).addScaledVector(sunlitDir, earthShowRadius * 2.15);
+        const toEarth = _tmpV3.copy(earthShowPos).sub(stagingCenter).normalize();
+        const stageRight = _tmpV4.crossVectors(toEarth, _worldUp).normalize();
+        const stageUp = _tmpV5.crossVectors(stageRight, toEarth).normalize();
+
+        // Position Hero Spacecraft banked gracefully in center-right orbital space
+        _stationBasisMat.makeBasis(stageRight, stageUp, _tmpV6.copy(toEarth).negate());
+        _tmpQuat1.setFromRotationMatrix(_stationBasisMat);
+        _tmpEuler.set(0.06, Math.PI * 0.72, 0.12, 'YXZ');
+        const _shipOffsetQ = new THREE.Quaternion().setFromEuler(_tmpEuler);
+
+        sr7.rootGroup.visible = true;
+        sr7.rootGroup.scale.setScalar(lobbyScale);
+        sr7.rootGroup.position
+          .copy(stagingCenter)
+          .addScaledVector(stageRight, lobbyScale * 1.45)
+          .addScaledVector(stageUp, lobbyScale * 0.28 + Math.sin(clockTime * 1.1) * lobbyScale * 0.04)
+          .addScaledVector(toEarth, lobbyScale * 1.1);
+        sr7.rootGroup.quaternion.copy(_tmpQuat1).multiply(_shipOffsetQ);
+
+        const activeShipPresetLobby = getSpacecraftPreset(st.selectedShipId || 'sr7-vanguard');
+        sr7.updateAnimations({
+          dt,
+          clockTime,
+          throttle: 0.24,
+          boostActive: false,
+          headlightsOn: false,
+          interiorLightsOn: true,
+          shieldsOn: false,
+          pitchInput: 0,
+          rollInput: 0,
+          yawInput: 0,
+          pitchDeg: 0,
+          rollDeg: 0,
+          radarPulseAgeSec: 99,
+          muzzleFlashAlpha: 0,
+          speedFormatted: 'HANGAR ORBITAL',
+          nearestName: activeShipPresetLobby.name,
+          nearestDist: 'PRONTO',
+          reactorTempC: 310,
+          sasEnabled: true,
+          autopilotActive: false,
+          isCockpitView: false,
+          shipScale: lobbyScale,
+          driftAngleDeg: 0,
+        });
+
+        // Position Hero Rigged Astronaut prominently in foreground-left of Starfighter
+        if (evaAttachedToShip) {
+          scene.add(astronaut.rootGroup);
+          evaAttachedToShip = false;
+        }
+        const astroLobbyScale = lobbyScale * 0.88;
+        astronaut.rootGroup.visible = true;
+        astronaut.rootGroup.scale.setScalar(astroLobbyScale);
+        astronaut.rootGroup.position
+          .copy(stagingCenter)
+          .addScaledVector(stageRight, lobbyScale * 0.05)
+          .addScaledVector(stageUp, -lobbyScale * 0.48 + Math.sin(clockTime * 1.3 + 0.7) * lobbyScale * 0.03)
+          .addScaledVector(toEarth, -lobbyScale * 0.95);
+        _tmpEuler.set(0.02, Math.PI - 0.28 + Math.sin(clockTime * 0.55) * 0.08, 0, 'YXZ');
+        const _astroOffsetQ = new THREE.Quaternion().setFromEuler(_tmpEuler);
+        astronaut.rootGroup.quaternion.copy(_tmpQuat1).multiply(_astroOffsetQ);
+
+        astronaut.update({
+          dt,
+          clockTime,
+          mode: 'EVA_IDLE',
+          moveSpeed01: 0,
+          boostActive: false,
+          pitchTilt: 0,
+          rollTilt: 0,
+          visorLightOn: false,
+          worldScale: lobbyScale,
+        });
+
+        // Hero sunlit rim light across both Starfighter & Astronaut
+        shipRimLight.visible = true;
+        shipRimLight.position
+          .copy(sr7.rootGroup.position)
+          .addScaledVector(stageRight, lobbyScale * 8)
+          .addScaledVector(stageUp, lobbyScale * 10)
+          .addScaledVector(toEarth, -lobbyScale * 9);
+        shipRimLight.target.position.copy(sr7.rootGroup.position);
+        shipRimLight.target.updateMatrixWorld();
+
+        // Orbit Target shifted left so Ship + Astronaut sit unobstructed on center-right
+        const desiredLobbyTarget = _tmpV6
+          .copy(stagingCenter)
+          .addScaledVector(stageRight, -lobbyScale * 0.95)
+          .addScaledVector(stageUp, lobbyScale * 0.05);
+
+        if (!wasLobbyShowcaseActive) {
+          wasLobbyShowcaseActive = true;
+          const prevDamping = controls.enableDamping;
+          controls.enableDamping = false;
+          controls.target.copy(desiredLobbyTarget);
+          camera.position
+            .copy(desiredLobbyTarget)
+            .addScaledVector(stageRight, lobbyScale * 0.35)
+            .addScaledVector(stageUp, lobbyScale * 0.38)
+            .addScaledVector(toEarth, -lobbyScale * 7.4);
+          controls.update();
+          controls.enableDamping = prevDamping;
+          previousTargetWorldPos.copy(earthShowPos);
+          hasInitializedTargetPos = true;
+        } else {
+          // Gently track Earth's motion if time is running while preserving user orbit angle
+          const _earthDelta = _tmpV1.subVectors(earthShowPos, previousTargetWorldPos);
+          camera.position.add(_earthDelta);
+          controls.target.copy(desiredLobbyTarget);
+          previousTargetWorldPos.copy(earthShowPos);
+        }
+
+        controls.enabled = true;
+        controls.minDistance = lobbyScale * 3.4;
+        controls.maxDistance = lobbyScale * 14.5;
+        controls.update();
       } else if (st.spacecraftControl.isActive) {
         wasWarpingLastFrame = false;
         const sc = st.spacecraftControl;
@@ -3075,15 +3291,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               .multiplyScalar(orbitalStationWorldScale)
               .applyQuaternion(orbitalStation.rootGroup.quaternion);
             astronaut.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV2);
-            const _flipY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-            astronaut.rootGroup.quaternion
-              .copy(orbitalStation.rootGroup.quaternion)
-              .multiply(_flipY);
+            astronaut.rootGroup.quaternion.copy(orbitalStation.rootGroup.quaternion);
             evaUp.set(0, 1, 0).applyQuaternion(orbitalStation.rootGroup.quaternion).normalize();
             _tmpV3.set(0, 0, -1).applyQuaternion(astronaut.rootGroup.quaternion).normalize();
+            _tmpV4.set(1, 0, 0).applyQuaternion(astronaut.rootGroup.quaternion).normalize();
             camera.position
               .copy(astronaut.rootGroup.position)
-              .addScaledVector(evaUp, currentShipScale * 1.9)
+              .addScaledVector(evaUp, currentShipScale * 1.45)
+              .addScaledVector(_tmpV4, currentShipScale * 0.48)
               .addScaledVector(_tmpV3, -currentShipScale * 4.2);
           } else {
             _tmpV1.set(1, 0, 0.35).normalize().applyQuaternion(sr7.rootGroup.quaternion);
@@ -3227,6 +3442,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         controls.target.copy(evaTargetPos);
         controls.minDistance = Math.max(1e-7, currentShipScale * 0.95);
         controls.maxDistance = 190000;
+        controls.update();
 
         // Rim-light both Astronaut & parked Light Fighter in deep space
         shipRimLight.visible = true;
@@ -3285,14 +3501,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           });
         }
       } else {
+        const returningFromLobby = wasLobbyShowcaseActive;
         sr7.rootGroup.visible = false;
         astronaut.rootGroup.visible = false;
-        shipRimLight.visible = false;
+        wasLobbyShowcaseActive = false;
         wasSpacecraftActive = false;
         wasEvaActive = false;
         prevSpaceParkedValid = false;
         prevBrakeAudio = false;
         prevAutopilotIdAudio = null;
+        if (returningFromLobby && st.selectedSatelliteId !== 'sat-orbital-gateway') {
+          cameraCommandRef.current.activeTransition = true;
+        }
         if (!evaAttachedToShip) {
           sr7.pilotSeatAnchor.add(astronaut.rootGroup);
           astronaut.rootGroup.scale.setScalar(0.43);
@@ -3306,8 +3526,19 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           st.selectedBodyId === 'earth' &&
           st.selectedSatelliteId === 'sat-orbital-gateway' &&
           hasOrbitalStationPos;
+        if (isGatewayFocused) {
+          shipRimLight.visible = true;
+          _tmpV2.set(0.55, 0.85, 0.45);
+          shipRimLight.position
+            .copy(orbitalStationWorldPos)
+            .addScaledVector(_tmpV2, orbitalStationWorldScale * 48);
+          shipRimLight.target.position.copy(orbitalStationWorldPos);
+          shipRimLight.target.updateMatrixWorld();
+        } else {
+          shipRimLight.visible = false;
+        }
         controls.minDistance = isGatewayFocused
-          ? Math.max(1e-6, orbitalStationWorldScale * 3.8)
+          ? Math.max(1e-6, orbitalStationWorldScale * 4.5)
           : selectedBody.id === 'milky-way'
             ? 2.2
             : Math.max(0.0000004, targetRadius * 1.18);
@@ -3546,6 +3777,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       // PROJECT CLEAN, DECLUTTERED 3D LABELS & LIVE SCALE READOUT TO 2D OVERLAY
       labelFrameCounter++;
       if (labelFrameCounter % perf.labelUpdateIntervalFrames === 0 && !st.warpState.isActive) {
+        if (st.lobbyShowcaseActive) {
+          setScreenLabels((prev) => (prev.length > 0 ? [] : prev));
+        } else {
         const width = container.clientWidth;
         const height = container.clientHeight;
         const nextLabels: ScreenLabel[] = [];
@@ -3812,6 +4046,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
 
         setScreenLabels(nextLabels);
+        }
       }
 
       renderer.render(scene, camera);
@@ -4039,7 +4274,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       {/* Cosmoscope-Style Multi-Scale Switcher & Live Vertical Scale Readout ("↕ 157.377 ly") */}
-      {!spacecraftControl.isActive && (
+      {!spacecraftControl.isActive && !lobbyShowcaseActive && (
         <>
           <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
             <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
