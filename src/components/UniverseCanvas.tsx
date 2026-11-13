@@ -54,7 +54,6 @@ import {
 } from '../utils/performanceProfile';
 import { createSR7Spacecraft3DGroup } from '../utils/sr7SpacecraftModel';
 import { createAstronautCharacter3D } from '../utils/astronautCharacterModel';
-import { createSpaceGameManager, GameHudSnapshot } from '../utils/spaceGameManager';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
 import { EVAVirtualInput } from './EVACharacterHUD';
@@ -99,10 +98,6 @@ interface UniverseCanvasProps {
   evaRecenterTrigger?: number;
   evaRadarTrigger?: number;
   evaVirtualInput?: EVAVirtualInput;
-  gameActive?: boolean;
-  gameResetTrigger?: number;
-  gameWaveTrigger?: number;
-  onSyncGameSnapshot?: (snapshot: GameHudSnapshot) => void;
 }
 
 interface ScreenLabel {
@@ -268,10 +263,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   evaRecenterTrigger = 0,
   evaRadarTrigger = 0,
   evaVirtualInput,
-  gameActive = true,
-  gameResetTrigger = 0,
-  gameWaveTrigger = 0,
-  onSyncGameSnapshot,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
@@ -312,9 +303,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     evaRecenterTrigger,
     evaRadarTrigger,
     evaVirtualInput,
-    gameActive,
-    gameResetTrigger,
-    gameWaveTrigger,
   });
 
   const callbacksRef = useRef({
@@ -329,7 +317,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onSyncSpacecraftTelemetry,
     onResolvedQualityChange,
     onBootProgress,
-    onSyncGameSnapshot,
   });
 
   useEffect(() => {
@@ -360,9 +347,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       evaRecenterTrigger,
       evaRadarTrigger,
       evaVirtualInput,
-      gameActive,
-      gameResetTrigger,
-      gameWaveTrigger,
     };
   });
 
@@ -379,7 +363,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onSyncSpacecraftTelemetry,
       onResolvedQualityChange,
       onBootProgress,
-      onSyncGameSnapshot,
     };
   });
 
@@ -1357,9 +1340,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     astronaut.rootGroup.visible = false;
     sr7.pilotSeatAnchor.add(astronaut.rootGroup);
 
-    // ARCADE ORBITAL GAME LOOP MANAGER (Portals, Shootable Crystals, Telemetry Beacons)
-    const gameManager = createSpaceGameManager(scene);
-
     let wasEvaActive = false;
     let evaAttachedToShip = true;
     const evaVelocity = new THREE.Vector3();
@@ -1372,10 +1352,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let prevEvaRecenterTrigger = stateRef.current.evaRecenterTrigger || 0;
     let prevEvaRadarTrigger = stateRef.current.evaRadarTrigger || 0;
     let evaRadarAgeSec = 99;
-    let prevGameWaveTrigger = stateRef.current.gameWaveTrigger || 0;
-    let prevGameResetTrigger = stateRef.current.gameResetTrigger || 0;
-    let lastGameBodyId = '';
-    let lastGameActive = stateRef.current.gameActive;
     let prevSpaceParkedValid = false;
 
     const projectileGroup = new THREE.Group();
@@ -2062,7 +2038,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (st.warpState.isActive) {
         sr7.rootGroup.visible = false;
         astronaut.rootGroup.visible = false;
-        gameManager.rootGroup.visible = false;
         shipRimLight.visible = false;
         wasSpacecraftActive = false;
         wasEvaActive = false;
@@ -2768,62 +2743,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           driftAngleDeg,
         });
 
-        // 8. Update Orbital Arcade Game Targets & Sync HUD (~9 Hz)
-        const desiredGameOrbit =
-          selectedBody.category === 'galaxy'
-            ? targetRadius * 1.35
-            : Math.max(targetRadius * 1.45, currentShipScale * 56);
-        const needSectorReset =
-          st.gameResetTrigger !== prevGameResetTrigger;
-        const needSectorRecenter =
-          (st.gameActive && !lastGameActive) ||
-          lastGameBodyId !== selectedBody.id ||
-          st.gameWaveTrigger !== prevGameWaveTrigger;
-
-        if (needSectorReset) {
-          prevGameResetTrigger = st.gameResetTrigger;
-          prevGameWaveTrigger = st.gameWaveTrigger;
-          lastGameBodyId = selectedBody.id;
-          gameManager.resetGame(targetPos, desiredGameOrbit, currentShipScale);
-        } else if (needSectorRecenter) {
-          const advance = st.gameWaveTrigger !== prevGameWaveTrigger;
-          prevGameWaveTrigger = st.gameWaveTrigger;
-          lastGameBodyId = selectedBody.id;
-          gameManager.recenterSector(targetPos, desiredGameOrbit, currentShipScale, advance);
-        }
-        lastGameActive = st.gameActive;
-
-        const boltPositions = activePulseBolts.map((b) => b.mesh.position);
-        const consumedBolts = new Set<number>();
-        const shipGameSnapshot = gameManager.update({
-          dt,
-          clockTime,
-          active: st.gameActive,
-          playerPos: sr7.rootGroup.position,
-          playerScale: currentShipScale,
-          radarPulseActive: radarAgeSec >= 0 && radarAgeSec < 2.2,
-          boltPositions,
-          onConsumeBolt: (idx) => consumedBolts.add(idx),
-          callbacks: {
-            onRingCleared: () => spaceAudio.playAutopilotArrived(),
-            onCrystalDestroyed: () => spaceAudio.playPlasmaPulse(),
-            onBeaconScanned: () => spaceAudio.playRadarScan(),
-            onWaveCleared: () => spaceAudio.playWarpArrival(),
-          },
-        });
-        if (consumedBolts.size > 0) {
-          Array.from(consumedBolts)
-            .sort((a, b) => b - a)
-            .forEach((bIdx) => {
-              const bolt = activePulseBolts[bIdx];
-              if (bolt) {
-                projectileGroup.remove(bolt.mesh);
-                activePulseBolts.splice(bIdx, 1);
-              }
-            });
-        }
-
-        // Sync Live Telemetry & Game Score to HUD (throttled ~9 Hz)
+        // Sync Live Telemetry to HUD (throttled ~9 Hz)
         if (now - lastTelemetrySync > 110) {
           lastTelemetrySync = now;
           cb.onSyncSpacecraftTelemetry({
@@ -2841,7 +2761,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearbyContacts: radarContacts,
             autopilotStatus,
           });
-          cb.onSyncGameSnapshot?.(shipGameSnapshot);
         }
 
         const computedShipZoom: ZoomLevel =
@@ -3059,44 +2978,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           worldScale: currentShipScale,
         });
 
-        // Update Game Targets for Astronaut EVA walking/jetpacking!
-        const desiredGameOrbit =
-          selectedBody.category === 'galaxy'
-            ? targetRadius * 1.35
-            : Math.max(targetRadius * 1.45, currentShipScale * 56);
-        if (st.gameResetTrigger !== prevGameResetTrigger) {
-          prevGameResetTrigger = st.gameResetTrigger;
-          prevGameWaveTrigger = st.gameWaveTrigger;
-          lastGameBodyId = selectedBody.id;
-          gameManager.resetGame(targetPos, desiredGameOrbit, currentShipScale);
-        } else if (
-          (st.gameActive && !lastGameActive) ||
-          lastGameBodyId !== selectedBody.id ||
-          st.gameWaveTrigger !== prevGameWaveTrigger
-        ) {
-          const advance = st.gameWaveTrigger !== prevGameWaveTrigger;
-          prevGameWaveTrigger = st.gameWaveTrigger;
-          lastGameBodyId = selectedBody.id;
-          gameManager.recenterSector(targetPos, desiredGameOrbit, currentShipScale, advance);
-        }
-        lastGameActive = st.gameActive;
-
-        const evaGameSnapshot = gameManager.update({
-          dt,
-          clockTime,
-          active: st.gameActive,
-          playerPos: astronaut.rootGroup.position,
-          playerScale: currentShipScale,
-          radarPulseActive: evaRadarAgeSec < 2.2,
-          boltPositions: [],
-          callbacks: {
-            onRingCleared: () => spaceAudio.playAutopilotArrived(),
-            onCrystalDestroyed: () => spaceAudio.playPlasmaPulse(),
-            onBeaconScanned: () => spaceAudio.playRadarScan(),
-            onWaveCleared: () => spaceAudio.playWarpArrival(),
-          },
-        });
-
         if (now - lastTelemetrySync > 110) {
           lastTelemetrySync = now;
           const spdKmS = Math.round(evaSpeedUnits * 1_000_000);
@@ -3115,12 +2996,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearbyContacts: [],
             autopilotStatus: 'OFF',
           });
-          cb.onSyncGameSnapshot?.(evaGameSnapshot);
         }
       } else {
         sr7.rootGroup.visible = false;
         astronaut.rootGroup.visible = false;
-        gameManager.rootGroup.visible = false;
         shipRimLight.visible = false;
         wasSpacecraftActive = false;
         wasEvaActive = false;
@@ -3779,7 +3658,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       renderer.domElement.removeEventListener('touchend', handleTouchEnd);
       sr7.dispose();
       astronaut.dispose();
-      gameManager.dispose();
       controls.dispose();
       spaceAudio.dispose();
 

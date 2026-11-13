@@ -68,6 +68,46 @@ const TRACKED_BONES: TrackedBoneName[] = [
 ];
 
 /**
+ * Rewrites Skeleton.update() so boneMatrices are evaluated relative to skinnedMesh.matrixWorld in
+ * JS 64-bit Float64 precision rather than global Solar-System coordinates (~150-4500 AU).
+ * This avoids Float32 quantization spikes & horizontal stripes when rendering at 1:1 cosmic scale.
+ */
+function enableMeshRelativeSkinning(skinnedMesh: THREE.SkinnedMesh): void {
+  const skeleton = skinnedMesh.skeleton;
+  if (!skeleton) return;
+
+  skinnedMesh.bindMode = THREE.DetachedBindMode;
+  skinnedMesh.bindMatrix.identity();
+  skinnedMesh.bindMatrixInverse.identity();
+
+  const meshInvWorld = new THREE.Matrix4();
+  const offsetMatrix = new THREE.Matrix4();
+
+  skeleton.update = function updateMeshRelative() {
+    const bones = this.bones;
+    const boneInverses = this.boneInverses;
+    const boneMatrices = this.boneMatrices;
+
+    meshInvWorld.copy(skinnedMesh.matrixWorld).invert();
+
+    for (let i = 0, il = bones.length; i < il; i++) {
+      const bone = bones[i];
+      if (bone) {
+        offsetMatrix.multiplyMatrices(meshInvWorld, bone.matrixWorld);
+        offsetMatrix.multiply(boneInverses[i]);
+      } else {
+        offsetMatrix.identity();
+      }
+      offsetMatrix.toArray(boneMatrices, i * 16);
+    }
+
+    if (this.boneTexture !== null) {
+      this.boneTexture.needsUpdate = true;
+    }
+  };
+}
+
+/**
  * Loads the rigged Astronaut GLB (`/models/astronaut.glb`), manages seated pilot pose
  * inside the Light Fighter canopy as well as zero-G EVA jetpack/walk animations & thruster VFX.
  */
@@ -124,6 +164,12 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
   let currentClipMode: 'none' | 'walk' | 'run' = 'none';
 
   const bones = new Map<TrackedBoneName, BoneBinding>();
+  const allBoneRestStates: Array<{
+    bone: THREE.Object3D;
+    pos: THREE.Vector3;
+    quat: THREE.Quaternion;
+    scale: THREE.Vector3;
+  }> = [];
   const tmpAxis = new THREE.Vector3();
   const tmpDeltaQ = new THREE.Quaternion();
   const tmpTargetQ = new THREE.Quaternion();
@@ -155,10 +201,18 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
   };
 
   const resetAllBonesToRest = (blend = 0.2) => {
-    bones.forEach((b) => {
-      if (blend >= 0.999) b.bone.quaternion.copy(b.restQuat);
-      else b.bone.quaternion.slerp(b.restQuat, blend);
-    });
+    for (let i = 0; i < allBoneRestStates.length; i++) {
+      const b = allBoneRestStates[i];
+      if (blend >= 0.999) {
+        b.bone.position.copy(b.pos);
+        b.bone.quaternion.copy(b.quat);
+        b.bone.scale.copy(b.scale);
+      } else {
+        b.bone.position.lerp(b.pos, blend);
+        b.bone.quaternion.slerp(b.quat, blend);
+        b.bone.scale.lerp(b.scale, blend);
+      }
+    }
   };
 
   const disposeObjectResources = (node: THREE.Object3D) => {
@@ -209,6 +263,17 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
                 mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.35);
                 mat.needsUpdate = true;
               }
+            }
+            if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+              enableMeshRelativeSkinning(child as THREE.SkinnedMesh);
+            }
+            if ((child as THREE.Bone).isBone) {
+              allBoneRestStates.push({
+                bone: child,
+                pos: child.position.clone(),
+                quat: child.quaternion.clone(),
+                scale: child.scale.clone(),
+              });
             }
             const name = child.name as TrackedBoneName;
             if (TRACKED_BONES.includes(name) && child.parent) {
@@ -262,8 +327,9 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
 
     const fadeSec = 0.18;
     if (target === 'none') {
-      walkAction?.fadeOut(fadeSec);
-      runAction?.fadeOut(fadeSec);
+      // Stop mixer tracks cleanly rather than fading weights toward zero on bones
+      walkAction?.stop();
+      runAction?.stop();
     } else if (target === 'walk' && walkAction) {
       runAction?.fadeOut(fadeSec);
       walkAction.reset().setEffectiveWeight(1).fadeIn(fadeSec).play();
@@ -297,9 +363,7 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
 
     if (mode === 'SEATED') {
       syncClipState('none', 1);
-      if (mixer) {
-        mixer.update(safeDt);
-      }
+      resetAllBonesToRest(1.0);
 
       // Drop astronaut hips cleanly onto cockpit seat cushion and center chest in seat bucket
       characterOffsetGroup.position.set(0, -0.88, -0.02);
@@ -361,8 +425,8 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
       mixer?.update(safeDt);
     } else if (mode === 'EVA_JETPACK') {
       syncClipState('none', 1);
-      mixer?.update(safeDt);
       const blend = Math.min(1, safeDt * 7.5);
+      resetAllBonesToRest(blend);
       // Dynamic zero-G EVA flight posture (leans slightly forward -Z, knees naturally flexed)
       applyCharAxisPose('Spine', [[1, 0, 0, -14 + pitchTilt * 8], [0, 0, 1, -rollTilt * 10]], blend);
       applyCharAxisPose('Head', [[1, 0, 0, 10]], blend);
@@ -377,7 +441,6 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
     } else {
       // EVA_IDLE: smooth weightless idle float + subtle breathing sway
       syncClipState('none', 1);
-      mixer?.update(safeDt);
       resetAllBonesToRest(Math.min(1, safeDt * 6));
       const sway = Math.sin(clockTime * 1.55);
       applyCharAxisPose('Spine', [[1, 0, 0, sway * 1.6]], Math.min(1, safeDt * 5));

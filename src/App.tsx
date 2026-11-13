@@ -9,14 +9,12 @@ import {
   Rocket,
   Satellite,
   SlidersHorizontal,
-  Trophy,
   User,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
 import { spaceAudio } from './utils/spaceAudioEngine';
-import { GameHudSnapshot } from './utils/spaceGameManager';
 import {
   QualityPreference,
   ResolvedQualityTier,
@@ -203,29 +201,6 @@ export function App() {
     moveZ: 0,
     moveY: 0,
     sprint: false,
-  });
-
-  // Orbital Arcade Game Loop State
-  const [gameActive, setGameActive] = useState<boolean>(true);
-  const [gameResetTrigger, setGameResetTrigger] = useState<number>(0);
-  const [gameWaveTrigger, setGameWaveTrigger] = useState<number>(0);
-  const [gameSnapshot, setGameSnapshot] = useState<GameHudSnapshot>({
-    active: true,
-    score: 0,
-    combo: 1,
-    wave: 1,
-    pilotRank: 'Cadete Orbital',
-    ringsCleared: 0,
-    ringsTotal: 5,
-    crystalsDestroyed: 0,
-    crystalsTotal: 6,
-    beaconsScanned: 0,
-    beaconsTotal: 3,
-    lastEventText: 'Portais orbitais e cristais prontos!',
-    lastEventAgeSec: 99,
-    nearestObjectiveName: '',
-    nearestObjectiveKind: null,
-    nearestObjectiveDistUnits: 0,
   });
 
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -550,10 +525,6 @@ export function App() {
         evaRecenterTrigger={evaRecenterTrigger}
         evaRadarTrigger={evaRadarTrigger}
         evaVirtualInput={evaVirtualInput}
-        gameActive={gameActive}
-        gameResetTrigger={gameResetTrigger}
-        gameWaveTrigger={gameWaveTrigger}
-        onSyncGameSnapshot={setGameSnapshot}
         qualityPreference={qualityPreference}
         onResolvedQualityChange={setResolvedQualityTier}
         onBootProgress={setBootProgress}
@@ -628,27 +599,8 @@ export function App() {
           })}
         </div>
 
-        {/* Right: Active Game Score Pill + Mute + Command Menu */}
+        {/* Right: Audio Mute + Command Menu */}
         <div className="pointer-events-auto flex items-center gap-1.5">
-          {gameActive && playerMode !== 'EXPLORE' && (
-            <button
-              onClick={() => setIsCommandMenuOpen(true)}
-              className="hidden sm:flex items-center gap-2 bg-slate-950/82 hover:bg-slate-900 backdrop-blur-xl border border-amber-400/35 px-3 py-1 rounded-full text-[11px] font-mono shadow-lg transition-colors"
-              title="Objetivo Arcade Atual — Clique para ver placar completo"
-            >
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span className="font-bold text-amber-200">{gameSnapshot.score}</span>
-              {gameSnapshot.combo > 1 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300">
-                  x{gameSnapshot.combo}
-                </span>
-              )}
-              <span className="hidden lg:inline text-cyan-300 truncate max-w-[140px]">
-                · {gameSnapshot.nearestObjectiveName}
-              </span>
-            </button>
-          )}
-
           <button
             onClick={toggleAudioMuted}
             className={`p-2 rounded-full border backdrop-blur-xl shadow-lg transition-all ${
@@ -671,13 +623,6 @@ export function App() {
           </button>
         </div>
       </header>
-
-      {/* Live Floating Game Event Toast Banner */}
-      {gameActive && playerMode !== 'EXPLORE' && gameSnapshot.lastEventAgeSec < 3.4 && (
-        <div className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-30 bg-slate-950/88 backdrop-blur-xl border border-amber-400/45 rounded-full px-4 py-1 text-xs font-mono font-bold text-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.3)] animate-pulse">
-          {gameSnapshot.lastEventText}
-        </div>
-      )}
 
       {/* 3. SLEEK FLOATING BODY SUMMARY (Explorer Mode Only, Collapsed by Default) */}
       {!isDossierOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
@@ -974,7 +919,7 @@ export function App() {
         />
       )}
 
-      {/* 6D. ORGANIZED GAME & EXPLORATION COMMAND MENU MODAL */}
+      {/* 6D. ORGANIZED EXPLORATION & COMMAND MENU MODAL */}
       <GameCommandMenu
         isOpen={isCommandMenuOpen}
         onClose={() => setIsCommandMenuOpen(false)}
@@ -982,11 +927,6 @@ export function App() {
         onSwitchMode={switchPlayerMode}
         selectedBody={selectedBody}
         onSelectBody={handleSelectBody}
-        gameSnapshot={gameSnapshot}
-        gameActive={gameActive}
-        onToggleGameActive={setGameActive}
-        onNewWave={() => setGameWaveTrigger((n) => n + 1)}
-        onResetGame={() => setGameResetTrigger((n) => n + 1)}
         onOpenDossier={() => setIsDossierOpen(true)}
         onOpenMissions={() => setIsMissionsModalOpen(true)}
         onOpenEarthSurface={() => setIsEarthSurfaceModalOpen(true)}

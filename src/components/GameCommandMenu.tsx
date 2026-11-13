@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   BookOpen,
   Compass,
-  Gamepad2,
   Gauge,
   Globe,
   Layers,
@@ -11,11 +10,9 @@ import {
   Pause,
   Play,
   Rocket,
-  RotateCcw,
   Search,
   SlidersHorizontal,
   Sparkles,
-  Trophy,
   User,
   Volume2,
   VolumeX,
@@ -24,11 +21,10 @@ import {
 import { ALL_CELESTIAL_BODIES } from '../data/solarSystemData';
 import { CelestialBodyData } from '../types/astronomy';
 import { QualityPreference, ResolvedQualityTier } from '../utils/performanceProfile';
-import { GameHudSnapshot } from '../utils/spaceGameManager';
 import { UniverseLogo } from './UniverseLogo';
 
 export type ActivePlayerMode = 'EXPLORE' | 'SPACECRAFT' | 'EVA';
-export type CommandMenuTab = 'travel' | 'game' | 'encyclopedia' | 'system';
+export type CommandMenuTab = 'travel' | 'missions' | 'encyclopedia' | 'system';
 
 interface GameCommandMenuProps {
   isOpen: boolean;
@@ -37,11 +33,6 @@ interface GameCommandMenuProps {
   onSwitchMode: (mode: ActivePlayerMode) => void;
   selectedBody: CelestialBodyData;
   onSelectBody: (bodyId: string, triggerWarp?: boolean) => void;
-  gameSnapshot: GameHudSnapshot;
-  gameActive: boolean;
-  onToggleGameActive: (active: boolean) => void;
-  onNewWave: () => void;
-  onResetGame: () => void;
   onOpenDossier: () => void;
   onOpenMissions: () => void;
   onOpenEarthSurface: () => void;
@@ -85,11 +76,6 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
   onSwitchMode,
   selectedBody,
   onSelectBody,
-  gameSnapshot,
-  gameActive,
-  onToggleGameActive,
-  onNewWave,
-  onResetGame,
   onOpenDossier,
   onOpenMissions,
   onOpenEarthSurface,
@@ -172,7 +158,7 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm sm:text-base font-display font-bold tracking-wider text-white">
-                  CENTRAL COSMOS &amp; JOGO
+                  CENTRAL COSMOS
                 </h2>
                 <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/35 text-sky-200">
                   {playerMode === 'SPACECRAFT'
@@ -183,18 +169,12 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Navegue pelo sistema solar, ative missões de pontuação ou alterne entre Nave e Astronauta
+                Navegue pelo sistema solar, explore missões reais ou alterne entre Nave e Astronauta
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 bg-amber-500/10 border border-amber-400/30 rounded-full px-3 py-1 text-xs">
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span className="font-mono font-bold text-amber-200">{gameSnapshot.score} pts</span>
-              <span className="text-amber-300/70">· {gameSnapshot.pilotRank}</span>
-            </div>
-
             <button
               onClick={onClose}
               className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 border border-white/10 text-slate-300 hover:text-white transition-colors"
@@ -245,7 +225,7 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
         <div className="grid grid-cols-4 border-b border-white/10 bg-slate-900/30 text-xs font-medium">
           {[
             { id: 'travel' as const, label: 'Mapa & Viagem', icon: Compass },
-            { id: 'game' as const, label: 'Jogo & Missões', icon: Gamepad2 },
+            { id: 'missions' as const, label: 'Missões & Voo', icon: Rocket },
             { id: 'encyclopedia' as const, label: 'Enciclopédia', icon: BookOpen },
             { id: 'system' as const, label: 'Sistema & Áudio', icon: SlidersHorizontal },
           ].map((tab) => {
@@ -353,126 +333,17 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
             </>
           )}
 
-          {activeTab === 'game' && (
+          {activeTab === 'missions' && (
             <div className="space-y-4">
-              {/* Arcade Orbital Challenge Card */}
-              <div className="bg-gradient-to-br from-sky-950/50 via-slate-900/90 to-indigo-950/50 border border-sky-400/30 rounded-2xl p-4 space-y-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Trophy className="w-5 h-5 text-amber-400" />
-                      <h3 className="text-sm font-display font-bold text-white">
-                        Desafio Espacial Arcade (Onda {gameSnapshot.wave})
-                      </h3>
-                    </div>
-                    <p className="text-xs text-slate-300 mt-0.5">
-                      Voe pela nave ou caminhe com o astronauta passando pelos portais, destruindo cristais de energia e escaneando balizas!
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onToggleGameActive(!gameActive)}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                        gameActive
-                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
-                          : 'bg-sky-500 hover:bg-sky-400 border-sky-300 text-slate-950'
-                      }`}
-                    >
-                      {gameActive ? 'Missão Ativa (Pausar)' : 'Ativar Missão Arcade'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        onToggleGameActive(true);
-                        onNewWave();
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs text-white"
-                    >
-                      Nova Onda Aqui
-                    </button>
-                    <button
-                      onClick={onResetGame}
-                      className="p-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 border border-white/10 text-slate-300 hover:text-white"
-                      title="Reiniciar Pontuação"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Live Scoreboard & Objective Bars */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                  <div className="bg-slate-950/75 border border-white/10 rounded-xl p-3">
-                    <div className="text-[10px] font-mono text-slate-400">PONTUAÇÃO</div>
-                    <div className="text-lg font-mono font-bold text-amber-300">
-                      {gameSnapshot.score}
-                    </div>
-                    <div className="text-[10px] text-amber-200/80">{gameSnapshot.pilotRank}</div>
-                  </div>
-
-                  <div className="bg-slate-950/75 border border-white/10 rounded-xl p-3">
-                    <div className="text-[10px] font-mono text-cyan-400">PORTAIS ORBITAIS</div>
-                    <div className="text-lg font-mono font-bold text-white">
-                      {gameSnapshot.ringsCleared}/{gameSnapshot.ringsTotal}
-                    </div>
-                    <div className="text-[10px] text-slate-400">Atravesse com Nave ou EVA</div>
-                  </div>
-
-                  <div className="bg-slate-950/75 border border-white/10 rounded-xl p-3">
-                    <div className="text-[10px] font-mono text-rose-400">CRISTAIS ALVO</div>
-                    <div className="text-lg font-mono font-bold text-white">
-                      {gameSnapshot.crystalsDestroyed}/{gameSnapshot.crystalsTotal}
-                    </div>
-                    <div className="text-[10px] text-slate-400">Atire com F / Espaço ou toque</div>
-                  </div>
-
-                  <div className="bg-slate-950/75 border border-white/10 rounded-xl p-3">
-                    <div className="text-[10px] font-mono text-emerald-400">BALIZAS RADAR</div>
-                    <div className="text-lg font-mono font-bold text-white">
-                      {gameSnapshot.beaconsScanned}/{gameSnapshot.beaconsTotal}
-                    </div>
-                    <div className="text-[10px] text-slate-400">Use Radar (R) perto da baliza</div>
-                  </div>
-                </div>
-
-                {playerMode === 'EXPLORE' && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-500/10 border border-amber-400/30 rounded-xl p-3 text-xs text-amber-200">
-                    <span>Entre na Nave ou no Astronauta para pontuar nos objetivos em órbita!</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          onToggleGameActive(true);
-                          onSwitchMode('SPACECRAFT');
-                          onClose();
-                        }}
-                        className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold"
-                      >
-                        Decolar Nave
-                      </button>
-                      <button
-                        onClick={() => {
-                          onToggleGameActive(true);
-                          onSwitchMode('EVA');
-                          onClose();
-                        }}
-                        className="px-3 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold"
-                      >
-                        Sair em EVA
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Historical & Active NASA/ESA Missions Card */}
-              <div className="bg-slate-900/75 border border-white/10 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+              <div className="bg-gradient-to-br from-sky-950/50 via-slate-900/90 to-indigo-950/50 border border-sky-400/30 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+                <div className="max-w-lg">
+                  <h3 className="text-sm sm:text-base font-display font-bold text-white flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-sky-400" />
-                    Missões Históricas &amp; Sondas Reais
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Visualize trajetórias de Voyager, Apollo, Webb, Cassini e sondas interplanetárias no mapa 3D.
+                    Missões Históricas &amp; Sondas Reais (NASA / ESA)
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    Explore trajetórias espaciais autênticas em 3D de Voyager 1 e 2, Apollo 11, Telescópio James Webb, Cassini e sondas interplanetárias pelo Sistema Solar.
                   </p>
                 </div>
                 <button
@@ -480,10 +351,55 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                     onClose();
                     onOpenMissions();
                   }}
-                  className="px-4 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/50 text-sky-200 text-xs font-semibold transition-colors"
+                  className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-300 text-slate-950 text-xs font-bold shadow-[0_0_20px_rgba(56,189,248,0.3)] transition-colors"
                 >
                   Explorar Missões NASA/ESA
                 </button>
+              </div>
+
+              {/* Spacecraft & EVA Quick Deployment Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-4 flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">
+                      <Rocket className="w-4 h-4" />
+                      <span>Voo Espacial Livre &amp; Cabine 3D</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Pilote o Caça Estelar em física espacial realista com vidro transparente de cabine e visão 360° pelo cosmos.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      onSwitchMode('SPACECRAFT');
+                      onClose();
+                    }}
+                    className="w-full py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs font-semibold transition-colors"
+                  >
+                    Pilotar Nave
+                  </button>
+                </div>
+
+                <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-4 flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-cyan-300 text-sm font-semibold">
+                      <User className="w-4 h-4" />
+                      <span>Caminhada Espacial EVA (Astronauta)</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Controle o Astronauta articulado ao lado da nave estacionada em órbita com lanterna de capacete e jetpack RCS.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      onSwitchMode('EVA');
+                      onClose();
+                    }}
+                    className="w-full py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 text-xs font-semibold transition-colors"
+                  >
+                    Sair em EVA
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -751,3 +667,4 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
     </div>
   );
 };
+
