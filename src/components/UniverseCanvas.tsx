@@ -487,13 +487,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       }
     };
     controls.addEventListener('start', stopAutoCamera);
-    const handleWheelInterrupt = () => {
+    let cockpitFovTargetOffset = 0;
+    let cockpitFovOffset = 0;
+    const handleWheelInterrupt = (e: WheelEvent) => {
       cameraCommandRef.current.activeTransition = false;
-      if (
-        stateRef.current.spacecraftControl.isActive &&
-        stateRef.current.spacecraftControl.cameraView === 'EXTERNAL'
-      ) {
-        lastManualOrbitTimestamp = performance.now();
+      if (stateRef.current.spacecraftControl.isActive) {
+        if (stateRef.current.spacecraftControl.cameraView === 'COCKPIT') {
+          cockpitFovTargetOffset = THREE.MathUtils.clamp(
+            cockpitFovTargetOffset + Math.sign(e.deltaY) * 4.5,
+            -28,
+            12
+          );
+        } else {
+          lastManualOrbitTimestamp = performance.now();
+        }
       }
     };
     renderer.domElement.addEventListener('wheel', handleWheelInterrupt, { passive: true });
@@ -1338,7 +1345,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let prevCameraView: 'COCKPIT' | 'EXTERNAL' = 'EXTERNAL';
     let lastFirePulseCount = 0;
     let muzzleFlashAlpha = 0;
-    let isCockpitDragging = false;
+    let isCockpitLooking = false;
+    let isCockpitSteerDragging = false;
+    let cockpitLastLookX = 0;
+    let cockpitLastLookY = 0;
+    let cockpitLookTargetYaw = 0;
+    let cockpitLookTargetPitch = 0;
+    let cockpitLookYaw = 0;
+    let cockpitLookPitch = 0;
     let cockpitDragOriginX = 0;
     let cockpitDragOriginY = 0;
     let cockpitDragSteerX = 0;
@@ -1394,7 +1408,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }));
       } else if (e.code === 'KeyC') {
         lastManualOrbitTimestamp = 0;
-        prevCameraView = 'COCKPIT';
+        cockpitLookTargetYaw = 0;
+        cockpitLookTargetPitch = 0;
+        cockpitFovTargetOffset = 0;
+        if (stateRef.current.spacecraftControl.cameraView === 'EXTERNAL') {
+          prevCameraView = 'COCKPIT';
+        }
       } else if (e.code === 'KeyF') {
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -1442,31 +1461,58 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         stateRef.current.spacecraftControl.isActive &&
         stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
       ) {
-        isCockpitDragging = true;
-        cockpitDragOriginX = e.clientX;
-        cockpitDragOriginY = e.clientY;
+        if (e.button === 2) {
+          isCockpitSteerDragging = true;
+          cockpitDragOriginX = e.clientX;
+          cockpitDragOriginY = e.clientY;
+        } else if (e.button === 0) {
+          isCockpitLooking = true;
+          cockpitLastLookX = e.clientX;
+          cockpitLastLookY = e.clientY;
+        }
       }
     };
 
     const handlePointerMove = (e: MouseEvent) => {
-      if (!isCockpitDragging) return;
-      if ((e.buttons & 1) === 0) {
-        isCockpitDragging = false;
-        cockpitDragSteerX = 0;
-        cockpitDragSteerY = 0;
-        return;
+      if (isCockpitLooking) {
+        if ((e.buttons & 1) === 0) {
+          isCockpitLooking = false;
+        } else {
+          const dx = e.clientX - cockpitLastLookX;
+          const dy = e.clientY - cockpitLastLookY;
+          cockpitLastLookX = e.clientX;
+          cockpitLastLookY = e.clientY;
+          cockpitLookTargetYaw = THREE.MathUtils.clamp(cockpitLookTargetYaw + dx * 0.0046, -2.95, 2.95);
+          cockpitLookTargetPitch = THREE.MathUtils.clamp(
+            cockpitLookTargetPitch + dy * 0.0044,
+            -1.32,
+            1.48
+          );
+        }
       }
-      const dx = e.clientX - cockpitDragOriginX;
-      const dy = e.clientY - cockpitDragOriginY;
-      if (Math.hypot(dx, dy) < 4) return;
-      cockpitDragSteerX = THREE.MathUtils.clamp(-dx * 0.008, -1.1, 1.1);
-      cockpitDragSteerY = THREE.MathUtils.clamp(-dy * 0.008, -1.1, 1.1);
+      if (isCockpitSteerDragging) {
+        if ((e.buttons & 2) === 0) {
+          isCockpitSteerDragging = false;
+          cockpitDragSteerX = 0;
+          cockpitDragSteerY = 0;
+        } else {
+          const dx = e.clientX - cockpitDragOriginX;
+          const dy = e.clientY - cockpitDragOriginY;
+          if (Math.hypot(dx, dy) >= 4) {
+            cockpitDragSteerX = THREE.MathUtils.clamp(-dx * 0.008, -1.1, 1.1);
+            cockpitDragSteerY = THREE.MathUtils.clamp(-dy * 0.008, -1.1, 1.1);
+          }
+        }
+      }
     };
 
     const handlePointerUp = (e: MouseEvent) => {
-      isCockpitDragging = false;
+      isCockpitLooking = false;
+      isCockpitSteerDragging = false;
       cockpitDragSteerX = 0;
       cockpitDragSteerY = 0;
+
+      if (e.button !== 0) return;
 
       const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
       if (moveDist > 6) return;
@@ -1575,6 +1621,26 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       }
     };
 
+    const handleDoubleClick = () => {
+      if (
+        stateRef.current.spacecraftControl.isActive &&
+        stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
+      ) {
+        cockpitLookTargetYaw = 0;
+        cockpitLookTargetPitch = 0;
+        cockpitFovTargetOffset = 0;
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if (
+        stateRef.current.spacecraftControl.isActive &&
+        stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
+      ) {
+        e.preventDefault();
+      }
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
       spaceAudio.unlock();
       if (
@@ -1582,21 +1648,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         stateRef.current.spacecraftControl.cameraView === 'COCKPIT' &&
         e.touches.length === 1
       ) {
-        isCockpitDragging = true;
-        cockpitDragOriginX = e.touches[0].clientX;
-        cockpitDragOriginY = e.touches[0].clientY;
+        isCockpitLooking = true;
+        cockpitLastLookX = e.touches[0].clientX;
+        cockpitLastLookY = e.touches[0].clientY;
       }
     };
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isCockpitDragging || e.touches.length !== 1) return;
-      const dx = e.touches[0].clientX - cockpitDragOriginX;
-      const dy = e.touches[0].clientY - cockpitDragOriginY;
-      if (Math.hypot(dx, dy) < 4) return;
-      cockpitDragSteerX = THREE.MathUtils.clamp(-dx * 0.008, -1.1, 1.1);
-      cockpitDragSteerY = THREE.MathUtils.clamp(-dy * 0.008, -1.1, 1.1);
+      if (!isCockpitLooking || e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - cockpitLastLookX;
+      const dy = e.touches[0].clientY - cockpitLastLookY;
+      cockpitLastLookX = e.touches[0].clientX;
+      cockpitLastLookY = e.touches[0].clientY;
+      cockpitLookTargetYaw = THREE.MathUtils.clamp(cockpitLookTargetYaw + dx * 0.0052, -2.95, 2.95);
+      cockpitLookTargetPitch = THREE.MathUtils.clamp(cockpitLookTargetPitch + dy * 0.005, -1.32, 1.48);
     };
     const handleTouchEnd = () => {
-      isCockpitDragging = false;
+      isCockpitLooking = false;
+      isCockpitSteerDragging = false;
       cockpitDragSteerX = 0;
       cockpitDragSteerY = 0;
     };
@@ -1604,6 +1672,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     renderer.domElement.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('mousemove', handlePointerMove);
     renderer.domElement.addEventListener('mouseup', handlePointerUp);
+    renderer.domElement.addEventListener('dblclick', handleDoubleClick);
+    renderer.domElement.addEventListener('contextmenu', handleContextMenu);
     renderer.domElement.addEventListener('touchstart', handleTouchStart, { passive: true });
     renderer.domElement.addEventListener('touchmove', handleTouchMove, { passive: true });
     renderer.domElement.addEventListener('touchend', handleTouchEnd);
@@ -2048,9 +2118,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             ? Math.min(0.45, Math.max(0.015, dominantRadius * 0.05))
             : dominantRadius;
         const desiredShipScale = THREE.MathUtils.clamp(
-          effectiveRefRadius * 0.0048,
-          0.0000035,
-          0.0022
+          effectiveRefRadius * 0.0038,
+          0.0000028,
+          0.00175
         );
         const prevFrameScale = currentShipScale;
         if (!wasSpacecraftActive) {
@@ -2096,6 +2166,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           continuousThrottle = sc.throttle;
           lastSyncedReactThrottle = sc.throttle;
           lastManualOrbitTimestamp = 0;
+          cockpitLookTargetYaw = 0;
+          cockpitLookTargetPitch = 0;
+          cockpitLookYaw = 0;
+          cockpitLookPitch = 0;
+          cockpitFovTargetOffset = 0;
+          cockpitFovOffset = 0;
           wasSpacecraftActive = true;
           prevCameraView = sc.cameraView;
           lastFirePulseCount = sc.firePulseCount;
@@ -2145,7 +2221,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitDragSteerY,
           Math.min(1, dt * 9.5)
         );
-        if (!isCockpitDragging) {
+        if (!isCockpitSteerDragging) {
           const dragDecay = Math.exp(-dt * 9.5);
           cockpitDragSteerX *= dragDecay;
           cockpitDragSteerY *= dragDecay;
@@ -2325,12 +2401,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           warpMat.opacity = 0.45 * boostBlend;
         }
 
+        cockpitFovOffset = THREE.MathUtils.lerp(cockpitFovOffset, cockpitFovTargetOffset, Math.min(1, dt * 10));
         const targetFov =
           sc.cameraView === 'COCKPIT'
-            ? THREE.MathUtils.lerp(76, 85, boostBlend)
+            ? THREE.MathUtils.clamp(
+                THREE.MathUtils.lerp(76, 85, boostBlend) + cockpitFovOffset,
+                44,
+                94
+              )
             : THREE.MathUtils.lerp(48, 57, boostBlend);
         if (Math.abs(camera.fov - targetFov) > 0.1) {
-          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 5.2));
+          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 6.5));
           camera.updateProjectionMatrix();
         }
 
@@ -2344,10 +2425,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             currentSpeed * 1.8 + currentShipScale * 90
           );
           _tmpV4.copy(shipForward).multiplyScalar(boltSpeed);
-          [-0.29, 0.29].forEach((sideX) => {
+          sr7.muzzlePositionsLocal.forEach((muzzleLocal) => {
             const boltMesh = new THREE.Mesh(pulseBoltGeo, pulseBoltMat);
             boltMesh.scale.setScalar(currentShipScale);
-            _tmpV5.set(sideX, -0.32, -2.26);
+            _tmpV5.copy(muzzleLocal);
             sr7.rootGroup.localToWorld(_tmpV5);
             boltMesh.position.copy(_tmpV5);
             boltMesh.quaternion.copy(sr7.rootGroup.quaternion);
@@ -2367,20 +2448,66 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        // 6. Camera Placement: Elastic 3rd-Person Spring Chase + Orbit OR Wide Panoramic 1st-Person Cockpit
+        // 6. Camera Placement: Elastic 3rd-Person Spring Chase + Orbit OR 360° Free-Look 1st-Person Cockpit
         if (sc.cameraView === 'COCKPIT') {
           controls.enabled = false;
+          const curRecenter = sc.recenterTrigger || 0;
+          if (curRecenter !== prevRecenterTrigger) {
+            prevRecenterTrigger = curRecenter;
+            cockpitLookTargetYaw = 0;
+            cockpitLookTargetPitch = 0;
+            cockpitFovTargetOffset = 0;
+          }
+          if (prevCameraView !== 'COCKPIT') {
+            cockpitLookTargetYaw = 0;
+            cockpitLookTargetPitch = 0;
+            cockpitLookYaw = 0;
+            cockpitLookPitch = 0;
+            cockpitFovTargetOffset = 0;
+            cockpitFovOffset = 0;
+          }
+          cockpitLookYaw = THREE.MathUtils.lerp(
+            cockpitLookYaw,
+            cockpitLookTargetYaw,
+            Math.min(1, dt * 15)
+          );
+          cockpitLookPitch = THREE.MathUtils.lerp(
+            cockpitLookPitch,
+            cockpitLookTargetPitch,
+            Math.min(1, dt * 15)
+          );
+
           sr7.cockpitSeatAnchor.updateWorldMatrix(true, false);
           sr7.cockpitSeatAnchor.getWorldPosition(_tmpV4);
-          camera.position.copy(_tmpV4);
-          // Subtle natural inertial pilot head lean into high-G turns
-          _tmpEuler.set(angVelPitch * -0.022, angVelYaw * -0.022, angVelRoll * -0.04, 'YXZ');
+
+          // Ergonomic pilot neck pivot & shoulder-check lean so turning ±169° views seat & avionics without clipping
+          const lookBackFactor = Math.max(0, (Math.abs(cockpitLookYaw) - 1.1) / 1.85);
+          _tmpV5
+            .set(
+              Math.sin(-cockpitLookYaw) * 0.03,
+              lookBackFactor * 0.022,
+              -0.026 * (1 - Math.cos(cockpitLookYaw)) - lookBackFactor * 0.032
+            )
+            .multiplyScalar(currentShipScale)
+            .applyQuaternion(sr7.rootGroup.quaternion);
+          camera.position.copy(_tmpV4).add(_tmpV5);
+
+          // Smooth Free-Look ('YXZ') + subtle inertial G-lean
+          _tmpEuler.set(
+            cockpitLookPitch + angVelPitch * -0.022,
+            cockpitLookYaw + angVelYaw * -0.022,
+            angVelRoll * -0.036,
+            'YXZ'
+          );
           _tmpQuat1.setFromEuler(_tmpEuler);
           camera.quaternion.copy(sr7.rootGroup.quaternion).multiply(_tmpQuat1);
-          controls.target.copy(_tmpV4).addScaledVector(shipForward, Math.max(0.0001, currentShipScale * 18));
+          const camForward = _tmpV6.set(0, 0, -1).applyQuaternion(camera.quaternion);
+          controls.target
+            .copy(camera.position)
+            .addScaledVector(camForward, Math.max(0.0001, currentShipScale * 18));
         } else {
           controls.enabled = true;
-          controls.minDistance = Math.max(1e-7, currentShipScale * 2.25);
+          controls.minDistance = Math.max(1e-7, currentShipScale * 2.85);
           controls.maxDistance = 190000;
           const curRecenter = sc.recenterTrigger || 0;
           if (curRecenter !== prevRecenterTrigger) {
@@ -2405,7 +2532,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               Math.abs(angVelYaw) > 0.05 ||
               Math.abs(angVelPitch) > 0.05 ||
               Math.abs(effectiveThrottle) > 0.08;
-            if (!isCockpitDragging && (lastManualOrbitTimestamp === 0 || (secondsSinceManualOrbit > 2.6 && hasSteeringOrThrust))) {
+            if (lastManualOrbitTimestamp === 0 || (secondsSinceManualOrbit > 2.6 && hasSteeringOrThrust)) {
               const currentOffset = _tmpV4.subVectors(camera.position, sr7.rootGroup.position);
               const currentDist = Math.max(controls.minDistance, currentOffset.length());
               // Subtle cinematic side/up lag during sharp turns + warp boost zoom-out
@@ -2534,6 +2661,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           reactorTempC: liveReactorTemp,
           sasEnabled: sc.sasEnabled,
           autopilotActive: Boolean(autoTargetId),
+          isCockpitView: sc.cameraView === 'COCKPIT',
           shipScale: currentShipScale,
           driftAngleDeg,
         });
@@ -3069,7 +3197,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       emitBootProgress({
         progress: 88,
-        stage: 'Compilando shaders 3D, Via Láctea e SR-7...',
+        stage: 'Compilando shaders 3D, Via Láctea e nave...',
         detail: 'Pré-aquecendo pipeline GPU WebGL',
         loadedTextures: settledTexCount,
         totalTextures: totalTexCount,
@@ -3184,7 +3312,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     };
 
     bootTimeoutId = window.setTimeout(finalizeSceneBoot, 14000);
-    Promise.all(Array.from(texturePromiseCache.values())).then(() => {
+    Promise.all([
+      ...Array.from(texturePromiseCache.values()),
+      sr7.modelReadyPromise,
+    ]).then(() => {
       if (!isDisposed) {
         finalizeSceneBoot();
       }
@@ -3204,9 +3335,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       renderer.domElement.removeEventListener('wheel', handleWheelInterrupt);
       renderer.domElement.removeEventListener('mousedown', handlePointerDown);
       renderer.domElement.removeEventListener('mouseup', handlePointerUp);
+      renderer.domElement.removeEventListener('dblclick', handleDoubleClick);
+      renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       renderer.domElement.removeEventListener('touchstart', handleTouchStart);
       renderer.domElement.removeEventListener('touchmove', handleTouchMove);
       renderer.domElement.removeEventListener('touchend', handleTouchEnd);
+      sr7.dispose();
       controls.dispose();
       spaceAudio.dispose();
 

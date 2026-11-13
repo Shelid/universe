@@ -142,21 +142,23 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             )}
           </button>
 
-          {controlState.cameraView === 'EXTERNAL' && (
-            <button
-              onClick={() =>
-                onUpdateControl((prev) => ({
-                  ...prev,
-                  recenterTrigger: (prev.recenterTrigger || 0) + 1,
-                }))
-              }
-              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 text-[11px] transition-colors"
-              title="Alinhar Câmera Atrás da Nave (Tecla C)"
-            >
-              <Orbit className="w-3 h-3 text-slate-300" />
-              <span>Centralizar</span>
-            </button>
-          )}
+          <button
+            onClick={() =>
+              onUpdateControl((prev) => ({
+                ...prev,
+                recenterTrigger: (prev.recenterTrigger || 0) + 1,
+              }))
+            }
+            className="flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 text-[11px] transition-colors"
+            title={
+              controlState.cameraView === 'COCKPIT'
+                ? 'Centralizar Visão do Piloto (Tecla C ou Duplo Clique)'
+                : 'Alinhar Câmera Atrás da Nave (Tecla C)'
+            }
+          >
+            <Orbit className="w-3 h-3 text-slate-300" />
+            <span className="hidden sm:inline">Centralizar</span>
+          </button>
 
           <button
             onClick={() =>
@@ -237,19 +239,6 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           </div>
         )}
       </div>
-
-      {/* ULTRA-MINIMAL CENTER BORESIGHT PINPOINT IN 1ST-PERSON COCKPIT ONLY (Preserves 3D Holo Combiner!) */}
-      {controlState.cameraView === 'COCKPIT' && !isShipMenuOpen && (
-        <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
-          <div
-            className={`w-1.5 h-1.5 rounded-full transition-colors ${
-              controlState.boostActive
-                ? 'bg-cyan-300/80 shadow-[0_0_8px_rgba(103,232,249,0.9)]'
-                : 'bg-sky-300/60 shadow-[0_0_6px_rgba(56,189,248,0.6)]'
-            }`}
-          />
-        </div>
-      )}
 
       {/* DEDICATED SHIP INFORMATION & SYSTEMS MENU DRAWER */}
       {isShipMenuOpen && (
@@ -696,7 +685,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     No espaço (<strong className="text-emerald-300">Z</strong> alterna <strong className="text-white">SAS</strong> / <strong className="text-amber-300">NEWTON</strong>): ao zerar o motor (0%), a nave continua deslizando por inércia. Use <strong className="text-rose-300">Espaço</strong> para acionar os retrofoguetes e frear.
                   </p>
                   <p>
-                    Dentro da <strong className="text-sky-300">Cabine 3D</strong>, arraste para manobrar suavemente como um manche virtual e clique nos botões iluminados dos consoles laterais, manete ou gatilho! Na <strong className="text-white">3ª Pessoa</strong>, arraste para inspecionar a nave.
+                    Dentro da <strong className="text-sky-300">Cabine 3D</strong>, arraste com o mouse ou dedo para <strong className="text-white">olhar livremente em 360°</strong>, use o <strong className="text-white">Scroll</strong> para dar zoom nos instrumentos e <strong className="text-white">C</strong> (ou duplo clique) para centralizar a visão. Clique nos interruptores iluminados dos consoles laterais, manete ou gatilho; para manobrar com mouse dentro da cabine use o botão direito, ou pilote pelo teclado e <strong className="text-amber-300">Manche Tátil</strong>.
                   </p>
                 </div>
               </div>
