@@ -53,8 +53,11 @@ import {
   resolvePerformanceProfile,
 } from '../utils/performanceProfile';
 import { createSR7Spacecraft3DGroup } from '../utils/sr7SpacecraftModel';
+import { createAstronautCharacter3D } from '../utils/astronautCharacterModel';
+import { createSpaceGameManager, GameHudSnapshot } from '../utils/spaceGameManager';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
+import { EVAVirtualInput } from './EVACharacterHUD';
 
 interface UniverseCanvasProps {
   selectedBodyId: string;
@@ -91,6 +94,15 @@ interface UniverseCanvasProps {
   onUpdateSpacecraftControl: React.Dispatch<React.SetStateAction<SpacecraftControlState>>;
   onSyncSpacecraftTelemetry: (telemetry: SpacecraftTelemetry) => void;
   virtualSteerInput: VirtualSteerInput;
+  evaActive?: boolean;
+  evaVisorLightOn?: boolean;
+  evaRecenterTrigger?: number;
+  evaRadarTrigger?: number;
+  evaVirtualInput?: EVAVirtualInput;
+  gameActive?: boolean;
+  gameResetTrigger?: number;
+  gameWaveTrigger?: number;
+  onSyncGameSnapshot?: (snapshot: GameHudSnapshot) => void;
 }
 
 interface ScreenLabel {
@@ -251,6 +263,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   onUpdateSpacecraftControl,
   onSyncSpacecraftTelemetry,
   virtualSteerInput,
+  evaActive = false,
+  evaVisorLightOn = true,
+  evaRecenterTrigger = 0,
+  evaRadarTrigger = 0,
+  evaVirtualInput,
+  gameActive = true,
+  gameResetTrigger = 0,
+  gameWaveTrigger = 0,
+  onSyncGameSnapshot,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
@@ -286,6 +307,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     warpState,
     spacecraftControl,
     virtualSteerInput,
+    evaActive,
+    evaVisorLightOn,
+    evaRecenterTrigger,
+    evaRadarTrigger,
+    evaVirtualInput,
+    gameActive,
+    gameResetTrigger,
+    gameWaveTrigger,
   });
 
   const callbacksRef = useRef({
@@ -300,6 +329,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onSyncSpacecraftTelemetry,
     onResolvedQualityChange,
     onBootProgress,
+    onSyncGameSnapshot,
   });
 
   useEffect(() => {
@@ -325,6 +355,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       warpState,
       spacecraftControl,
       virtualSteerInput,
+      evaActive,
+      evaVisorLightOn,
+      evaRecenterTrigger,
+      evaRadarTrigger,
+      evaVirtualInput,
+      gameActive,
+      gameResetTrigger,
+      gameWaveTrigger,
     };
   });
 
@@ -341,6 +379,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onSyncSpacecraftTelemetry,
       onResolvedQualityChange,
       onBootProgress,
+      onSyncGameSnapshot,
     };
   });
 
@@ -1312,6 +1351,33 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     sr7.rootGroup.visible = false;
     scene.add(sr7.rootGroup);
 
+    // RIGGED 3D ASTRONAUT CHARACTER (Shared seamlessly between Cockpit Pilot Seat & Zero-G EVA Mode)
+    const astronaut = createAstronautCharacter3D();
+    astronaut.rootGroup.scale.setScalar(0.43);
+    astronaut.rootGroup.visible = false;
+    sr7.pilotSeatAnchor.add(astronaut.rootGroup);
+
+    // ARCADE ORBITAL GAME LOOP MANAGER (Portals, Shootable Crystals, Telemetry Beacons)
+    const gameManager = createSpaceGameManager(scene);
+
+    let wasEvaActive = false;
+    let evaAttachedToShip = true;
+    const evaVelocity = new THREE.Vector3();
+    const evaForward = new THREE.Vector3();
+    const evaRight = new THREE.Vector3();
+    const evaUp = new THREE.Vector3();
+    const evaMoveDir = new THREE.Vector3();
+    const evaTargetPos = new THREE.Vector3();
+    const evaDisplacement = new THREE.Vector3();
+    let prevEvaRecenterTrigger = stateRef.current.evaRecenterTrigger || 0;
+    let prevEvaRadarTrigger = stateRef.current.evaRadarTrigger || 0;
+    let evaRadarAgeSec = 99;
+    let prevGameWaveTrigger = stateRef.current.gameWaveTrigger || 0;
+    let prevGameResetTrigger = stateRef.current.gameResetTrigger || 0;
+    let lastGameBodyId = '';
+    let lastGameActive = stateRef.current.gameActive;
+    let prevSpaceParkedValid = false;
+
     const projectileGroup = new THREE.Group();
     scene.add(projectileGroup);
 
@@ -1370,6 +1436,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       spaceAudio.unlock();
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+      if (stateRef.current.evaActive && !stateRef.current.spacecraftControl.isActive) {
+        pressedKeys.add(e.code);
+        if (e.code === 'Space') e.preventDefault();
+        return;
+      }
+
       if (!stateRef.current.spacecraftControl.isActive) return;
 
       pressedKeys.add(e.code);
@@ -1988,8 +2061,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       if (st.warpState.isActive) {
         sr7.rootGroup.visible = false;
+        astronaut.rootGroup.visible = false;
+        gameManager.rootGroup.visible = false;
         shipRimLight.visible = false;
         wasSpacecraftActive = false;
+        wasEvaActive = false;
+        prevSpaceParkedValid = false;
         controls.enabled = true;
         if (!wasWarpingLastFrame) {
           warpStartCameraPos.copy(camera.position);
@@ -2152,13 +2229,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         shipRimLight.target.updateMatrixWorld();
 
         if (!wasSpacecraftActive) {
-          const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-          const spawnDist =
-            selectedBody.category === 'galaxy'
-              ? targetRadius * 1.45
-              : targetRadius * 2.55 + currentShipScale * 7.5;
-          sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
-          sr7.rootGroup.lookAt(targetPos);
+          if (!prevSpaceParkedValid) {
+            const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
+            const spawnDist =
+              selectedBody.category === 'galaxy'
+                ? targetRadius * 1.45
+                : targetRadius * 2.55 + currentShipScale * 7.5;
+            sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
+            sr7.rootGroup.lookAt(targetPos);
+            prevSpaceParkedValid = true;
+          }
           shipVelocity.set(0, 0, 0);
           angVelPitch = 0;
           angVelYaw = 0;
@@ -2173,6 +2253,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitFovTargetOffset = 0;
           cockpitFovOffset = 0;
           wasSpacecraftActive = true;
+          wasEvaActive = false;
           prevCameraView = sc.cameraView;
           lastFirePulseCount = sc.firePulseCount;
           if (sc.cameraView === 'EXTERNAL') {
@@ -2182,6 +2263,27 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             controls.target.copy(sr7.rootGroup.position);
           }
         }
+
+        // Attach shared Astronaut character to Fighter pilot seat (visible looking through clear exterior glass)
+        if (!evaAttachedToShip) {
+          sr7.pilotSeatAnchor.add(astronaut.rootGroup);
+          astronaut.rootGroup.scale.setScalar(0.43);
+          astronaut.rootGroup.position.set(0, 0, 0);
+          astronaut.rootGroup.rotation.set(0, 0, 0);
+          evaAttachedToShip = true;
+        }
+        astronaut.rootGroup.visible = sc.cameraView === 'EXTERNAL';
+        astronaut.update({
+          dt,
+          clockTime,
+          mode: 'SEATED',
+          moveSpeed01: 0,
+          boostActive: false,
+          pitchTilt: angVelPitch / 1.05,
+          rollTilt: angVelRoll / 1.45,
+          visorLightOn: false,
+          worldScale: currentShipScale,
+        });
 
         sr7.rootGroup.visible = true;
 
@@ -2666,7 +2768,62 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           driftAngleDeg,
         });
 
-        // 8. Sync Live Telemetry to HUD (throttled ~9 Hz)
+        // 8. Update Orbital Arcade Game Targets & Sync HUD (~9 Hz)
+        const desiredGameOrbit =
+          selectedBody.category === 'galaxy'
+            ? targetRadius * 1.35
+            : Math.max(targetRadius * 1.45, currentShipScale * 56);
+        const needSectorReset =
+          st.gameResetTrigger !== prevGameResetTrigger;
+        const needSectorRecenter =
+          (st.gameActive && !lastGameActive) ||
+          lastGameBodyId !== selectedBody.id ||
+          st.gameWaveTrigger !== prevGameWaveTrigger;
+
+        if (needSectorReset) {
+          prevGameResetTrigger = st.gameResetTrigger;
+          prevGameWaveTrigger = st.gameWaveTrigger;
+          lastGameBodyId = selectedBody.id;
+          gameManager.resetGame(targetPos, desiredGameOrbit, currentShipScale);
+        } else if (needSectorRecenter) {
+          const advance = st.gameWaveTrigger !== prevGameWaveTrigger;
+          prevGameWaveTrigger = st.gameWaveTrigger;
+          lastGameBodyId = selectedBody.id;
+          gameManager.recenterSector(targetPos, desiredGameOrbit, currentShipScale, advance);
+        }
+        lastGameActive = st.gameActive;
+
+        const boltPositions = activePulseBolts.map((b) => b.mesh.position);
+        const consumedBolts = new Set<number>();
+        const shipGameSnapshot = gameManager.update({
+          dt,
+          clockTime,
+          active: st.gameActive,
+          playerPos: sr7.rootGroup.position,
+          playerScale: currentShipScale,
+          radarPulseActive: radarAgeSec >= 0 && radarAgeSec < 2.2,
+          boltPositions,
+          onConsumeBolt: (idx) => consumedBolts.add(idx),
+          callbacks: {
+            onRingCleared: () => spaceAudio.playAutopilotArrived(),
+            onCrystalDestroyed: () => spaceAudio.playPlasmaPulse(),
+            onBeaconScanned: () => spaceAudio.playRadarScan(),
+            onWaveCleared: () => spaceAudio.playWarpArrival(),
+          },
+        });
+        if (consumedBolts.size > 0) {
+          Array.from(consumedBolts)
+            .sort((a, b) => b - a)
+            .forEach((bIdx) => {
+              const bolt = activePulseBolts[bIdx];
+              if (bolt) {
+                projectileGroup.remove(bolt.mesh);
+                activePulseBolts.splice(bIdx, 1);
+              }
+            });
+        }
+
+        // Sync Live Telemetry & Game Score to HUD (throttled ~9 Hz)
         if (now - lastTelemetrySync > 110) {
           lastTelemetrySync = now;
           cb.onSyncSpacecraftTelemetry({
@@ -2684,6 +2841,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearbyContacts: radarContacts,
             autopilotStatus,
           });
+          cb.onSyncGameSnapshot?.(shipGameSnapshot);
         }
 
         const computedShipZoom: ZoomLevel =
@@ -2695,12 +2853,287 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         if (computedShipZoom !== st.zoomLevel) {
           cb.onZoomLevelChange(computedShipZoom);
         }
+      } else if (st.evaActive) {
+        // ====================================================================
+        // RIGGED ASTRONAUT EVA SPACEWALK / SURFACE MODE (Next to Parked Ship)
+        // ====================================================================
+        wasWarpingLastFrame = false;
+        wasSpacecraftActive = false;
+        warpTunnelGroup.visible = false;
+        if (Math.abs(camera.fov - 48) > 0.1) {
+          camera.fov = 48;
+          camera.updateProjectionMatrix();
+        }
+        spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
+
+        // Compute scale consistent with active celestial environment
+        const effectiveEvaRefRadius =
+          selectedBody.category === 'galaxy'
+            ? Math.min(0.45, Math.max(0.015, targetRadius * 0.05))
+            : Math.max(0.00015, targetRadius);
+        const desiredEvaShipScale = THREE.MathUtils.clamp(
+          effectiveEvaRefRadius * 0.0038,
+          0.0000028,
+          0.00175
+        );
+        currentShipScale = desiredEvaShipScale;
+        const astronautScale = currentShipScale * 0.44;
+
+        // Park Light Fighter visibly beside Astronaut!
+        sr7.rootGroup.scale.setScalar(currentShipScale);
+        if (!prevSpaceParkedValid) {
+          const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
+          const spawnDist =
+            selectedBody.category === 'galaxy'
+              ? targetRadius * 1.45
+              : targetRadius * 2.55 + currentShipScale * 7.5;
+          sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
+          sr7.rootGroup.lookAt(targetPos);
+          prevSpaceParkedValid = true;
+        }
+        sr7.rootGroup.visible = true;
+        sr7.updateAnimations({
+          dt,
+          clockTime,
+          throttle: 0,
+          boostActive: false,
+          headlightsOn: true,
+          interiorLightsOn: true,
+          shieldsOn: false,
+          pitchInput: 0,
+          rollInput: 0,
+          yawInput: 0,
+          pitchDeg: 0,
+          rollDeg: 0,
+          radarPulseAgeSec: evaRadarAgeSec < 2.2 ? evaRadarAgeSec : 99,
+          muzzleFlashAlpha: 0,
+          speedFormatted: 'PARKED',
+          nearestName: selectedBody.name,
+          nearestDist: 'EVA',
+          reactorTempC: 315,
+          sasEnabled: true,
+          autopilotActive: false,
+          isCockpitView: false,
+          shipScale: currentShipScale,
+          driftAngleDeg: 0,
+        });
+
+        // Detach Astronaut from cockpit seat into world scene cleanly
+        if (evaAttachedToShip) {
+          scene.add(astronaut.rootGroup);
+          evaAttachedToShip = false;
+        }
+        astronaut.rootGroup.visible = true;
+        astronaut.rootGroup.scale.setScalar(astronautScale);
+
+        if (!wasEvaActive) {
+          _tmpV1.set(1, 0, 0.35).normalize().applyQuaternion(sr7.rootGroup.quaternion);
+          astronaut.rootGroup.position
+            .copy(sr7.rootGroup.position)
+            .addScaledVector(_tmpV1, currentShipScale * 2.55);
+          astronaut.rootGroup.quaternion.copy(sr7.rootGroup.quaternion);
+          evaVelocity.set(0, 0, 0);
+          wasEvaActive = true;
+
+          // Place 3rd-person orbit camera behind Astronaut chest
+          evaUp.set(0, 1, 0);
+          _tmpV2.set(0, 1.35, 3.6).multiplyScalar(currentShipScale).applyQuaternion(astronaut.rootGroup.quaternion);
+          camera.position.copy(astronaut.rootGroup.position).add(_tmpV2);
+          controls.target
+            .copy(astronaut.rootGroup.position)
+            .addScaledVector(evaUp, astronautScale * 1.15);
+        }
+
+        // Handle EVA Recenter & Radar triggers
+        if (st.evaRecenterTrigger !== prevEvaRecenterTrigger) {
+          prevEvaRecenterTrigger = st.evaRecenterTrigger;
+          _tmpV2.set(0, 1.35, 3.6).multiplyScalar(currentShipScale).applyQuaternion(astronaut.rootGroup.quaternion);
+          camera.position.copy(astronaut.rootGroup.position).add(_tmpV2);
+        }
+        if (st.evaRadarTrigger !== prevEvaRadarTrigger) {
+          prevEvaRadarTrigger = st.evaRadarTrigger;
+          evaRadarAgeSec = 0;
+        } else {
+          evaRadarAgeSec = Math.min(99, evaRadarAgeSec + dt);
+        }
+
+        // Camera-relative EVA locomotion inputs (Keyboard + Touch)
+        const vEva = st.evaVirtualInput;
+        const moveForwardInput =
+          (pressedKeys.has('KeyW') || pressedKeys.has('ArrowUp') ? 1 : 0) -
+          (pressedKeys.has('KeyS') || pressedKeys.has('ArrowDown') ? 1 : 0) -
+          (vEva?.moveZ || 0);
+        const moveRightInput =
+          (pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight') ? 1 : 0) -
+          (pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft') ? 1 : 0) +
+          (vEva?.moveX || 0);
+        const moveUpInput =
+          (pressedKeys.has('Space') ? 1 : 0) -
+          (pressedKeys.has('ControlLeft') || pressedKeys.has('ControlRight') || pressedKeys.has('KeyX') ? 1 : 0) +
+          (vEva?.moveY || 0);
+        const evaSprinting =
+          pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight') || Boolean(vEva?.sprint);
+
+        camera.getWorldDirection(evaForward);
+        evaUp.set(0, 1, 0);
+        // Project horizontal walk direction cleanly when vertical thrust isn't dominating
+        evaForward.y = 0;
+        if (evaForward.lengthSq() < 1e-6) evaForward.set(0, 0, -1);
+        evaForward.normalize();
+        evaRight.crossVectors(evaForward, evaUp).normalize();
+
+        evaMoveDir
+          .set(0, 0, 0)
+          .addScaledVector(evaForward, moveForwardInput)
+          .addScaledVector(evaRight, moveRightInput)
+          .addScaledVector(evaUp, moveUpInput);
+
+        const moveMag = evaMoveDir.length();
+        const maxEvaSpeed = currentShipScale * (evaSprinting ? 18.0 : 6.2);
+        if (moveMag > 0.01) {
+          evaMoveDir.divideScalar(moveMag);
+          const accel = currentShipScale * (evaSprinting ? 44.0 : 22.0);
+          evaVelocity.addScaledVector(evaMoveDir, accel * dt);
+          if (evaVelocity.length() > maxEvaSpeed) {
+            evaVelocity.setLength(maxEvaSpeed);
+          }
+
+          // Smoothly rotate Astronaut to face horizontal travel direction (-Z is character forward)
+          const horizSq = evaMoveDir.x * evaMoveDir.x + evaMoveDir.z * evaMoveDir.z;
+          if (horizSq > 0.002) {
+            const targetYaw = Math.atan2(-evaMoveDir.x, -evaMoveDir.z);
+            _tmpQuat1.setFromAxisAngle(evaUp, targetYaw);
+            astronaut.rootGroup.quaternion.slerp(_tmpQuat1, Math.min(1, dt * 11));
+          }
+        } else {
+          // Comfortable micro-damping EVA thruster stabilization
+          evaVelocity.multiplyScalar(Math.exp(-dt * 5.2));
+        }
+
+        evaDisplacement.copy(evaVelocity).multiplyScalar(dt);
+        astronaut.rootGroup.position.add(evaDisplacement);
+
+        // Extensible Space Station Surface Hook: future walkable station floor Y resolver can snap Y here
+        // while keeping zero-G vertical thrust smooth in open orbit.
+
+        // Follow camera seamlessly with OrbitControls around Astronaut's visor height
+        camera.position.add(evaDisplacement);
+        evaTargetPos
+          .copy(astronaut.rootGroup.position)
+          .addScaledVector(evaUp, astronautScale * 1.15);
+        controls.enabled = true;
+        controls.target.copy(evaTargetPos);
+        controls.minDistance = Math.max(1e-7, currentShipScale * 0.95);
+        controls.maxDistance = 190000;
+
+        // Rim-light both Astronaut & parked Light Fighter in deep space
+        shipRimLight.visible = true;
+        _tmpV2.set(0.5, 0.9, 0.4);
+        shipRimLight.position
+          .copy(astronaut.rootGroup.position)
+          .addScaledVector(_tmpV2, currentShipScale * 22);
+        shipRimLight.target.position.copy(astronaut.rootGroup.position);
+        shipRimLight.target.updateMatrixWorld();
+
+        const evaSpeedUnits = evaVelocity.length();
+        const speedNorm01 = maxEvaSpeed > 0 ? THREE.MathUtils.clamp(evaSpeedUnits / maxEvaSpeed, 0, 1) : 0;
+        const isMovingVertical = Math.abs(moveUpInput) > 0.05;
+        const evaMode =
+          speedNorm01 < 0.06
+            ? 'EVA_IDLE'
+            : isMovingVertical || evaSprinting
+              ? evaSprinting && !isMovingVertical
+                ? 'EVA_RUN'
+                : 'EVA_JETPACK'
+              : 'EVA_WALK';
+
+        astronaut.update({
+          dt,
+          clockTime,
+          mode: evaMode,
+          moveSpeed01: speedNorm01,
+          boostActive: evaSprinting && speedNorm01 > 0.05,
+          pitchTilt: -moveForwardInput * 0.4,
+          rollTilt: moveRightInput * 0.35,
+          visorLightOn: st.evaVisorLightOn,
+          worldScale: currentShipScale,
+        });
+
+        // Update Game Targets for Astronaut EVA walking/jetpacking!
+        const desiredGameOrbit =
+          selectedBody.category === 'galaxy'
+            ? targetRadius * 1.35
+            : Math.max(targetRadius * 1.45, currentShipScale * 56);
+        if (st.gameResetTrigger !== prevGameResetTrigger) {
+          prevGameResetTrigger = st.gameResetTrigger;
+          prevGameWaveTrigger = st.gameWaveTrigger;
+          lastGameBodyId = selectedBody.id;
+          gameManager.resetGame(targetPos, desiredGameOrbit, currentShipScale);
+        } else if (
+          (st.gameActive && !lastGameActive) ||
+          lastGameBodyId !== selectedBody.id ||
+          st.gameWaveTrigger !== prevGameWaveTrigger
+        ) {
+          const advance = st.gameWaveTrigger !== prevGameWaveTrigger;
+          prevGameWaveTrigger = st.gameWaveTrigger;
+          lastGameBodyId = selectedBody.id;
+          gameManager.recenterSector(targetPos, desiredGameOrbit, currentShipScale, advance);
+        }
+        lastGameActive = st.gameActive;
+
+        const evaGameSnapshot = gameManager.update({
+          dt,
+          clockTime,
+          active: st.gameActive,
+          playerPos: astronaut.rootGroup.position,
+          playerScale: currentShipScale,
+          radarPulseActive: evaRadarAgeSec < 2.2,
+          boltPositions: [],
+          callbacks: {
+            onRingCleared: () => spaceAudio.playAutopilotArrived(),
+            onCrystalDestroyed: () => spaceAudio.playPlasmaPulse(),
+            onBeaconScanned: () => spaceAudio.playRadarScan(),
+            onWaveCleared: () => spaceAudio.playWarpArrival(),
+          },
+        });
+
+        if (now - lastTelemetrySync > 110) {
+          lastTelemetrySync = now;
+          const spdKmS = Math.round(evaSpeedUnits * 1_000_000);
+          cb.onSyncSpacecraftTelemetry({
+            speedUnitsPerSec: evaSpeedUnits,
+            speedFormatted: spdKmS > 0 ? `${spdKmS.toLocaleString('pt-BR')} km/s` : '0 km/s',
+            fuelPercent: 100,
+            hullIntegrity: 100,
+            reactorTempC: 37,
+            pitchDeg: 0,
+            yawDeg: 0,
+            rollDeg: 0,
+            nearestBodyId: selectedBody.id,
+            nearestBodyName: selectedBody.name,
+            nearestDistanceFormatted: 'EVA',
+            nearbyContacts: [],
+            autopilotStatus: 'OFF',
+          });
+          cb.onSyncGameSnapshot?.(evaGameSnapshot);
+        }
       } else {
         sr7.rootGroup.visible = false;
+        astronaut.rootGroup.visible = false;
+        gameManager.rootGroup.visible = false;
         shipRimLight.visible = false;
         wasSpacecraftActive = false;
+        wasEvaActive = false;
+        prevSpaceParkedValid = false;
         prevBrakeAudio = false;
         prevAutopilotIdAudio = null;
+        if (!evaAttachedToShip) {
+          sr7.pilotSeatAnchor.add(astronaut.rootGroup);
+          astronaut.rootGroup.scale.setScalar(0.43);
+          astronaut.rootGroup.position.set(0, 0, 0);
+          astronaut.rootGroup.rotation.set(0, 0, 0);
+          evaAttachedToShip = true;
+        }
         spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
         controls.enabled = true;
         controls.minDistance =
@@ -3261,9 +3694,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       });
 
       const prevSr7Vis = sr7.rootGroup.visible;
+      const prevAstroVis = astronaut.rootGroup.visible;
       const prevBeltVis = beltGroup.visible;
       const prevSatVis = satelliteGroup.visible;
       sr7.rootGroup.visible = true;
+      astronaut.rootGroup.visible = true;
       sr7.rootGroup.position.copy(initialPos);
       beltGroup.visible = true;
       satelliteGroup.visible = true;
@@ -3271,6 +3706,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       renderer.compile(scene, camera);
 
       sr7.rootGroup.visible = prevSr7Vis;
+      astronaut.rootGroup.visible = prevAstroVis;
       beltGroup.visible = prevBeltVis;
       satelliteGroup.visible = prevSatVis;
 
@@ -3315,6 +3751,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     Promise.all([
       ...Array.from(texturePromiseCache.values()),
       sr7.modelReadyPromise,
+      astronaut.modelReadyPromise,
     ]).then(() => {
       if (!isDisposed) {
         finalizeSceneBoot();
@@ -3341,6 +3778,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       renderer.domElement.removeEventListener('touchmove', handleTouchMove);
       renderer.domElement.removeEventListener('touchend', handleTouchEnd);
       sr7.dispose();
+      astronaut.dispose();
+      gameManager.dispose();
       controls.dispose();
       spaceAudio.dispose();
 

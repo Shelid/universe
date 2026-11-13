@@ -6,6 +6,7 @@ export interface SR7SpacecraftRefs {
   hullGroup: THREE.Group;
   interiorGroup: THREE.Group;
   cockpitSeatAnchor: THREE.Object3D;
+  pilotSeatAnchor: THREE.Group;
   chaseCameraAnchor: THREE.Object3D;
   yokeGroup: THREE.Group;
   throttleGroup: THREE.Group;
@@ -1041,32 +1042,32 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
     bumpMap: carbonBump,
     bumpScale: 0.008,
     roughnessMap: carbonRough,
-    color: '#293342',
-    roughness: 0.56,
-    metalness: 0.42,
-    envMapIntensity: 1.25,
+    color: '#3a495e',
+    roughness: 0.5,
+    metalness: 0.4,
+    envMapIntensity: 1.5,
   });
 
   const cockpitConsoleMat = new THREE.MeshStandardMaterial({
     map: carbonMap,
     bumpMap: carbonBump,
     bumpScale: 0.006,
-    color: '#1b2330',
-    roughness: 0.48,
-    metalness: 0.58,
-    envMapIntensity: 1.35,
+    color: '#283447',
+    roughness: 0.44,
+    metalness: 0.54,
+    envMapIntensity: 1.55,
   });
 
   const anodizedBezelMat = new THREE.MeshStandardMaterial({
-    color: '#3c485b',
+    color: '#4c5c73',
     roughness: 0.28,
     metalness: 0.86,
-    envMapIntensity: 1.45,
+    envMapIntensity: 1.55,
   });
 
   const bolsterLeatherMat = new THREE.MeshStandardMaterial({
-    color: '#252b35',
-    roughness: 0.72,
+    color: '#313a47',
+    roughness: 0.68,
     metalness: 0.14,
   });
 
@@ -1080,8 +1081,8 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
   });
 
   const harnessStrapMat = new THREE.MeshStandardMaterial({
-    color: '#3f4a3c',
-    roughness: 0.9,
+    color: '#4b5a47',
+    roughness: 0.85,
     metalness: 0.05,
   });
 
@@ -1092,17 +1093,47 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
     envMapIntensity: 2.0,
   });
 
-  const canopyGlassMat = new THREE.MeshPhysicalMaterial({
-    color: '#93c5fd',
+  // 100% Crystal-Clear Optical Canopy ShaderMaterial:
+  // Virtually zero central tint/opacity so both inside->outside and outside->cockpit views
+  // are completely clear (no black film!), with a crisp cyan aerospace glint only on grazing edges.
+  const canopyGlassMat = new THREE.ShaderMaterial({
     transparent: true,
-    opacity: 0.44,
-    roughness: 0.06,
-    metalness: 0.16,
-    reflectivity: 0.96,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.05,
-    side: THREE.DoubleSide,
     depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {
+      uInteriorView: { value: 0.0 },
+      uTintColor: { value: new THREE.Color('#7dd3fc') },
+    },
+    vertexShader: `
+      varying vec3 vNormalView;
+      varying vec3 vViewPos;
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPos = -mvPosition.xyz;
+        vNormalView = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform float uInteriorView;
+      uniform vec3 uTintColor;
+      varying vec3 vNormalView;
+      varying vec3 vViewPos;
+      void main() {
+        vec3 N = normalize(vNormalView);
+        if (!gl_FrontFacing) N = -N;
+        vec3 V = normalize(vViewPos);
+        float ndotv = clamp(abs(dot(N, V)), 0.0, 1.0);
+        float fresnel = pow(1.0 - ndotv, 4.4);
+
+        float centerAlpha = mix(0.012, 0.0, uInteriorView);
+        float edgeAlpha = mix(0.28, 0.075, uInteriorView);
+        float alpha = mix(centerAlpha, edgeAlpha, fresnel);
+
+        vec3 glassColor = mix(uTintColor * 1.15, vec3(0.90, 0.97, 1.0), fresnel * 0.72);
+        gl_FragColor = vec4(glassColor, alpha);
+      }
+    `,
   });
 
   const clickableCockpitControls: THREE.Object3D[] = [];
@@ -1162,8 +1193,6 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
             return;
           }
           const loadedRoot = gltf.scene;
-          loadedRoot.rotation.y = Math.PI;
-          loadedRoot.position.set(0, -1.08, 2.1);
 
           let baseMesh: THREE.Mesh | null = null;
           loadedRoot.traverse((child) => {
@@ -1172,7 +1201,7 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
               mesh.frustumCulled = false;
               const mat = mesh.material as THREE.MeshStandardMaterial;
               if (mat && mat.isMeshStandardMaterial) {
-                mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.35);
+                mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.45);
                 mat.needsUpdate = true;
               }
               if (mesh.name.includes('BASE') && !baseMesh) {
@@ -1181,12 +1210,17 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
             }
           });
 
+          // Partition canopy glass BEFORE rotating/offsetting loadedRoot so local raw-GLB
+          // bounds (cz in 2.2..4.1, cy > 1.32) match cleanly!
           if (baseMesh) {
             const glassMesh = partitionLightFighterCanopy(baseMesh, loadedRoot, canopyGlassMat);
             if (glassMesh) {
               glassMesh.frustumCulled = false;
             }
           }
+
+          loadedRoot.rotation.y = Math.PI;
+          loadedRoot.position.set(0, -1.08, 2.1);
 
           glbWrapper.add(loadedRoot);
           hullGroup.remove(placeholderMesh);
@@ -1988,19 +2022,25 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
   clickableCockpitControls.push(tGrip);
   interiorGroup.add(throttleGroup);
 
-  // Dual Scale-Invariant Cockpit Interior Illumination (illuminates dashboard, consoles & rear avionics!)
-  const interiorLight = new THREE.PointLight('#bae6fd', 1.65, 4.4, 0);
+  // Dual Scale-Invariant Cockpit Interior Illumination (illuminates dashboard, consoles & seated pilot clearly!)
+  const interiorLight = new THREE.PointLight('#e0f2fe', 2.85, 5.2, 0);
   interiorLight.position.set(0, 0.45, -0.96);
   interiorGroup.add(interiorLight);
 
-  const consoleGlowLight = new THREE.PointLight('#38bdf8', 0.85, 3.2, 0);
-  consoleGlowLight.position.set(0, 0.24, -1.24);
+  const consoleGlowLight = new THREE.PointLight('#38bdf8', 1.35, 4.2, 0);
+  consoleGlowLight.position.set(0, 0.26, -1.22);
   interiorGroup.add(consoleGlowLight);
 
   // Panoramic Pilot Eye Anchor inside fitted cockpit bay (auto-inherits interiorGroup transform)
   const cockpitSeatAnchor = new THREE.Object3D();
   cockpitSeatAnchor.position.set(0, 0.345, -0.90);
   interiorGroup.add(cockpitSeatAnchor);
+
+  // Seated 3D Pilot Character Anchor aligned to cockpit seat bucket (facing forward -Z)
+  const pilotSeatAnchor = new THREE.Group();
+  pilotSeatAnchor.name = 'light-fighter-pilot-seat-anchor';
+  pilotSeatAnchor.position.set(0, 0.038, -0.82);
+  interiorGroup.add(pilotSeatAnchor);
 
   // Cinematic 3rd-Person Chase Camera Anchor behind & slightly above Light Fighter
   const chaseCameraAnchor = new THREE.Object3D();
@@ -2235,9 +2275,9 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
       Math.min(1, dt * 10)
     );
 
-    // Adaptive canopy glass clarity: clear panoramic cockpit glass vs sapphire exterior sheen
-    canopyGlassMat.opacity = isCockpitView ? 0.085 : 0.44;
-    canopyGlassMat.color.set(isCockpitView ? '#cfe9ff' : '#93c5fd');
+    // Adaptive crystal-clear canopy glass clarity (100% see-through in both cockpit & exterior views)
+    canopyGlassMat.uniforms.uInteriorView.value = isCockpitView ? 1.0 : 0.0;
+    canopyGlassMat.uniforms.uTintColor.value.set(isCockpitView ? '#e0f2fe' : '#7dd3fc');
 
     // 2. Mach-Diamond Volumetric GLSL Plumes across All 3 Light Fighter Nozzles
     const absT = Math.abs(throttle);
@@ -2274,10 +2314,10 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
     headlightRightSpot.distance = spotDist;
     headlightLeftSpot.intensity = headlightsOn ? 6.5 : 0;
     headlightRightSpot.intensity = headlightsOn ? 6.5 : 0;
-    interiorLight.distance = Math.max(0.0001, shipScale * 3.8);
-    interiorLight.intensity = interiorLightsOn ? 1.65 : 0.38;
-    consoleGlowLight.distance = Math.max(0.0001, shipScale * 3.0);
-    consoleGlowLight.intensity = interiorLightsOn ? 0.85 : 0.32;
+    interiorLight.distance = Math.max(0.0001, shipScale * 5.2);
+    interiorLight.intensity = interiorLightsOn ? 2.85 : 0.72;
+    consoleGlowLight.distance = Math.max(0.0001, shipScale * 4.2);
+    consoleGlowLight.intensity = interiorLightsOn ? 1.35 : 0.55;
 
     // 4. Radar & Sensor Turret Micro-Motion
     radarDishGroup.rotation.y = Math.sin(clockTime * 0.65) * 0.55;
@@ -2341,6 +2381,7 @@ export function createSR7Spacecraft3DGroup(): SR7SpacecraftRefs {
     hullGroup,
     interiorGroup,
     cockpitSeatAnchor,
+    pilotSeatAnchor,
     chaseCameraAnchor,
     yokeGroup,
     throttleGroup,

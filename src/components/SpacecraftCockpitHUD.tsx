@@ -21,6 +21,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  User,
   Volume2,
   VolumeX,
   X,
@@ -45,6 +46,7 @@ interface SpacecraftCockpitHUDProps {
   telemetry: SpacecraftTelemetry;
   onUpdateControl: React.Dispatch<React.SetStateAction<SpacecraftControlState>>;
   onExitSpacecraft: () => void;
+  onEnterEVA?: () => void;
   onVirtualSteerChange: (input: VirtualSteerInput) => void;
   isAudioMuted: boolean;
   onToggleAudioMuted: () => void;
@@ -57,6 +59,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   telemetry,
   onUpdateControl,
   onExitSpacecraft,
+  onEnterEVA,
   onVirtualSteerChange,
   isAudioMuted,
   onToggleAudioMuted,
@@ -108,13 +111,13 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   if (!controlState.isActive) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between select-none">
-      {/* MINIMAL TOP BAR: COMPACT CAMERA, SHIP MENU & EXIT */}
-      <div className="p-3 sm:p-4 flex items-center justify-between gap-2">
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 bg-slate-950/80 backdrop-blur-xl border border-white/15 rounded-full px-3 py-1.5 shadow-xl">
+    <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between select-none">
+      {/* MINIMAL SHIP PILL BAR: COMPACT CAMERA, EVA, SHIP MENU & EXIT */}
+      <div className="px-3 pt-14 sm:px-4 sm:pt-14 flex items-center justify-between gap-2">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 sm:gap-2 bg-slate-950/80 backdrop-blur-xl border border-white/15 rounded-full px-3 py-1.5 shadow-xl">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
           <span className="text-xs font-bold tracking-wider text-white font-mono">
-            SR-7
+            CAÇA ESTELAR
           </span>
 
           <div className="h-4 w-px bg-white/15 mx-0.5" />
@@ -210,10 +213,21 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             {isAudioMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
           </button>
 
+          {onEnterEVA && (
+            <button
+              onClick={onEnterEVA}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/45 text-cyan-100 text-[11px] font-medium transition-colors"
+              title="Sair da Nave em Caminhada Espacial (Astronauta EVA)"
+            >
+              <User className="w-3.5 h-3.5 text-cyan-300" />
+              <span className="hidden sm:inline">Sair EVA</span>
+            </button>
+          )}
+
           <button
             onClick={onExitSpacecraft}
             className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-100 text-[11px] font-medium transition-colors"
-            title="Sair da Nave"
+            title="Voltar ao Modo Observatório"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Sair</span>
