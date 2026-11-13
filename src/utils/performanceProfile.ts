@@ -39,7 +39,7 @@ export function loadSavedQualityPreference(): QualityPreference {
   } catch {
     // ignore storage restriction
   }
-  return 'AUTO';
+  return 'HIGH';
 }
 
 export function saveQualityPreference(pref: QualityPreference): void {

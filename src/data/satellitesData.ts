@@ -37,6 +37,25 @@ export const SATELLITE_CATEGORY_META: Record<
  * Each TLE includes its exact NORAD Catalog Number and verified Epoch timestamp.
  */
 export const VERIFIED_SATELLITE_CATALOG: SatelliteRecord[] = [
+  // ESTAÇÃO ORBITAL MODULAR (ASSET 3D GLB COMPLETO)
+  {
+    id: 'sat-orbital-gateway',
+    noradId: 90001,
+    name: 'ESTAÇÃO ORBITAL GATEWAY — Complexo de Doca LEO',
+    category: 'SPACE_STATIONS',
+    categoryLabel: 'Estação Espacial Modular & Docas',
+    agency: 'Consórcio Orbital Internacional (CC0 3D)',
+    launchYear: 2026,
+    purpose: 'Complexo orbital com 12 módulos pressurizados, laboratório, cúpula de observação, eclusa EVA e nave acoplada',
+    scientificDescription:
+      'Estação espacial modular (41,5 × 12,3 × 49,5 m) montada em torno de um núcleo de seis portas com cúpula panorâmica nadir, câmara de descompressão EVA, módulo habitacional expansível, radiadores térmicos e cápsula de tripulação acoplada.',
+    orbitType: 'LEO Circular Diurna (~415 km • Inclinação 51,6°)',
+    tleLine1: '1 25544U 98067A   24315.51844213  .00016717  00000-0  30142-3 0  9993',
+    tleLine2: '2 25544  51.6404 287.4125 0006703 130.5360 112.0288 15.49814620481124',
+    tleEpochIso: '2026-11-10T12:26:33Z',
+    sourceName: 'Órbita Baixa da Terra • Assembled Orbital Station (CC0)',
+    colorHex: '#38bdf8',
+  },
   // ESTAÇÕES ESPACIAIS
   {
     id: 'sat-iss',

@@ -359,6 +359,52 @@ export interface SpacecraftTelemetry {
   autopilotStatus: 'OFF' | 'ALIGNING' | 'CRUISING' | 'ARRIVED';
 }
 
+export type SpacecraftVariantId = 'sr7-vanguard' | 'xr9-phantom' | 'aegis-titan';
+export type CharacterVariantId = 'cmd-artemis' | 'pil-vortex' | 'eng-solaris';
+
+export interface SpacecraftPreset {
+  id: SpacecraftVariantId;
+  name: string;
+  codename: string;
+  role: string;
+  description: string;
+  accentHex: string;
+  plumePrimaryHex: string;
+  plumeWarpHex: string;
+  hullTintHex: string;
+  emissiveTintHex: string;
+  stats: {
+    speed: number;
+    agility: number;
+    armor: number;
+    warp: number;
+  };
+  flightMultipliers: {
+    speed: number;
+    agility: number;
+    boost: number;
+  };
+}
+
+export interface CharacterPreset {
+  id: CharacterVariantId;
+  name: string;
+  callsign: string;
+  role: string;
+  suitName: string;
+  description: string;
+  accentHex: string;
+  suitTintHex: string;
+  suitEmissiveHex: string;
+  visorLightHex: string;
+  jetpackFlameHex: string;
+  stats: {
+    evaThrust: number;
+    stamina: number;
+    sensorRange: number;
+  };
+}
+
 export interface SceneBootProgress {
   progress: number;
   stage: string;

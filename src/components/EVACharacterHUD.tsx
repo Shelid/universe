@@ -32,6 +32,8 @@ interface EVACharacterHUDProps {
   onVirtualInputChange: (input: EVAVirtualInput) => void;
   speedFormatted: string;
   nearestBodyName: string;
+  activeCharacterName?: string;
+  onWalkOnStation?: () => void;
 }
 
 export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
@@ -45,6 +47,8 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
   onVirtualInputChange,
   speedFormatted,
   nearestBodyName,
+  activeCharacterName = 'ASTRONAUTA EVA',
+  onWalkOnStation,
 }) => {
   const [showTouchControls, setShowTouchControls] = useState(false);
   const inputRef = useRef<EVAVirtualInput>({
@@ -73,8 +77,8 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/78 backdrop-blur-xl border border-cyan-400/35 rounded-full px-3 py-1.5 shadow-xl">
           <div className="flex items-center gap-1.5 pr-2 border-r border-white/10">
             <User className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-[11px] font-mono font-bold text-cyan-100">
-              ASTRONAUTA EVA
+            <span className="text-[11px] font-mono font-bold text-cyan-100 uppercase">
+              {activeCharacterName}
             </span>
           </div>
 
@@ -122,6 +126,16 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
             <Rocket className="w-3.5 h-3.5 text-amber-300" />
             <span>Entrar na Nave</span>
           </button>
+
+          {onWalkOnStation && (
+            <button
+              onClick={onWalkOnStation}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400/55 text-sky-100 text-[11px] font-semibold transition-colors"
+              title="Pousar sobre o deck da Estação Espacial em Órbita da Terra"
+            >
+              <span>Estação Orbital</span>
+            </button>
+          )}
 
           <button
             onClick={() => setShowTouchControls((v) => !v)}

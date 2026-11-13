@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { CharacterPreset } from '../types/astronomy';
 
 export type AstronautActionMode = 'SEATED' | 'EVA_IDLE' | 'EVA_WALK' | 'EVA_RUN' | 'EVA_JETPACK';
 
@@ -10,6 +11,7 @@ export interface AstronautCharacterRefs {
   visorLightTarget: THREE.Object3D;
   jetpackGlowGroup: THREE.Group;
   modelReadyPromise: Promise<void>;
+  setVariant: (preset: CharacterPreset) => void;
   update: (params: {
     dt: number;
     clockTime: number;
@@ -162,6 +164,24 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
   let walkAction: THREE.AnimationAction | null = null;
   let runAction: THREE.AnimationAction | null = null;
   let currentClipMode: 'none' | 'walk' | 'run' = 'none';
+  const suitMaterials: THREE.MeshStandardMaterial[] = [];
+  const activeJetpackColor = new THREE.Color('#38bdf8');
+  const activeJetpackBoostColor = new THREE.Color('#7dd3fc');
+  let pendingPreset: CharacterPreset | null = null;
+
+  const setVariant = (preset: CharacterPreset) => {
+    pendingPreset = preset;
+    activeJetpackColor.set(preset.jetpackFlameHex);
+    activeJetpackBoostColor.set(preset.jetpackFlameHex).lerp(new THREE.Color('#ffffff'), 0.35);
+    visorLight.color.set(preset.visorLightHex);
+    jetFlameMat.color.copy(activeJetpackColor);
+    suitMaterials.forEach((mat) => {
+      mat.color.set(preset.suitTintHex);
+      mat.emissive.set(preset.suitEmissiveHex);
+      mat.emissiveIntensity = 0.08;
+      mat.needsUpdate = true;
+    });
+  };
 
   const bones = new Map<TrackedBoneName, BoneBinding>();
   const allBoneRestStates: Array<{
@@ -261,6 +281,9 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
               const mat = mesh.material as THREE.MeshStandardMaterial;
               if (mat && mat.isMeshStandardMaterial) {
                 mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.35);
+                if (!suitMaterials.includes(mat)) {
+                  suitMaterials.push(mat);
+                }
                 mat.needsUpdate = true;
               }
             }
@@ -287,6 +310,9 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
           });
 
           characterOffsetGroup.add(loadedScene);
+          if (pendingPreset) {
+            setVariant(pendingPreset);
+          }
 
           if (gltf.animations && gltf.animations.length > 0) {
             mixer = new THREE.AnimationMixer(loadedScene);
@@ -457,7 +483,7 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
       const flameScale = (boostActive ? 1.55 : 0.45 + moveSpeed01 * 0.7) * pulse;
       leftJetFlame.scale.set(boostActive ? 1.25 : 0.85, flameScale, boostActive ? 1.25 : 0.85);
       rightJetFlame.scale.set(boostActive ? 1.25 : 0.85, flameScale, boostActive ? 1.25 : 0.85);
-      jetFlameMat.color.set(boostActive ? '#7dd3fc' : '#38bdf8');
+      jetFlameMat.color.copy(boostActive ? activeJetpackBoostColor : activeJetpackColor);
       jetFlameMat.opacity = boostActive ? 0.88 : 0.56;
     }
   };
@@ -475,6 +501,7 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
     visorLightTarget,
     jetpackGlowGroup,
     modelReadyPromise,
+    setVariant,
     update,
     dispose,
   };

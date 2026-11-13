@@ -29,18 +29,29 @@ import {
   SceneBootProgress,
   SpacecraftControlState,
   SpacecraftTelemetry,
+  SpacecraftVariantId,
+  CharacterVariantId,
   SpaceMission,
   SurfaceLandmark,
   WarpFlightState,
   ZoomLevel,
 } from './types/astronomy';
 import {
+  getCharacterPreset,
+  getSpacecraftPreset,
+  loadSavedCharacterVariant,
+  loadSavedShipVariant,
+  saveCharacterVariant,
+  saveShipVariant,
+} from './data/hangarCatalog';
+import {
   SpacecraftCockpitHUD,
   VirtualSteerInput,
 } from './components/SpacecraftCockpitHUD';
 import {
-  ActivePlayerMode,
+  CommandMenuTab,
   GameCommandMenu,
+  GamePlayerMode,
 } from './components/GameCommandMenu';
 import {
   EVACharacterHUD,
@@ -56,7 +67,7 @@ import {
   refreshCatalogFromCelesTrak,
   VERIFIED_SATELLITE_CATALOG,
 } from './data/satellitesData';
-import { UniverseCanvas } from './components/UniverseCanvas';
+import { StationDeployCommand, UniverseCanvas } from './components/UniverseCanvas';
 import { LoadingScreen } from './components/LoadingScreen';
 import { UniverseLogo } from './components/UniverseLogo';
 import { ScientificDossierPanel } from './components/ScientificDossierPanel';
@@ -81,7 +92,7 @@ export function App() {
   const [qualityPreference, setQualityPreference] = useState<QualityPreference>(() =>
     loadSavedQualityPreference()
   );
-  const [resolvedQualityTier, setResolvedQualityTier] = useState<ResolvedQualityTier>('medium');
+  const [resolvedQualityTier, setResolvedQualityTier] = useState<ResolvedQualityTier>('high');
   const [bootProgress, setBootProgress] = useState<SceneBootProgress>(INITIAL_BOOT_PROGRESS);
   const [showLoadingScreen, setShowLoadingScreen] = useState<boolean>(true);
   const [isLoadingFading, setIsLoadingFading] = useState<boolean>(false);
@@ -90,6 +101,17 @@ export function App() {
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
   const [isQuickCardOpen, setIsQuickCardOpen] = useState<boolean>(false);
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState<boolean>(false);
+  const [commandMenuTab, setCommandMenuTab] = useState<CommandMenuTab>('hangar');
+  const [selectedShipId, setSelectedShipId] = useState<SpacecraftVariantId>(() =>
+    loadSavedShipVariant()
+  );
+  const [selectedCharacterId, setSelectedCharacterId] = useState<CharacterVariantId>(() =>
+    loadSavedCharacterVariant()
+  );
+  const [stationDeployCommand, setStationDeployCommand] = useState<StationDeployCommand>({
+    seq: 0,
+    mode: 'ORBIT_INSPECT',
+  });
   const [cinematicTravelEnabled, setCinematicTravelEnabled] = useState<boolean>(true);
 
   // Time & Ephemeris Simulation State — Defaults to REAL-TIME (0 = 1s per 1s) so Earth & Satellites move calmly!
@@ -245,13 +267,24 @@ export function App() {
     };
   }, [bootProgress.ready]);
 
-  const playerMode: ActivePlayerMode = spacecraftControl.isActive
+  const playerMode: GamePlayerMode = spacecraftControl.isActive
     ? 'SPACECRAFT'
     : evaActive
       ? 'EVA'
       : 'EXPLORE';
 
-  const launchSpacecraftSR7 = useCallback(() => {
+  const activeShipPreset = useMemo(() => getSpacecraftPreset(selectedShipId), [selectedShipId]);
+  const activeCharacterPreset = useMemo(
+    () => getCharacterPreset(selectedCharacterId),
+    [selectedCharacterId]
+  );
+
+  const openMenuOnTab = useCallback((tab: CommandMenuTab) => {
+    setCommandMenuTab(tab);
+    setIsCommandMenuOpen(true);
+  }, []);
+
+  const launchSpacecraftSR7 = useCallback((cockpitFirst = false) => {
     (document.activeElement as HTMLElement | null)?.blur?.();
     spaceAudio.unlock();
     spaceAudio.playShipStartup();
@@ -262,7 +295,7 @@ export function App() {
     setSpacecraftControl((prev) => ({
       ...prev,
       isActive: true,
-      cameraView: 'EXTERNAL',
+      cameraView: cockpitFirst ? 'COCKPIT' : 'EXTERNAL',
       throttle: 0,
       brakeRequested: false,
       autopilotTargetId: null,
@@ -271,9 +304,9 @@ export function App() {
   }, []);
 
   const switchPlayerMode = useCallback(
-    (nextMode: ActivePlayerMode) => {
+    (nextMode: GamePlayerMode) => {
       if (nextMode === 'SPACECRAFT') {
-        launchSpacecraftSR7();
+        launchSpacecraftSR7(false);
         return;
       }
       if (nextMode === 'EVA') {
@@ -392,6 +425,53 @@ export function App() {
     if (!selectedSatellite) return null;
     return propagatedSatellites.find((s) => s.id === selectedSatellite.id) || selectedSatellite;
   }, [propagatedSatellites, selectedSatellite]);
+
+  const handleDeployToStation = useCallback(
+    (mode: 'ORBIT_INSPECT' | 'SHIP_DOCK' | 'EVA_WALK') => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      spaceAudio.unlock();
+      setSelectedBodyId('earth');
+      setZoomLevel('ORBITAL_EXPLORATION');
+      setIsDossierOpen(false);
+      setIsQuickCardOpen(false);
+      setIsExploringInterior(false);
+      setWarpState((w) => ({ ...w, isActive: false, stage: 'IDLE' }));
+      setEnabledSatelliteCategories((prev) => ({ ...prev, SPACE_STATIONS: true }));
+
+      const gatewaySat =
+        propagatedSatellites.find((s) => s.id === 'sat-orbital-gateway') || null;
+      if (gatewaySat) setSelectedSatellite(gatewaySat);
+
+      if (mode === 'SHIP_DOCK') {
+        spaceAudio.playShipStartup();
+        setEvaActive(false);
+        setSpacecraftControl((prev) => ({
+          ...prev,
+          isActive: true,
+          cameraView: 'EXTERNAL',
+          throttle: 0,
+          brakeRequested: false,
+          autopilotTargetId: null,
+          recenterTrigger: (prev.recenterTrigger || 0) + 1,
+        }));
+      } else if (mode === 'EVA_WALK') {
+        spaceAudio.playCockpitSwitch(true);
+        setSpacecraftControl((prev) => ({
+          ...prev,
+          isActive: false,
+          throttle: 0,
+          boostActive: false,
+          autopilotTargetId: null,
+        }));
+        setEvaActive(true);
+      } else {
+        setEvaActive(false);
+        setSpacecraftControl((prev) => ({ ...prev, isActive: false, throttle: 0 }));
+      }
+      setStationDeployCommand((prev) => ({ seq: prev.seq + 1, mode }));
+    },
+    [propagatedSatellites]
+  );
 
   const selectedBody = useMemo(() => getCelestialBody(selectedBodyId), [selectedBodyId]);
 
@@ -525,6 +605,9 @@ export function App() {
         evaRecenterTrigger={evaRecenterTrigger}
         evaRadarTrigger={evaRadarTrigger}
         evaVirtualInput={evaVirtualInput}
+        selectedShipId={selectedShipId}
+        selectedCharacterId={selectedCharacterId}
+        stationDeployCommand={stationDeployCommand}
         qualityPreference={qualityPreference}
         onResolvedQualityChange={setResolvedQualityTier}
         onBootProgress={setBootProgress}
@@ -540,37 +623,62 @@ export function App() {
         />
       )}
 
-      {/* 2. ULTRA-CLEAN UNIFIED TOP BAR */}
+      {/* 2. AAA GAME TOP HUD BAR */}
       <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2">
-        {/* Left: Compact Brand + Selected Body Focus Pill */}
-        <button
-          onClick={() => setIsCommandMenuOpen(true)}
-          className="pointer-events-auto flex items-center gap-2 bg-slate-950/78 hover:bg-slate-900/90 backdrop-blur-xl border border-white/12 px-2.5 sm:px-3 py-1.5 rounded-full shadow-lg transition-colors"
-          title="Abrir Menu & Mapa Espacial (M)"
-        >
-          <UniverseLogo
-            size="sm"
-            animated={false}
-            className="w-5 h-5 sm:w-6 sm:h-6 rounded-md shadow-[0_0_12px_rgba(56,189,248,0.35)]"
-          />
-          <span className="hidden md:inline text-[11px] font-display font-bold tracking-wider text-white">
-            COSMOS
-          </span>
-          <span className="hidden md:inline text-slate-600">·</span>
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{
-              backgroundColor: selectedBody.primaryColorHex,
-              boxShadow: `0 0 8px ${selectedBody.primaryColorHex}`,
-            }}
-          />
-          <span className="text-[11px] font-medium text-sky-200 max-w-[90px] sm:max-w-[140px] truncate">
-            {selectedBody.name}
-          </span>
-        </button>
+        {/* Left: Compact Brand + Selected Body Focus + Estação Orbital Quick Deploy */}
+        <div className="pointer-events-auto flex items-center gap-1.5">
+          <button
+            onClick={() => openMenuOnTab('travel')}
+            className="flex items-center gap-2 bg-slate-950/82 hover:bg-slate-900/95 backdrop-blur-xl border border-white/15 px-2.5 sm:px-3 py-1.5 rounded-full shadow-lg transition-colors"
+            title="Mapa Estelar e Planetas (M)"
+          >
+            <UniverseLogo
+              size="sm"
+              animated={false}
+              className="w-5 h-5 sm:w-6 sm:h-6 rounded-md shadow-[0_0_12px_rgba(56,189,248,0.35)]"
+            />
+            <span className="hidden lg:inline text-[11px] font-display font-bold tracking-wider text-white">
+              COSMOS
+            </span>
+            <span className="hidden lg:inline text-slate-600">·</span>
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{
+                backgroundColor: selectedBody.primaryColorHex,
+                boxShadow: `0 0 8px ${selectedBody.primaryColorHex}`,
+              }}
+            />
+            <span className="text-[11px] font-medium text-sky-200 max-w-[85px] sm:max-w-[130px] truncate">
+              {selectedBody.name}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleDeployToStation('EVA_WALK')}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-cyan-500/18 hover:bg-cyan-500/32 border border-cyan-400/45 text-[11px] font-semibold text-cyan-100 backdrop-blur-xl shadow-lg transition-all"
+            title="Caminhar na Estação Espacial em Órbita da Terra (EVA)"
+          >
+            <Satellite className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Estação Orbital</span>
+          </button>
+
+          <button
+            onClick={() => openMenuOnTab('hangar')}
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-950/82 hover:bg-slate-900 border border-white/12 text-[11px] text-slate-200 backdrop-blur-xl shadow-lg transition-all"
+            title="Hangar de Naves e Personagem"
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ backgroundColor: activeShipPreset.accentHex }}
+            />
+            <span className="font-mono text-slate-200">{activeShipPreset.name}</span>
+            <span className="text-slate-600">·</span>
+            <span className="font-mono text-cyan-300">{activeCharacterPreset.callsign}</span>
+          </button>
+        </div>
 
         {/* Center: Clean 3-Mode Player Switcher (Observatório | Nave | Astronauta) */}
-        <div className="pointer-events-auto flex items-center bg-slate-950/82 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-lg gap-0.5">
+        <div className="pointer-events-auto flex items-center bg-slate-950/85 backdrop-blur-xl border border-white/15 p-1 rounded-full shadow-lg gap-0.5">
           {[
             { id: 'EXPLORE' as const, label: 'Explorar', icon: Globe },
             { id: 'SPACECRAFT' as const, label: 'Nave', icon: Rocket },
@@ -599,8 +707,22 @@ export function App() {
           })}
         </div>
 
-        {/* Right: Audio Mute + Command Menu */}
+        {/* Right: Quality 4K Badge + Audio Mute + Hangar/Game Menu */}
         <div className="pointer-events-auto flex items-center gap-1.5">
+          <button
+            onClick={() => openMenuOnTab('graphics')}
+            className="hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/28 border border-emerald-400/40 text-[10px] font-mono font-bold text-emerald-200 backdrop-blur-xl transition-all"
+            title="Configurar Qualidade Gráfica 4K"
+          >
+            <span>
+              {resolvedQualityTier === 'high'
+                ? '4K ALTA'
+                : resolvedQualityTier === 'medium'
+                  ? 'MÉDIA'
+                  : 'LEVE'}
+            </span>
+          </button>
+
           <button
             onClick={toggleAudioMuted}
             className={`p-2 rounded-full border backdrop-blur-xl shadow-lg transition-all ${
@@ -614,11 +736,11 @@ export function App() {
           </button>
 
           <button
-            onClick={() => setIsCommandMenuOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/85 hover:bg-slate-800 border border-sky-400/40 text-xs font-semibold text-white backdrop-blur-xl shadow-[0_0_16px_rgba(56,189,248,0.2)] transition-all"
-            title="Abrir Menu Organizado (Tecla M ou Tab)"
+            onClick={() => openMenuOnTab('hangar')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/50 text-xs font-semibold text-white backdrop-blur-xl shadow-[0_0_16px_rgba(56,189,248,0.22)] transition-all"
+            title="Abrir Menu de Jogo, Hangar & Personagens (M)"
           >
-            <Menu className="w-3.5 h-3.5 text-sky-400" />
+            <Menu className="w-3.5 h-3.5 text-sky-300" />
             <span>Menu</span>
           </button>
         </div>
@@ -664,6 +786,22 @@ export function App() {
                   </span>
                 </div>
               </div>
+              {currentSelectedSatellite.id === 'sat-orbital-gateway' && (
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  <button
+                    onClick={() => handleDeployToStation('EVA_WALK')}
+                    className="py-1.5 px-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-[11px] transition-colors"
+                  >
+                    Caminhar (EVA)
+                  </button>
+                  <button
+                    onClick={() => handleDeployToStation('SHIP_DOCK')}
+                    className="py-1.5 px-2.5 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 font-semibold text-[11px] transition-colors"
+                  >
+                    Aproximar Nave
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -869,12 +1007,21 @@ export function App() {
             })}
 
             <button
-              onClick={() => setIsCommandMenuOpen(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 hover:bg-sky-500/20 border border-white/10 text-[11px] text-sky-300 font-medium shrink-0 ml-1"
-              title="Explorar Luas, Asteroides, Galáxias e Opções"
+              onClick={() => openMenuOnTab('station')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/18 hover:bg-cyan-500/32 border border-cyan-400/45 text-[11px] text-cyan-200 font-semibold shrink-0 ml-1"
+              title="Estação Espacial em Órbita da Terra"
+            >
+              <Satellite className="w-3 h-3 text-cyan-300" />
+              <span className="hidden sm:inline">Estação Orbital</span>
+            </button>
+
+            <button
+              onClick={() => openMenuOnTab('hangar')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 hover:bg-sky-500/20 border border-white/10 text-[11px] text-sky-300 font-medium shrink-0"
+              title="Abrir Menu, Hangar de Naves e Personagens"
             >
               <SlidersHorizontal className="w-3 h-3" />
-              <span className="hidden sm:inline">Mais</span>
+              <span className="hidden sm:inline">Hangar</span>
             </button>
           </div>
         </footer>
@@ -894,6 +1041,9 @@ export function App() {
           onVirtualSteerChange={setVirtualSteerInput}
           isAudioMuted={isAudioMuted}
           onToggleAudioMuted={toggleAudioMuted}
+          activeShipName={activeShipPreset.name}
+          activeShipAccent={activeShipPreset.accentHex}
+          onDeployToStation={() => handleDeployToStation('SHIP_DOCK')}
         />
       )}
 
@@ -912,19 +1062,34 @@ export function App() {
           }}
           onEnterShip={() => switchPlayerMode('SPACECRAFT')}
           onExitToExplorer={() => switchPlayerMode('EXPLORE')}
-          onOpenMenu={() => setIsCommandMenuOpen(true)}
+          onOpenMenu={() => openMenuOnTab('crew')}
           onVirtualInputChange={setEvaVirtualInput}
           speedFormatted={spacecraftTelemetry.speedFormatted}
           nearestBodyName={spacecraftTelemetry.nearestBodyName}
+          activeCharacterName={activeCharacterPreset.name}
+          onWalkOnStation={() => handleDeployToStation('EVA_WALK')}
         />
       )}
 
-      {/* 6D. ORGANIZED EXPLORATION & COMMAND MENU MODAL */}
+      {/* 6D. AAA GAME COMMAND MENU, HANGAR & STATION DEPLOYMENT */}
       <GameCommandMenu
         isOpen={isCommandMenuOpen}
+        initialTab={commandMenuTab}
         onClose={() => setIsCommandMenuOpen(false)}
         playerMode={playerMode}
         onSwitchMode={switchPlayerMode}
+        onLaunchShipCockpit={() => launchSpacecraftSR7(true)}
+        selectedShipId={selectedShipId}
+        onSelectShip={(id) => {
+          setSelectedShipId(id);
+          saveShipVariant(id);
+        }}
+        selectedCharacterId={selectedCharacterId}
+        onSelectCharacter={(id) => {
+          setSelectedCharacterId(id);
+          saveCharacterVariant(id);
+        }}
+        onDeployToStation={handleDeployToStation}
         selectedBody={selectedBody}
         onSelectBody={handleSelectBody}
         onOpenDossier={() => setIsDossierOpen(true)}

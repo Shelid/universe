@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { SpacecraftPreset } from '../types/astronomy';
 
 export interface SR7SpacecraftRefs {
   rootGroup: THREE.Group;
@@ -39,6 +40,7 @@ export interface SR7SpacecraftRefs {
   muzzlePositionsLocal: [THREE.Vector3, THREE.Vector3];
   clickableCockpitControls: THREE.Object3D[];
   modelReadyPromise: Promise<void>;
+  setVariant: (preset: SpacecraftPreset) => void;
   dispose: () => void;
   updateAnimations: (params: {
     dt: number;
@@ -178,6 +180,8 @@ function createPlasmaPlumeMaterial(): THREE.ShaderMaterial {
       uTime: { value: 0 },
       uThrottle: { value: 0 },
       uBoost: { value: 0 },
+      uPrimaryColor: { value: new THREE.Color('#fb923c') },
+      uWarpColor: { value: new THREE.Color('#38bdf8') },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -195,6 +199,8 @@ function createPlasmaPlumeMaterial(): THREE.ShaderMaterial {
       uniform float uTime;
       uniform float uThrottle;
       uniform float uBoost;
+      uniform vec3 uPrimaryColor;
+      uniform vec3 uWarpColor;
       varying vec2 vUv;
       varying vec3 vNormalView;
       varying vec3 vViewPos;
@@ -209,10 +215,10 @@ function createPlasmaPlumeMaterial(): THREE.ShaderMaterial {
         float wave = sin(axial * 24.0 - uTime * (14.0 + uBoost * 18.0));
         float diamonds = smoothstep(0.15, 0.95, wave) * pow(1.0 - axial, 0.7);
 
-        vec3 idleCol = vec3(0.98, 0.58, 0.12);
-        vec3 hotCol = vec3(1.0, 0.85, 0.45);
-        vec3 warpCol = vec3(0.22, 0.82, 1.0);
-        vec3 warpCore = vec3(0.88, 0.98, 1.0);
+        vec3 idleCol = uPrimaryColor * 0.92;
+        vec3 hotCol = mix(uPrimaryColor, vec3(1.0, 0.94, 0.78), 0.45);
+        vec3 warpCol = uWarpColor;
+        vec3 warpCore = mix(uWarpColor, vec3(1.0), 0.65);
 
         vec3 baseColor = mix(idleCol, hotCol, clamp(uThrottle, 0.0, 1.0));
         baseColor = mix(baseColor, warpCol, uBoost);
@@ -1075,6 +1081,10 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
   };
 
   let modelReadyPromise: Promise<void> = Promise.resolve();
+  const hullMaterials: THREE.MeshStandardMaterial[] = [];
+  let pendingVariant: SpacecraftPreset | null = null;
+  let activeAccentColorHex = '#38bdf8';
+  let activeWarpAccentHex = '#7dd3fc';
 
   if (!isNodeEnv) {
     const loader = new GLTFLoader();
@@ -1104,6 +1114,9 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                   }
                 });
                 mat.needsUpdate = true;
+                if (!hullMaterials.includes(mat)) {
+                  hullMaterials.push(mat);
+                }
               }
               if (mesh.name.includes('BASE') && !baseMesh) {
                 baseMesh = mesh;
@@ -1124,6 +1137,14 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
           loadedRoot.position.set(0, -1.08, 2.1);
 
           glbWrapper.add(loadedRoot);
+          if (pendingVariant) {
+            hullMaterials.forEach((m) => {
+              m.color.set(pendingVariant!.hullTintHex);
+              m.emissive.set(pendingVariant!.emissiveTintHex);
+              m.emissiveIntensity = Math.max(m.emissiveIntensity || 0, 0.06);
+              m.needsUpdate = true;
+            });
+          }
           hullGroup.remove(placeholderMesh);
           placeholderMesh.geometry.dispose();
           (placeholderMesh.material as THREE.Material).dispose();
@@ -1931,12 +1952,16 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
       m.uniforms.uBoost.value = boostVal;
     });
 
-    const coreColor = boostActive ? '#e0f2fe' : '#e9d5ff';
+    const coreColor = boostActive ? activeWarpAccentHex : '#e9d5ff';
     (leftCoreMesh.material as THREE.MeshBasicMaterial).color.set(coreColor);
     (rightCoreMesh.material as THREE.MeshBasicMaterial).color.set(coreColor);
     (centerCoreMesh.material as THREE.MeshBasicMaterial).color.set(coreColor);
-    (leftWingTipGlow.material as THREE.MeshBasicMaterial).color.set(boostActive ? '#7dd3fc' : '#0284c7');
-    (rightWingTipGlow.material as THREE.MeshBasicMaterial).color.set(boostActive ? '#7dd3fc' : '#0284c7');
+    (leftWingTipGlow.material as THREE.MeshBasicMaterial).color.set(
+      boostActive ? activeWarpAccentHex : activeAccentColorHex
+    );
+    (rightWingTipGlow.material as THREE.MeshBasicMaterial).color.set(
+      boostActive ? activeWarpAccentHex : activeAccentColorHex
+    );
 
     // Dorsal anti-collision beacon strobe (~1.1 Hz)
     const strobeOn = (clockTime % 1.1) < 0.09;
@@ -2007,6 +2032,27 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     }
   };
 
+  const setVariant = (preset: SpacecraftPreset) => {
+    pendingVariant = preset;
+    activeAccentColorHex = preset.accentHex;
+    activeWarpAccentHex = preset.plumeWarpHex;
+    hullMaterials.forEach((m) => {
+      m.color.set(preset.hullTintHex);
+      m.emissive.set(preset.emissiveTintHex);
+      m.emissiveIntensity = 0.06;
+      m.needsUpdate = true;
+    });
+    [plumeMatLeft, plumeMatRight, plumeMatCenter].forEach((m) => {
+      m.uniforms.uPrimaryColor.value.set(preset.plumePrimaryHex);
+      m.uniforms.uWarpColor.value.set(preset.plumeWarpHex);
+    });
+    (browGlowStrip.material as THREE.MeshBasicMaterial).color.set(preset.accentHex);
+    (leftMuzzleFlash.material as THREE.MeshBasicMaterial).color.set(preset.accentHex);
+    (rightMuzzleFlash.material as THREE.MeshBasicMaterial).color.set(preset.accentHex);
+    radarPulseRingMat.color.set(preset.accentHex);
+    interiorLight.color.set(preset.accentHex);
+  };
+
   const dispose = () => {
     if (disposed) return;
     disposed = true;
@@ -2051,6 +2097,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     muzzlePositionsLocal,
     clickableCockpitControls,
     modelReadyPromise,
+    setVariant,
     dispose,
     updateAnimations,
   };

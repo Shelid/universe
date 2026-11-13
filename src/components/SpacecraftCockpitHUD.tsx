@@ -50,6 +50,9 @@ interface SpacecraftCockpitHUDProps {
   onVirtualSteerChange: (input: VirtualSteerInput) => void;
   isAudioMuted: boolean;
   onToggleAudioMuted: () => void;
+  activeShipName?: string;
+  activeShipAccent?: string;
+  onDeployToStation?: () => void;
 }
 
 type ShipMenuTab = 'systems' | 'navigation' | 'controls';
@@ -63,6 +66,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   onVirtualSteerChange,
   isAudioMuted,
   onToggleAudioMuted,
+  activeShipName = 'CAÇA ESTELAR',
+  activeShipAccent = '#38bdf8',
+  onDeployToStation,
 }) => {
   const [isShipMenuOpen, setIsShipMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ShipMenuTab>('systems');
@@ -115,9 +121,12 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
       {/* MINIMAL SHIP PILL BAR: COMPACT CAMERA, EVA, SHIP MENU & EXIT */}
       <div className="px-3 pt-14 sm:px-4 sm:pt-14 flex items-center justify-between gap-2">
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 sm:gap-2 bg-slate-950/80 backdrop-blur-xl border border-white/15 rounded-full px-3 py-1.5 shadow-xl">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-          <span className="text-xs font-bold tracking-wider text-white font-mono">
-            CAÇA ESTELAR
+          <span
+            className="w-2 h-2 rounded-full animate-pulse"
+            style={{ backgroundColor: activeShipAccent, boxShadow: `0 0 8px ${activeShipAccent}` }}
+          />
+          <span className="text-xs font-bold tracking-wider text-white font-mono uppercase">
+            {activeShipName}
           </span>
 
           <div className="h-4 w-px bg-white/15 mx-0.5" />
@@ -262,8 +271,8 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             <div className="flex items-center gap-2">
               <Rocket className="w-4 h-4 text-sky-400" />
               <div>
-                <h2 className="text-xs font-bold tracking-wider text-white font-mono">
-                  CENTRAL DA NAVE SR-7 EXPLORER
+                <h2 className="text-xs font-bold tracking-wider text-white font-mono uppercase">
+                  CENTRAL — {activeShipName}
                 </h2>
                 <p className="text-[10px] text-slate-400">
                   Telemetria, Sistemas, Radar e Piloto Automático
@@ -577,12 +586,21 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     className="w-full bg-slate-950 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
                   >
                     <option value="">Piloto Manual (Voo Livre)</option>
+                    <option value="sat-orbital-gateway">Estação Espacial Orbital (Órbita da Terra)</option>
                     {autopilotTargets.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
                       </option>
                     ))}
                   </select>
+                  {onDeployToStation && (
+                    <button
+                      onClick={onDeployToStation}
+                      className="w-full py-1.5 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/45 text-sky-100 text-[11px] font-semibold transition-colors"
+                    >
+                      Aproximar da Estação Espacial Orbital
+                    </button>
+                  )}
                 </div>
 
                 {/* Interactive 360° Radar */}
