@@ -170,105 +170,6 @@ function partitionLightFighterCanopy(
 }
 
 /**
- * Creates a seamless lofted multi-station BufferGeometry along Z with crisp normals and UV seams.
- * Each station supplies an array of [x, y] ring points ordered consistently around the perimeter.
- */
-function createLoftedGeometry(
-  stations: Array<{ z: number; ring: Array<[number, number]> }>,
-  uvScaleU = 1.0,
-  uvScaleV = 0.25,
-  capEnds = true,
-  closedRing = true
-): THREE.BufferGeometry {
-  const numStations = stations.length;
-  const ringCount = stations[0].ring.length;
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
-
-  for (let s = 0; s < numStations; s++) {
-    const { z, ring } = stations[s];
-    const vCoord = z * uvScaleV;
-    for (let r = 0; r <= ringCount; r++) {
-      const pt = ring[r % ringCount];
-      positions.push(pt[0], pt[1], z);
-      uvs.push((r / ringCount) * uvScaleU, vCoord);
-    }
-  }
-
-  const stride = ringCount + 1;
-  const segCount = closedRing ? ringCount : ringCount - 1;
-  for (let s = 0; s < numStations - 1; s++) {
-    for (let r = 0; r < segCount; r++) {
-      const a = s * stride + r;
-      const b = s * stride + (r + 1);
-      const c = (s + 1) * stride + r;
-      const d = (s + 1) * stride + (r + 1);
-      indices.push(a, c, b);
-      indices.push(b, c, d);
-    }
-  }
-
-  if (capEnds) {
-    // Front cap (-Z)
-    const frontCenter = [0, 0, stations[0].z];
-    let fAvgX = 0;
-    let fAvgY = 0;
-    stations[0].ring.forEach(([x, y]) => {
-      fAvgX += x;
-      fAvgY += y;
-    });
-    frontCenter[0] = fAvgX / ringCount;
-    frontCenter[1] = fAvgY / ringCount;
-    const frontCenterIdx = positions.length / 3;
-    positions.push(frontCenter[0], frontCenter[1], frontCenter[2]);
-    uvs.push(0.5, 0.5);
-    for (let r = 0; r < ringCount; r++) {
-      indices.push(frontCenterIdx, r, r + 1);
-    }
-
-    // Rear cap (+Z)
-    const lastOffset = (numStations - 1) * stride;
-    let rAvgX = 0;
-    let rAvgY = 0;
-    stations[numStations - 1].ring.forEach(([x, y]) => {
-      rAvgX += x;
-      rAvgY += y;
-    });
-    const rearCenterIdx = positions.length / 3;
-    positions.push(rAvgX / ringCount, rAvgY / ringCount, stations[numStations - 1].z);
-    uvs.push(0.5, 0.5);
-    for (let r = 0; r < ringCount; r++) {
-      indices.push(rearCenterIdx, lastOffset + r + 1, lastOffset + r);
-    }
-  }
-
-  // Auto-correct winding for mirrored (counter-clockwise) rings so normals always face outward
-  const ring0 = stations[0].ring;
-  let signedArea = 0;
-  for (let i = 0; i < ringCount; i++) {
-    const [x1, y1] = ring0[i];
-    const [x2, y2] = ring0[(i + 1) % ringCount];
-    signedArea += x1 * y2 - x2 * y1;
-  }
-  const zIncreasing = stations[numStations - 1].z >= stations[0].z;
-  if ((signedArea > 0) === zIncreasing) {
-    for (let i = 0; i < indices.length; i += 3) {
-      const tmp = indices[i + 1];
-      indices[i + 1] = indices[i + 2];
-      indices[i + 2] = tmp;
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  return geo;
-}
-
-/**
  * Custom volumetric GLSL Mach-diamond plasma exhaust shader for SR-7 twin main engines.
  */
 function createPlasmaPlumeMaterial(): THREE.ShaderMaterial {
@@ -352,15 +253,33 @@ function configureCrispTexture(
 }
 
 /**
- * Yellow/black diagonal hazard stripes (ejection & jettison handles) in HiDPI resolution.
+ * Ultra-fast dynamic canvas texture configuration:
+ * Disables mipmap generation to avoid heavy GPU mipmap recalculation on every MFD update.
+ */
+function configureDynamicCanvasTexture(
+  tex: THREE.CanvasTexture,
+  isColor = true
+): THREE.CanvasTexture {
+  if (isColor) {
+    tex.colorSpace = THREE.SRGBColorSpace;
+  }
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Yellow/black diagonal hazard stripes (ejection & jettison handles).
  */
 function createHazardStripeTexture(maxAnisotropy = 16): THREE.CanvasTexture {
-  const size = 512;
+  const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  ctx.scale(8, 8);
+  ctx.scale(4, 4);
   ctx.fillStyle = '#facc15';
   ctx.fillRect(0, 0, 64, 64);
   ctx.fillStyle = '#111111';
@@ -403,7 +322,7 @@ function createConsolePanelTexture(
 ): THREE.CanvasTexture {
   const logicalW = 256;
   const logicalH = Math.round((logicalW * planeL) / planeW);
-  const scale = 4;
+  const scale = 2;
   const canvas = document.createElement('canvas');
   canvas.width = logicalW * scale;
   canvas.height = logicalH * scale;
@@ -501,137 +420,14 @@ function createConsolePanelTexture(
 }
 
 /**
- * Avionics rack faceplate in crisp 4x retina density with LED status matrix & vent slots.
- */
-function createAvionicsRackTexture(
-  title: string,
-  accent: string,
-  maxAnisotropy = 16
-): THREE.CanvasTexture {
-  const scale = 4;
-  const canvas = document.createElement('canvas');
-  canvas.width = 160 * scale;
-  canvas.height = 224 * scale;
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(scale, scale);
-
-  ctx.fillStyle = '#1c232d';
-  ctx.fillRect(0, 0, 160, 224);
-  ctx.strokeStyle = '#0b0f14';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(3, 3, 154, 218);
-
-  ctx.fillStyle = accent;
-  ctx.font = 'bold 14px ui-monospace, Consolas, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(title, 80, 24);
-
-  const ledColors = ['#34d399', '#34d399', '#38bdf8', '#fbbf24', '#34d399', '#38bdf8'];
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 6; col++) {
-      ctx.fillStyle = ledColors[(row * 2 + col) % ledColors.length];
-      ctx.globalAlpha = (row + col) % 4 === 0 ? 0.35 : 0.95;
-      ctx.fillRect(18 + col * 22, 40 + row * 16, 12, 7);
-    }
-  }
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = '#0b0f14';
-  for (let s = 0; s < 8; s++) {
-    ctx.fillRect(20, 102 + s * 10, 120, 4);
-  }
-
-  [44, 80, 116].forEach((cx) => {
-    ctx.fillStyle = '#4b5563';
-    ctx.beginPath();
-    ctx.arc(cx, 196, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.arc(cx, 196, 4, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  ctx.textAlign = 'left';
-  const tex = new THREE.CanvasTexture(canvas);
-  configureCrispTexture(tex, maxAnisotropy, true);
-  return tex;
-}
-
-/**
- * Crisp 512x512 standby artificial horizon & chronometer dial for backup glare-shield pod.
- */
-function createStandbyGaugeTexture(maxAnisotropy = 16): THREE.CanvasTexture {
-  const scale = 4;
-  const canvas = document.createElement('canvas');
-  canvas.width = 128 * scale;
-  canvas.height = 128 * scale;
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(scale, scale);
-
-  ctx.fillStyle = '#050b14';
-  ctx.fillRect(0, 0, 128, 128);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(64, 64, 54, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.fillStyle = '#0c4a6e';
-  ctx.fillRect(0, 0, 128, 64);
-  ctx.fillStyle = '#292524';
-  ctx.fillRect(0, 64, 128, 64);
-  ctx.strokeStyle = '#e0f2fe';
-  ctx.lineWidth = 1.6;
-  ctx.beginPath();
-  ctx.moveTo(12, 64);
-  ctx.lineTo(116, 64);
-  ctx.stroke();
-  [-18, -9, 9, 18].forEach((t) => {
-    ctx.beginPath();
-    ctx.moveTo(46, 64 + t);
-    ctx.lineTo(82, 64 + t);
-    ctx.stroke();
-  });
-  ctx.restore();
-
-  ctx.strokeStyle = '#facc15';
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(42, 64);
-  ctx.lineTo(56, 64);
-  ctx.lineTo(64, 71);
-  ctx.lineTo(72, 64);
-  ctx.lineTo(86, 64);
-  ctx.stroke();
-
-  ctx.strokeStyle = '#38bdf8';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(64, 64, 54, 0, Math.PI * 2);
-  ctx.stroke();
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    const inner = i % 2 === 0 ? 47 : 50;
-    ctx.beginPath();
-    ctx.moveTo(64 + Math.cos(a) * inner, 64 + Math.sin(a) * inner);
-    ctx.lineTo(64 + Math.cos(a) * 54, 64 + Math.sin(a) * 54);
-    ctx.stroke();
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  configureCrispTexture(tex, maxAnisotropy, true);
-  return tex;
-}
-
-/**
- * Generates fine 1024x1024 woven carbon-fiber & brushed titanium PBR maps for the 4K cockpit.
+ * Generates lightweight woven carbon-fiber & brushed titanium PBR maps for the cockpit.
  */
 function createCockpitCarbonTextures(maxAnisotropy = 16): {
   map: THREE.CanvasTexture;
   bumpMap: THREE.CanvasTexture;
   roughnessMap: THREE.CanvasTexture;
 } {
-  const size = 1024;
+  const size = 128;
   const col = document.createElement('canvas');
   col.width = size;
   col.height = size;
@@ -670,19 +466,19 @@ function createCockpitCarbonTextures(maxAnisotropy = 16): {
   const map = new THREE.CanvasTexture(col);
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
-  map.repeat.set(14, 14);
+  map.repeat.set(16, 16);
   configureCrispTexture(map, maxAnisotropy, true);
 
   const bumpMap = new THREE.CanvasTexture(bmp);
   bumpMap.wrapS = THREE.RepeatWrapping;
   bumpMap.wrapT = THREE.RepeatWrapping;
-  bumpMap.repeat.set(14, 14);
+  bumpMap.repeat.set(16, 16);
   configureCrispTexture(bumpMap, maxAnisotropy, false);
 
   const roughnessMap = new THREE.CanvasTexture(rgh);
   roughnessMap.wrapS = THREE.RepeatWrapping;
   roughnessMap.wrapT = THREE.RepeatWrapping;
-  roughnessMap.repeat.set(14, 14);
+  roughnessMap.repeat.set(16, 16);
   configureCrispTexture(roughnessMap, maxAnisotropy, false);
 
   return { map, bumpMap, roughnessMap };
@@ -1143,20 +939,6 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     envMapIntensity: 1.5,
   });
 
-  const crimsonStripeMat = new THREE.MeshStandardMaterial({
-    color: '#a32222',
-    roughness: 0.48,
-    metalness: 0.32,
-    envMapIntensity: 1.15,
-  });
-
-  const copperPipeMat = new THREE.MeshStandardMaterial({
-    color: '#c47b43',
-    roughness: 0.26,
-    metalness: 0.88,
-    envMapIntensity: 1.45,
-  });
-
   const cockpitInteriorTrimMat = new THREE.MeshStandardMaterial({
     map: carbonMap,
     bumpMap: carbonBump,
@@ -1204,13 +986,6 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     color: '#4b5a47',
     roughness: 0.85,
     metalness: 0.05,
-  });
-
-  const mirrorMat = new THREE.MeshStandardMaterial({
-    color: '#dbe7f3',
-    roughness: 0.04,
-    metalness: 1.0,
-    envMapIntensity: 2.0,
   });
 
   // 100% Crystal-Clear Optical Canopy ShaderMaterial:
@@ -1364,7 +1139,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
   }
 
   // ============================================================================
-  // 2. REALISTIC MODERN GLASS COCKPIT INTERIOR (Fitted Inside Light Fighter Bay)
+  // 2. CLEAN HIGH-PERFORMANCE GLASS COCKPIT INTERIOR (ZERO FRAGMENTS & SUPER FAST)
   // ============================================================================
   const interiorGroup = new THREE.Group();
   interiorGroup.name = 'sr7-cockpit-interior';
@@ -1372,891 +1147,534 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
   interiorGroup.position.set(0, 0.078, 0.15);
   rootGroup.add(interiorGroup);
 
-  // Ribbed Structural Cockpit Floor & Footwell
-  const deckFloor = new THREE.Mesh(
-    createLoftedGeometry([
-      { z: -1.52, ring: [[-0.27, -0.02], [0.27, -0.02], [0.29, -0.06], [-0.29, -0.06]] },
-      { z: -0.58, ring: [[-0.36, -0.02], [0.36, -0.02], [0.38, -0.06], [-0.38, -0.06]] },
-    ], 1, 1, true),
-    cockpitConsoleMat
+  // 1. Cockpit Structural Tub (Floor, Bulkheads & Coaming)
+  const floorMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.70, 0.025, 1.15),
+    armorDarkMat
   );
-  interiorGroup.add(deckFloor);
+  floorMesh.position.set(0, -0.015, -1.05);
+  interiorGroup.add(floorMesh);
 
-  // Ribbed Footwell Heel-Rest Tread Plates & Bulkhead Frame Seals
-  [-0.095, 0.095].forEach((fx) => {
-    const treadPlate = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.008, 0.34), anodizedBezelMat);
-    treadPlate.position.set(fx, -0.015, -1.28);
-    interiorGroup.add(treadPlate);
-  });
+  // Forward Firewall Bulkhead (below forward instrument panel)
+  const forwardBulkhead = new THREE.Mesh(
+    new THREE.BoxGeometry(0.66, 0.32, 0.03),
+    armorDarkMat
+  );
+  forwardBulkhead.position.set(0, 0.14, -1.56);
+  interiorGroup.add(forwardBulkhead);
 
-  // Curved Rear Pressurized Crew Bulkhead Wall + Acoustic Thermal Liner (framed cleanly behind pilot seat!)
+  // Rear Pressurized Bulkhead (behind pilot seat)
   const rearBulkhead = new THREE.Mesh(
-    createLoftedGeometry([
-      { z: -0.635, ring: [[-0.39, 0.0], [0.39, 0.0], [0.40, 0.24], [0.34, 0.45], [0, 0.515], [-0.34, 0.45], [-0.40, 0.24]] },
-      { z: -0.56, ring: [[-0.39, 0.0], [0.39, 0.0], [0.40, 0.24], [0.34, 0.44], [0, 0.505], [-0.34, 0.44], [-0.40, 0.24]] },
-    ], 1, 1, true),
+    new THREE.BoxGeometry(0.72, 0.58, 0.04),
     cockpitInteriorTrimMat
   );
+  rearBulkhead.position.set(0, 0.28, -0.52);
   interiorGroup.add(rearBulkhead);
 
-  // Twin Recessed Rear Avionics Bays & Power Conduits (detailed 360° view behind shoulder!)
-  [
-    { side: -1, title: 'AVIÔNICA A', accent: '#38bdf8' },
-    { side: 1, title: 'NÚCLEO B', accent: '#34d399' },
-  ].forEach((rack) => {
-    const rackGroup = new THREE.Group();
-    rackGroup.position.set(rack.side * 0.245, 0.255, -0.642);
-    rackGroup.rotation.y = rack.side * -0.18;
-
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.135, 0.19, 0.024), anodizedBezelMat);
-    rackGroup.add(housing);
-
-    const rackTex = createAvionicsRackTexture(rack.title, rack.accent, maxAniso);
-    const face = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.116, 0.168),
-      new THREE.MeshStandardMaterial({
-        map: rackTex,
-        emissive: '#ffffff',
-        emissiveMap: rackTex,
-        emissiveIntensity: 0.36,
-        roughness: 0.45,
-        metalness: 0.4,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      })
-    );
-    face.position.z = -0.0145;
-    face.rotation.y = Math.PI;
-    rackGroup.add(face);
-    interiorGroup.add(rackGroup);
-
-    const rearConduit = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(rack.side * 0.29, 0.34, -0.65),
-      new THREE.Vector3(rack.side * 0.31, 0.18, -0.68),
-      new THREE.Vector3(rack.side * 0.27, 0.02, -0.74),
-    ]);
-    interiorGroup.add(new THREE.Mesh(new THREE.TubeGeometry(rearConduit, 24, 0.008, 16, false), copperPipeMat));
-  });
-
-  // Left Canopy Sill Emergency Jettison Handle + High-Poly Canopy Arch & Forward A-Pillar Rails
-  const jettisonGrip = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.014, 0.075), hazardStripeMat);
-  jettisonGrip.position.set(-0.345, 0.168, -1.16);
-  interiorGroup.add(jettisonGrip);
-
-  const innerCanopyBow = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.345, 0.20, -1.185),
-    new THREE.Vector3(-0.30, 0.34, -1.168),
-    new THREE.Vector3(-0.18, 0.422, -1.152),
-    new THREE.Vector3(0, 0.442, -1.145),
-    new THREE.Vector3(0.18, 0.422, -1.152),
-    new THREE.Vector3(0.30, 0.34, -1.168),
-    new THREE.Vector3(0.345, 0.20, -1.185),
-  ]);
-  interiorGroup.add(new THREE.Mesh(new THREE.TubeGeometry(innerCanopyBow, 56, 0.0115, 24, false), gunmetalMat));
-
-  // Sweeping left & right canopy A-pillar rails framing the panoramic front windshield seamlessly
+  // Side Coaming Sills (Left & Right)
   [-1, 1].forEach((side) => {
-    const aPillarCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.315, 0.215, -1.36),
-      new THREE.Vector3(side * 0.335, 0.295, -1.275),
-      new THREE.Vector3(side * 0.30, 0.34, -1.168),
-    ]);
-    interiorGroup.add(new THREE.Mesh(new THREE.TubeGeometry(aPillarCurve, 36, 0.009, 20, false), titaniumTrimMat));
-  });
-
-  [-0.14, 0.14].forEach((lx) => {
-    const latch = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.016, 0.035), titaniumTrimMat);
-    latch.position.set(lx, 0.422, -1.15);
-    interiorGroup.add(latch);
-    const lockLed = new THREE.Mesh(
-      new THREE.BoxGeometry(0.008, 0.005, 0.005),
-      new THREE.MeshBasicMaterial({ color: '#10b981' })
+    const sideWall = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.28, 1.12),
+      armorDarkMat
     );
-    lockLed.position.set(lx, 0.415, -1.132);
-    interiorGroup.add(lockLed);
-  });
+    sideWall.position.set(side * 0.355, 0.13, -1.05);
+    interiorGroup.add(sideWall);
 
-  // Twin Sculpted Convex Cabin Inspection Mirrors mounted inside Canopy Brow Sides
-  [-1, 1].forEach((side) => {
-    const mirrorGroup = new THREE.Group();
-    mirrorGroup.position.set(side * 0.268, 0.346, -1.268);
-    mirrorGroup.rotation.order = 'YXZ';
-    mirrorGroup.rotation.y = side * -0.58;
-    mirrorGroup.rotation.x = 0.22;
-
-    const mirrorHousing = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.024, 0.01), anodizedBezelMat);
-    mirrorGroup.add(mirrorHousing);
-    const mirrorGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.050, 0.018), mirrorMat);
-    mirrorGlass.position.z = 0.0065;
-    mirrorGroup.add(mirrorGlass);
-
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.0032, 0.0032, 0.042, 16), titaniumTrimMat);
-    arm.rotation.z = Math.PI / 2;
-    arm.position.set(side * 0.036, 0, -0.005);
-    mirrorGroup.add(arm);
-    interiorGroup.add(mirrorGroup);
-  });
-
-  // Standby Backup Artificial Horizon Pod + Master Caution Bar along Glare-Shield Upper Flanks
-  const standbyPod = new THREE.Group();
-  standbyPod.position.set(0.225, 0.214, -1.288);
-  standbyPod.rotation.order = 'YXZ';
-  standbyPod.rotation.y = -0.34;
-  standbyPod.rotation.x = -0.22;
-  const podRim = new THREE.Mesh(new THREE.CylinderGeometry(0.023, 0.025, 0.018, 36), anodizedBezelMat);
-  podRim.rotation.x = Math.PI / 2;
-  standbyPod.add(podRim);
-  const standbyDial = new THREE.Mesh(
-    new THREE.CircleGeometry(0.019, 36),
-    new THREE.MeshBasicMaterial({ map: createStandbyGaugeTexture(maxAniso) })
-  );
-  standbyDial.position.z = 0.011;
-  standbyPod.add(standbyDial);
-  interiorGroup.add(standbyPod);
-
-  const cautionHousing = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.016, 0.012), anodizedBezelMat);
-  cautionHousing.position.set(-0.220, 0.222, -1.294);
-  cautionHousing.rotation.order = 'YXZ';
-  cautionHousing.rotation.y = 0.34;
-  cautionHousing.rotation.x = -0.18;
-  ['#10b981', '#38bdf8', '#fbbf24', '#38bdf8'].forEach((cHex, ci) => {
-    const tile = new THREE.Mesh(
-      new THREE.BoxGeometry(0.015, 0.008, 0.003),
-      new THREE.MeshBasicMaterial({ color: cHex })
+    // Leather padded armrest / elbow sill
+    const armrest = new THREE.Mesh(
+      new THREE.BoxGeometry(0.065, 0.024, 0.85),
+      bolsterLeatherMat
     );
-    tile.position.set(-0.028 + ci * 0.019, 0, 0.007);
-    cautionHousing.add(tile);
-  });
-  interiorGroup.add(cautionHousing);
+    armrest.position.set(side * 0.355, 0.265, -0.98);
+    interiorGroup.add(armrest);
 
-  // Articulated Footwell Yaw/Brake Rudder Pedals (animated with yawInput!)
+    // Titanium structural sill rail
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(0.012, 0.012, 0.85),
+      titaniumTrimMat
+    );
+    rail.position.set(side * 0.315, 0.265, -0.98);
+    interiorGroup.add(rail);
+  });
+
+  // Articulated Footwell Yaw/Brake Rudder Pedals
   const createRudderPedal = (side: -1 | 1) => {
-    const pedalGroup = new THREE.Group();
-    pedalGroup.position.set(side * 0.095, 0.045, -1.49);
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.006, 0.068, 8), titaniumTrimMat);
-    arm.position.set(0, 0.02, -0.02);
-    arm.rotation.x = 0.38;
-    pedalGroup.add(arm);
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.044, 0.012), anodizedBezelMat);
-    pad.rotation.x = -0.45;
-    pedalGroup.add(pad);
-    for (let t = -1; t <= 1; t++) {
-      const tread = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.004, 0.004), gunmetalMat);
-      tread.position.set(0, t * 0.012, 0.007);
-      pad.add(tread);
-    }
-    interiorGroup.add(pedalGroup);
-    return pedalGroup;
+    const pedal = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.035, 0.010), anodizedBezelMat);
+    pedal.position.set(side * 0.09, 0.035, -1.48);
+    pedal.rotation.x = -0.35;
+    interiorGroup.add(pedal);
+    return pedal;
   };
   const leftRudderPedal = createRudderPedal(-1);
   const rightRudderPedal = createRudderPedal(1);
 
-  // Armored Sculpted Pilot Seat Bucket with Ergonomic Ribbed Bolsters (behind eye z = -0.89)
-  const seatBucketGeo = createLoftedGeometry([
-    { z: -0.92, ring: [[-0.14, 0.06], [0.14, 0.06], [0.15, 0.0], [-0.15, 0.0]] },
-    { z: -0.72, ring: [[-0.16, 0.07], [0.16, 0.07], [0.17, 0.0], [-0.17, 0.0]] },
-  ], 1, 1, true);
-  interiorGroup.add(new THREE.Mesh(seatBucketGeo, armorDarkMat));
-
-  const seatBackCurve = new THREE.Mesh(
-    createLoftedGeometry([
-      { z: -0.73, ring: [[-0.15, 0.07], [0.15, 0.07], [0.17, 0.28], [0.11, 0.44], [-0.11, 0.44], [-0.17, 0.28]] },
-      { z: -0.65, ring: [[-0.16, 0.07], [0.16, 0.07], [0.18, 0.28], [0.12, 0.44], [-0.12, 0.44], [-0.18, 0.28]] },
-    ], 1, 1, true),
-    armorDarkMat
+  // 2. Forward Main Dashboard & Glare-Shield Brow
+  const dashBase = new THREE.Mesh(
+    new THREE.BoxGeometry(0.66, 0.14, 0.26),
+    cockpitConsoleMat
   );
-  interiorGroup.add(seatBackCurve);
+  dashBase.position.set(0, 0.09, -1.34);
+  interiorGroup.add(dashBase);
 
-  // Quilted leather seat cushion + backrest pads (instanced, stitched panel look)
-  const seatCushion = new THREE.Mesh(
-    createLoftedGeometry([
-      { z: -0.915, ring: [[-0.115, 0.082], [0.115, 0.082], [0.125, 0.06], [-0.125, 0.06]] },
-      { z: -0.735, ring: [[-0.125, 0.09], [0.125, 0.09], [0.135, 0.068], [-0.135, 0.068]] },
-    ], 1, 1, true),
-    bolsterLeatherMat
+  // Glare-shield brow (clean visor cleanly above MFDs, well below pilot eye line!)
+  const browHood = new THREE.Mesh(
+    new THREE.BoxGeometry(0.66, 0.022, 0.20),
+    cockpitInteriorTrimMat
   );
-  interiorGroup.add(seatCushion);
+  browHood.position.set(0, 0.21, -1.32);
+  browHood.rotation.x = 0.06;
+  interiorGroup.add(browHood);
 
-  const quiltPadGeo = new THREE.BoxGeometry(0.062, 0.05, 0.014);
-  const quiltPads = new THREE.InstancedMesh(quiltPadGeo, bolsterLeatherMat, 12);
-  const quiltMatrix = new THREE.Matrix4();
-  const quiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.06, 0, 0));
-  let quiltIdx = 0;
-  for (let row = 0; row < 4; row++) {
-    for (let col = -1; col <= 1; col++) {
-      quiltMatrix.compose(
-        new THREE.Vector3(col * 0.068, 0.13 + row * 0.066, -0.738),
-        quiltQuat,
-        new THREE.Vector3(1, 1, 1)
-      );
-      quiltPads.setMatrixAt(quiltIdx++, quiltMatrix);
-    }
-  }
-  quiltPads.instanceMatrix.needsUpdate = true;
-  interiorGroup.add(quiltPads);
-
-  // Contoured side bolsters wrapping the backrest
-  [-1, 1].forEach((side) => {
-    const bolster = new THREE.Mesh(
-      createLoftedGeometry([
-        { z: -0.76, ring: [[side * 0.13, 0.09], [side * 0.175, 0.09], [side * 0.19, 0.30], [side * 0.15, 0.36], [side * 0.125, 0.30]] },
-        { z: -0.70, ring: [[side * 0.135, 0.09], [side * 0.18, 0.09], [side * 0.195, 0.30], [side * 0.155, 0.36], [side * 0.13, 0.30]] },
-      ], 1, 1, true),
-      bolsterLeatherMat
-    );
-    interiorGroup.add(bolster);
-
-    // Seat-pan side rails with titanium ejection guide tracks
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.36, 0.022), titaniumTrimMat);
-    rail.position.set(side * 0.172, 0.25, -0.655);
-    rail.rotation.x = 0.04;
-    interiorGroup.add(rail);
-  });
-
-  // Winged headrest with integrated comms speakers
-  const headrest = new THREE.Mesh(
-    createLoftedGeometry([
-      { z: -0.715, ring: [[-0.09, 0.45], [0.09, 0.45], [0.105, 0.52], [0.07, 0.555], [-0.07, 0.555], [-0.105, 0.52]] },
-      { z: -0.655, ring: [[-0.095, 0.45], [0.095, 0.45], [0.11, 0.52], [0.075, 0.56], [-0.075, 0.56], [-0.11, 0.52]] },
-    ], 1, 1, true),
-    bolsterLeatherMat
-  );
-  interiorGroup.add(headrest);
-  [-1, 1].forEach((side) => {
-    const speaker = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.006, 14), anodizedBezelMat);
-    speaker.rotation.z = Math.PI / 2;
-    speaker.position.set(side * 0.108, 0.505, -0.69);
-    interiorGroup.add(speaker);
-  });
-
-  // Yellow/black striped ejection handle loop on seat-pan front + lap belt & rotary buckle
-  const ejectHandle = new THREE.Mesh(
-    new THREE.TorusGeometry(0.03, 0.0055, 8, 18, Math.PI),
-    hazardStripeMat
-  );
-  ejectHandle.position.set(0, 0.066, -0.925);
-  ejectHandle.rotation.x = -0.35;
-  interiorGroup.add(ejectHandle);
-
-  const lapBeltCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.13, 0.095, -0.80),
-    new THREE.Vector3(-0.06, 0.098, -0.86),
-    new THREE.Vector3(0, 0.099, -0.875),
-    new THREE.Vector3(0.06, 0.098, -0.86),
-    new THREE.Vector3(0.13, 0.095, -0.80),
-  ]);
-  const lapBelt = new THREE.Mesh(new THREE.TubeGeometry(lapBeltCurve, 18, 0.0045, 4, false), harnessStrapMat);
-  lapBelt.scale.set(1, 0.45, 1);
-  lapBelt.position.y = 0.054;
-  interiorGroup.add(lapBelt);
-
-  const buckle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.006, 16), titaniumTrimMat);
-  buckle.position.set(0, 0.1, -0.876);
-  interiorGroup.add(buckle);
-  const buckleCore = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.007, 0.007, 0.0075, 12),
-    new THREE.MeshBasicMaterial({ color: '#f59e0b' })
-  );
-  buckleCore.position.set(0, 0.1, -0.876);
-  interiorGroup.add(buckleCore);
-
-  // Dual 4-Point Crew Shoulder Harness Straps draping neatly over seat backrest
-  [-1, 1].forEach((side) => {
-    const strapCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.072, 0.43, -0.71),
-      new THREE.Vector3(side * 0.078, 0.30, -0.735),
-      new THREE.Vector3(side * 0.052, 0.16, -0.80),
-      new THREE.Vector3(side * 0.018, 0.105, -0.865),
-    ]);
-    const strapMesh = new THREE.Mesh(new THREE.TubeGeometry(strapCurve, 14, 0.0055, 4, false), harnessStrapMat);
-    strapMesh.scale.set(1.4, 1, 0.5);
-    interiorGroup.add(strapMesh);
-  });
-
-  // Elevated Ergonomic Wraparound Side Consoles & Padded Lateral Sill Coaming
-  [-1, 1].forEach((side) => {
-    const sideConsole = createLoftedGeometry([
-      { z: -1.44, ring: [[side * 0.205, 0.106], [side * 0.345, 0.144], [side * 0.355, 0.015], [side * 0.205, 0.015]] },
-      { z: -0.78, ring: [[side * 0.215, 0.098], [side * 0.365, 0.136], [side * 0.375, 0.015], [side * 0.215, 0.015]] },
-    ], 1, 1, true);
-    interiorGroup.add(new THREE.Mesh(sideConsole, cockpitConsoleMat));
-
-    // Dedicated horizontal rear HOTAS mounting platform on both left/right consoles (zero slope clipping!)
-    const hotasMountPad = new THREE.Mesh(new THREE.BoxGeometry(0.112, 0.018, 0.175), armorDarkMat);
-    hotasMountPad.position.set(side * 0.252, 0.128, -1.038);
-    interiorGroup.add(hotasMountPad);
-
-    // Padded leather outer thigh/elbow bolster sill
-    const sillBolster = createLoftedGeometry([
-      { z: -1.36, ring: [[side * 0.322, 0.158], [side * 0.382, 0.152], [side * 0.382, 0.122], [side * 0.322, 0.132]] },
-      { z: -0.78, ring: [[side * 0.332, 0.148], [side * 0.395, 0.142], [side * 0.395, 0.115], [side * 0.332, 0.125]] },
-    ], 1, 1, true);
-    interiorGroup.add(new THREE.Mesh(sillBolster, bolsterLeatherMat));
-
-    // Lateral quilted cockpit wall liner framing side sill windows cleanly
-    const sideWallLiner = createLoftedGeometry([
-      { z: -1.42, ring: [[side * 0.385, 0.218], [side * 0.425, 0.215], [side * 0.425, 0.145], [side * 0.385, 0.145]] },
-      { z: -0.72, ring: [[side * 0.405, 0.212], [side * 0.445, 0.210], [side * 0.445, 0.138], [side * 0.405, 0.138]] },
-    ], 1, 1, true);
-    interiorGroup.add(new THREE.Mesh(sideWallLiner, cockpitInteriorTrimMat));
-
-    // Brushed titanium console inner edge accent rail
-    const innerTrim = new THREE.Mesh(
-      new THREE.BoxGeometry(0.012, 0.014, 0.62),
-      anodizedBezelMat
-    );
-    innerTrim.position.set(side * 0.205, 0.112, -1.10);
-    interiorGroup.add(innerTrim);
-
-    // Metallic hydraulic/cryo umbilical pipes along footwell flanks
-    const pipeCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.18, 0.01, -1.46),
-      new THREE.Vector3(side * 0.19, 0.04, -1.18),
-      new THREE.Vector3(side * 0.185, 0.02, -0.88),
-    ]);
-    interiorGroup.add(new THREE.Mesh(new THREE.TubeGeometry(pipeCurve, 24, 0.008, 16, false), copperPipeMat));
-  });
-
-  // Sculpted High-Clearance Carbon Glare-Shield Brow (cleanly above MFD bezels — zero Z-fighting!)
-  const cowlGeo = createLoftedGeometry([
-    { z: -1.66, ring: [[-0.25, 0.12], [0, 0.16], [0.25, 0.12], [0.31, 0.06], [-0.31, 0.06]] },
-    { z: -1.42, ring: [[-0.315, 0.238], [-0.14, 0.270], [0, 0.278], [0.14, 0.270], [0.315, 0.238], [0.335, 0.222], [0, 0.262], [-0.335, 0.222]] },
-    { z: -1.305, ring: [[-0.31, 0.234], [-0.14, 0.266], [0, 0.274], [0.14, 0.266], [0.31, 0.234], [0.32, 0.220], [0, 0.260], [-0.32, 0.220]] },
-  ], 1.5, 0.5, true);
-  interiorGroup.add(new THREE.Mesh(cowlGeo, cockpitInteriorTrimMat));
-
-  // Recessed Instrument Backing Bulkhead behind MFDs (z = -1.52..-1.40, zero overlap with bezel faces)
-  const dashBulkheadGeo = createLoftedGeometry([
-    { z: -1.52, ring: [[-0.31, 0.224], [0, 0.256], [0.31, 0.224], [0.29, 0.06], [-0.29, 0.06]] },
-    { z: -1.40, ring: [[-0.30, 0.222], [0, 0.252], [0.30, 0.222], [0.28, 0.062], [-0.28, 0.062]] },
-  ], 1, 1, true);
-  interiorGroup.add(new THREE.Mesh(dashBulkheadGeo, cockpitConsoleMat));
-
-  // Brushed Titanium Glare-Shield Brow Beading + Indirect Cyan Accent Light Strip
-  const browBeadCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.305, 0.230, -1.307),
-    new THREE.Vector3(-0.14, 0.263, -1.307),
-    new THREE.Vector3(0, 0.271, -1.307),
-    new THREE.Vector3(0.14, 0.263, -1.307),
-    new THREE.Vector3(0.305, 0.230, -1.307),
-  ]);
-  interiorGroup.add(
-    new THREE.Mesh(new THREE.TubeGeometry(browBeadCurve, 44, 0.0055, 16, false), titaniumTrimMat)
-  );
-  const browLedStrip = new THREE.Mesh(
-    new THREE.TubeGeometry(browBeadCurve, 44, 0.0024, 12, false),
+  // Indirect cyan LED accent strip under the brow lip
+  const browGlowStrip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.62, 0.004, 0.008),
     new THREE.MeshBasicMaterial({ color: '#38bdf8' })
   );
-  browLedStrip.position.set(0, -0.0075, 0.004);
-  interiorGroup.add(browLedStrip);
+  browGlowStrip.position.set(0, 0.202, -1.22);
+  interiorGroup.add(browGlowStrip);
 
-  // Helper to mount a chamfered 4K CNC Metallic Bezel around any glass MFD screen (zero Z-fighting)
-  const mfdKeyGeo = new THREE.BoxGeometry(0.011, 0.0042, 0.0045);
-  const mfdKeyMat = new THREE.MeshStandardMaterial({
-    color: '#4b5768',
-    roughness: 0.45,
-    metalness: 0.7,
-    emissive: '#0c4a6e',
-    emissiveIntensity: 0.55,
+  // Center Sloped Tactical Pedestal (between knees)
+  const centerPedestal = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.08, 0.30),
+    cockpitConsoleMat
+  );
+  centerPedestal.position.set(0, 0.04, -1.18);
+  centerPedestal.rotation.x = -0.15;
+  interiorGroup.add(centerPedestal);
+
+  // Pedestal status indicators
+  ['#38bdf8', '#10b981', '#fbbf24'].forEach((barHex, idx) => {
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.09, 0.004, 0.012),
+      new THREE.MeshBasicMaterial({ color: barHex })
+    );
+    strip.position.set(0, 0.085 - idx * 0.008, -1.22 + idx * 0.045);
+    strip.rotation.x = -0.15;
+    interiorGroup.add(strip);
   });
-  const mfdPipGeo = new THREE.BoxGeometry(0.004, 0.0025, 0.0025);
-  const mfdPipMat = new THREE.MeshBasicMaterial({ color: '#34d399' });
-  const mfdWellMat = new THREE.MeshStandardMaterial({
-    color: '#060c14',
-    roughness: 0.12,
-    metalness: 0.3,
-  });
-  const mountMfdWithBezel = (
-    screenGeoWidth: number,
-    screenGeoHeight: number,
+
+  // 3. Helper to Mount Bezeled MFD Displays (Zero Z-Fighting)
+  const mountMfdScreen = (
+    w: number,
+    h: number,
     screenMat: THREE.Material,
     pos: THREE.Vector3,
     rotY: number,
     rotX: number
   ) => {
-    const bezelGroup = new THREE.Group();
-    bezelGroup.position.copy(pos);
-    bezelGroup.rotation.order = 'YXZ';
-    bezelGroup.rotation.y = rotY;
-    bezelGroup.rotation.x = rotX;
+    const group = new THREE.Group();
+    group.position.copy(pos);
+    group.rotation.order = 'YXZ';
+    group.rotation.y = rotY;
+    group.rotation.x = rotX;
 
-    // Backing block sits strictly behind screenPlane (-0.022 .. -0.004)
-    const frameOuter = new THREE.Mesh(
-      new THREE.BoxGeometry(screenGeoWidth + 0.022, screenGeoHeight + 0.020, 0.018),
+    // Dark CNC aluminum bezel backplate
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.018, h + 0.016, 0.012),
       anodizedBezelMat
     );
-    frameOuter.position.z = -0.013;
-    bezelGroup.add(frameOuter);
+    frame.position.z = -0.006;
+    group.add(frame);
 
-    // Subtle perimeter bezel rails proud of backing block (framing the glass cleanly without occluding it)
-    const halfW = screenGeoWidth * 0.5 + 0.0058;
-    const halfH = screenGeoHeight * 0.5 + 0.0056;
-    const railH = new THREE.BoxGeometry(screenGeoWidth + 0.022, 0.0085, 0.009);
-    const railV = new THREE.BoxGeometry(0.0085, screenGeoHeight + 0.004, 0.009);
-    const topRail = new THREE.Mesh(railH, titaniumTrimMat);
-    topRail.position.set(0, halfH, 0.001);
-    const botRail = new THREE.Mesh(railH, titaniumTrimMat);
-    botRail.position.set(0, -halfH, 0.001);
-    const leftRail = new THREE.Mesh(railV, titaniumTrimMat);
-    leftRail.position.set(-halfW, 0, 0.001);
-    const rightRail = new THREE.Mesh(railV, titaniumTrimMat);
-    rightRail.position.set(halfW, 0, 0.001);
-    bezelGroup.add(topRail, botRail, leftRail, rightRail);
+    // Titanium frame border rim
+    const rimH = new THREE.BoxGeometry(w + 0.018, 0.004, 0.006);
+    const rimV = new THREE.BoxGeometry(0.004, h + 0.016, 0.006);
+    const topRim = new THREE.Mesh(rimH, titaniumTrimMat);
+    topRim.position.set(0, (h + 0.016) * 0.5 - 0.002, 0.001);
+    const botRim = new THREE.Mesh(rimH, titaniumTrimMat);
+    botRim.position.set(0, -(h + 0.016) * 0.5 + 0.002, 0.001);
+    const leftRim = new THREE.Mesh(rimV, titaniumTrimMat);
+    leftRim.position.set(-(w + 0.018) * 0.5 + 0.002, 0, 0.001);
+    const rightRim = new THREE.Mesh(rimV, titaniumTrimMat);
+    rightRim.position.set((w + 0.018) * 0.5 - 0.002, 0, 0.001);
+    group.add(topRim, botRim, leftRim, rightRim);
 
-    // Recessed matte bezel tray cleanly behind screenPlane
-    const screenWell = new THREE.Mesh(
-      new THREE.PlaneGeometry(screenGeoWidth + 0.002, screenGeoHeight + 0.002),
-      mfdWellMat
+    // Active Screen Plane (cleanly 2.5mm in front of bezel frame — ZERO Z-fighting!)
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(w, h), screenMat);
+    screen.position.z = 0.0025;
+    group.add(screen);
+
+    // Green avionics online status LED pip
+    const led = new THREE.Mesh(
+      new THREE.BoxGeometry(0.004, 0.003, 0.002),
+      new THREE.MeshBasicMaterial({ color: '#34d399' })
     );
-    screenWell.position.z = -0.0015;
-    bezelGroup.add(screenWell);
+    led.position.set(w * 0.5 - 0.004, h * 0.5 + 0.004, 0.003);
+    group.add(led);
 
-    // Actual HiDPI emissive glass screen plane with generous Z clearance
-    const screenPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(screenGeoWidth, screenGeoHeight),
-      screenMat
-    );
-    screenPlane.position.z = 0.0035;
-    bezelGroup.add(screenPlane);
-
-    // Instanced micro soft-keys mounted on the bezel rails
-    const keyPositions: Array<[number, number]> = [];
-    for (let k = -2; k <= 2; k++) {
-      keyPositions.push([k * (screenGeoWidth * 0.19), -halfH]);
-      keyPositions.push([k * (screenGeoWidth * 0.19), halfH]);
-    }
-    for (let k = -1.5; k <= 1.5; k += 1) {
-      keyPositions.push([-halfW, k * (screenGeoHeight * 0.22)]);
-      keyPositions.push([halfW, k * (screenGeoHeight * 0.22)]);
-    }
-    const keyMesh = new THREE.InstancedMesh(mfdKeyGeo, mfdKeyMat, keyPositions.length);
-    const keyMatrix = new THREE.Matrix4();
-    keyPositions.forEach(([kx, ky], idx) => {
-      keyMatrix.makeTranslation(kx, ky, 0.0058);
-      keyMesh.setMatrixAt(idx, keyMatrix);
-    });
-    keyMesh.instanceMatrix.needsUpdate = true;
-    bezelGroup.add(keyMesh);
-
-    const statusPip = new THREE.Mesh(mfdPipGeo, mfdPipMat);
-    statusPip.position.set(halfW - 0.002, halfH + 0.0025, 0.006);
-    bezelGroup.add(statusPip);
-
-    const visor = new THREE.Mesh(
-      new THREE.BoxGeometry(screenGeoWidth + 0.026, 0.0035, 0.026),
-      cockpitConsoleMat
-    );
-    visor.position.set(0, halfH + 0.0085, 0.009);
-    visor.rotation.x = 0.28;
-    bezelGroup.add(visor);
-
-    interiorGroup.add(bezelGroup);
-    return screenPlane;
+    interiorGroup.add(group);
+    return screen;
   };
 
-  // TRIPLE 4K HI-DPI GLASS COCKPIT MFD SCREENS (Center PFD + Left Nav Radar + Right Reactor/Systems)
+  // 4. TRIPLE HIGH-DPI COCKPIT MFD SCREENS (512x340 & 384x300 — Super Sharp & Ultra-Fast!)
   const pfdCanvas = document.createElement('canvas');
-  pfdCanvas.width = 2048;
-  pfdCanvas.height = 1360;
+  pfdCanvas.width = 512;
+  pfdCanvas.height = 340;
   renderPFDCanvas(pfdCanvas, 0, false, '0 km/s', 0, 0, true, 0);
-  const pfdTex = configureCrispTexture(
-    new THREE.CanvasTexture(pfdCanvas),
-    maxAniso,
-    true
-  ) as THREE.CanvasTexture;
-  const pfdMat = new THREE.MeshBasicMaterial({
-    map: pfdTex,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
-  mountMfdWithBezel(
-    0.195,
-    0.124,
+  const pfdTex = configureDynamicCanvasTexture(new THREE.CanvasTexture(pfdCanvas), true);
+  const pfdMat = new THREE.MeshBasicMaterial({ map: pfdTex });
+  mountMfdScreen(
+    0.190,
+    0.126,
     pfdMat,
-    new THREE.Vector3(0, 0.156, -1.340),
+    new THREE.Vector3(0, 0.146, -1.285),
     0,
-    -0.24
+    -0.22
   );
 
   const navCanvas = document.createElement('canvas');
-  navCanvas.width = 1536;
-  navCanvas.height = 1200;
+  navCanvas.width = 384;
+  navCanvas.height = 300;
   renderNavCanvas(navCanvas, 'Terra', '0 km', false, 0);
-  const navTex = configureCrispTexture(
-    new THREE.CanvasTexture(navCanvas),
-    maxAniso,
-    true
-  ) as THREE.CanvasTexture;
-  const navMat = new THREE.MeshBasicMaterial({
-    map: navTex,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
-  mountMfdWithBezel(
+  const navTex = configureDynamicCanvasTexture(new THREE.CanvasTexture(navCanvas), true);
+  const navMat = new THREE.MeshBasicMaterial({ map: navTex });
+  mountMfdScreen(
     0.155,
-    0.112,
+    0.120,
     navMat,
-    new THREE.Vector3(-0.186, 0.152, -1.294),
-    0.36,
-    -0.22
+    new THREE.Vector3(-0.192, 0.142, -1.250),
+    0.35,
+    -0.20
   );
 
   const sysCanvas = document.createElement('canvas');
-  sysCanvas.width = 1536;
-  sysCanvas.height = 1200;
+  sysCanvas.width = 384;
+  sysCanvas.height = 300;
   renderSysCanvas(sysCanvas, 0, 340, true, false);
-  const sysTex = configureCrispTexture(
-    new THREE.CanvasTexture(sysCanvas),
-    maxAniso,
-    true
-  ) as THREE.CanvasTexture;
-  const sysMat = new THREE.MeshBasicMaterial({
-    map: sysTex,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
-  mountMfdWithBezel(
+  const sysTex = configureDynamicCanvasTexture(new THREE.CanvasTexture(sysCanvas), true);
+  const sysMat = new THREE.MeshBasicMaterial({ map: sysTex });
+  mountMfdScreen(
     0.155,
-    0.112,
+    0.120,
     sysMat,
-    new THREE.Vector3(0.186, 0.152, -1.294),
-    -0.36,
-    -0.22
+    new THREE.Vector3(0.192, 0.142, -1.250),
+    -0.35,
+    -0.20
   );
 
-  // Center Tactical Sloped Avionics Pedestal Bridge between Knees
-  const centerPedestal = new THREE.Mesh(
-    createLoftedGeometry([
-      { z: -1.32, ring: [[-0.088, 0.095], [0.088, 0.095], [0.098, 0.0], [-0.098, 0.0]] },
-      { z: -1.04, ring: [[-0.075, 0.078], [0.075, 0.078], [0.085, 0.0], [-0.085, 0.0]] },
-    ], 1, 1, true),
-    cockpitConsoleMat
-  );
-  interiorGroup.add(centerPedestal);
-
-  // Glowing Master Mode Status Strips on Center Pedestal
-  ['#38bdf8', '#10b981', '#fbbf24'].forEach((barHex, idx) => {
-    const strip = new THREE.Mesh(
-      new THREE.BoxGeometry(0.11, 0.005, 0.012),
-      new THREE.MeshBasicMaterial({ color: barHex })
-    );
-    strip.position.set(0, 0.096 - idx * 0.006, -1.25 + idx * 0.055);
-    strip.rotation.x = -0.07;
-    interiorGroup.add(strip);
-  });
-
-  // 3D Translucent Collimated Sapphire Glass HUD Combiner above center brow (4K sharpness!)
+  // 5. 3D Translucent Collimated Sapphire Glass HUD Combiner
   const holoCanvas = document.createElement('canvas');
-  holoCanvas.width = 2048;
-  holoCanvas.height = 1360;
+  holoCanvas.width = 512;
+  holoCanvas.height = 340;
   renderHoloCombiner(holoCanvas, 0, 0, false, 0);
-  const holoTex = configureCrispTexture(
-    new THREE.CanvasTexture(holoCanvas),
-    maxAniso,
-    true
-  ) as THREE.CanvasTexture;
+  const holoTex = configureDynamicCanvasTexture(new THREE.CanvasTexture(holoCanvas), true);
   const holoMat = new THREE.MeshBasicMaterial({
     map: holoTex,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.90,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  const holoCombinerGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.185, 0.112), holoMat);
-  holoCombinerGlass.position.set(0, 0.324, -1.375);
-  holoCombinerGlass.rotation.x = -0.18;
-  holoCombinerGlass.renderOrder = 7;
-  interiorGroup.add(holoCombinerGlass);
 
-  // Collimator Projector Lens Bar & Sculpted Titanium Combiner Stanchions
-  const emitterLens = new THREE.Mesh(
-    new THREE.BoxGeometry(0.11, 0.008, 0.022),
+  const holoGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.170, 0.105), holoMat);
+  holoGlass.position.set(0, 0.285, -1.30);
+  holoGlass.rotation.x = -0.16;
+  holoGlass.renderOrder = 8;
+  interiorGroup.add(holoGlass);
+
+  // Collimator Projector & Dual Titanium Mounting Posts
+  const collimatorLens = new THREE.Mesh(
+    new THREE.BoxGeometry(0.10, 0.008, 0.016),
     new THREE.MeshBasicMaterial({ color: '#0ea5e9' })
   );
-  emitterLens.position.set(0, 0.276, -1.37);
-  interiorGroup.add(emitterLens);
+  collimatorLens.position.set(0, 0.222, -1.30);
+  interiorGroup.add(collimatorLens);
 
-  [-0.086, 0.086].forEach((sx) => {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.007, 0.068, 18), titaniumTrimMat);
-    post.position.set(sx, 0.296, -1.373);
-    post.rotation.x = -0.18;
+  [-0.08, 0.08].forEach((sx) => {
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0035, 0.005, 0.065, 14),
+      titaniumTrimMat
+    );
+    post.position.set(sx, 0.260, -1.30);
+    post.rotation.x = -0.16;
     interiorGroup.add(post);
   });
 
-  // Engraved 4K Anodized Side-Console Faceplates with Backlit Legends & High-Poly Switches
-  const plateW = 0.132;
-  const plateL = 0.242;
-  const plateTilt = 0.27;
-  const switchCollarGeo = new THREE.CylinderGeometry(0.013, 0.015, 0.008, 28);
-  const switchBtnGeo = new THREE.CylinderGeometry(0.0088, 0.0098, 0.01, 28);
-  const miniToggleBaseGeo = new THREE.CylinderGeometry(0.0055, 0.0065, 0.004, 18);
-  const miniToggleBatGeo = new THREE.CylinderGeometry(0.0016, 0.0026, 0.016, 12);
-  miniToggleBatGeo.translate(0, 0.008, 0);
-  const knobGeo = new THREE.CylinderGeometry(0.0085, 0.0095, 0.009, 32);
-  const knobPointerGeo = new THREE.BoxGeometry(0.0022, 0.0015, 0.0105);
-  const miniToggleBatMat = new THREE.MeshStandardMaterial({
-    color: '#d6dbe2',
-    roughness: 0.22,
-    metalness: 0.95,
-  });
-  const knobPointerMat = new THREE.MeshBasicMaterial({ color: '#f1f5f9' });
+  // 6. Left Console: Propulsion, Throttle Quadrant & Clickable Switches
+  const leftConsole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.05, 0.42),
+    cockpitConsoleMat
+  );
+  leftConsole.position.set(-0.255, 0.09, -0.98);
+  leftConsole.rotation.z = -0.22;
+  interiorGroup.add(leftConsole);
 
-  const consoleLayouts = [
-    {
-      side: -1,
-      title: 'SISTEMAS',
-      switches: [
-        { id: 'headlights', label: 'FARÓIS', color: '#fde047' },
-        { id: 'sas', label: 'SAS', color: '#34d399' },
-        { id: 'interior_lights', label: 'CABINE', color: '#38bdf8' },
-      ],
-      toggles: ['O2', 'APU', 'IFF', 'COM', 'ECS'],
-    },
-    {
-      side: 1,
-      title: 'TÁTICO',
-      switches: [
-        { id: 'scanner', label: 'RADAR', color: '#22d3ee' },
-        { id: 'shields', label: 'ESCUDO', color: '#a5b4fc' },
-        { id: 'boost', label: 'DOBRA', color: '#fb7185' },
-      ],
-      toggles: ['NAV', 'TRIM', 'AUX', 'DEF', 'HUD'],
-    },
+  // Console plate & decal
+  const plateW = 0.125;
+  const plateL = 0.230;
+  const leftLabels: ConsolePanelLabel[] = [
+    { text: 'FARÓIS', u: -0.01, z: -0.04, size: 12, color: '#fde047', ring: 0.016 },
+    { text: 'SAS', u: -0.01, z: 0.02, size: 12, color: '#34d399', ring: 0.016 },
+    { text: 'CABINE', u: -0.01, z: 0.08, size: 12, color: '#38bdf8', ring: 0.016 },
+    { text: 'O2', u: 0.035, z: -0.06, size: 10, color: '#cbd5e1' },
+    { text: 'APU', u: 0.035, z: -0.02, size: 10, color: '#cbd5e1' },
+    { text: 'COM', u: 0.035, z: 0.02, size: 10, color: '#cbd5e1' },
+    { text: 'ECS', u: 0.035, z: 0.06, size: 10, color: '#cbd5e1' },
   ];
-  const switchZs = [-0.03, 0.022, 0.074];
-  const toggleZs = [-0.088, -0.048, -0.008, 0.032, 0.072];
-  const knobZs = [-0.072, 0.0, 0.072];
-  const tmpMatrix = new THREE.Matrix4();
-  const tmpQuat = new THREE.Quaternion();
-  const tmpEuler = new THREE.Euler();
-  const unitScale = new THREE.Vector3(1, 1, 1);
+  const leftDecalTex = createConsolePanelTexture(plateW, plateL, leftLabels, 'SISTEMAS', maxAniso);
+  const leftDecal = new THREE.Mesh(
+    new THREE.PlaneGeometry(plateW, plateL),
+    new THREE.MeshStandardMaterial({
+      map: leftDecalTex,
+      emissive: '#ffffff',
+      emissiveMap: leftDecalTex,
+      emissiveIntensity: 0.35,
+      roughness: 0.5,
+      metalness: 0.4,
+    })
+  );
+  leftDecal.rotation.x = -Math.PI / 2;
+  leftDecal.position.set(-0.255, 0.118, -0.98);
+  leftDecal.rotation.z = -0.22;
+  interiorGroup.add(leftDecal);
 
-  consoleLayouts.forEach((layout) => {
-    const { side } = layout;
-    const uOf = (o: number) => o * side;
-    const plate = new THREE.Group();
-    plate.position.set(side * 0.272, 0.142, -1.235);
-    plate.rotation.z = side * plateTilt;
-    interiorGroup.add(plate);
-
-    const slab = new THREE.Mesh(
-      new THREE.BoxGeometry(plateW + 0.006, 0.012, plateL + 0.006),
-      cockpitConsoleMat
-    );
-    plate.add(slab);
-
-    const labels: ConsolePanelLabel[] = [];
-    layout.switches.forEach((sw, i) => {
-      labels.push({ text: '', u: uOf(-0.012), z: switchZs[i], ring: 0.0168, color: sw.color });
-      labels.push({ text: sw.label, u: uOf(-0.012), z: switchZs[i] + 0.0255, size: 12, color: sw.color });
-    });
-    layout.toggles.forEach((t, i) => {
-      labels.push({ text: t, u: uOf(0.037), z: toggleZs[i] + 0.019, size: 10, color: '#cbd5e1' });
-    });
-    knobZs.forEach((kz) => {
-      labels.push({ text: '', u: uOf(-0.047), z: kz, ring: 0.0105, color: '#94a3b8' });
-    });
-
-    const decalTex = createConsolePanelTexture(plateW, plateL, labels, layout.title, maxAniso);
-    const decal = new THREE.Mesh(
-      new THREE.PlaneGeometry(plateW, plateL),
-      new THREE.MeshStandardMaterial({
-        map: decalTex,
-        emissive: '#ffffff',
-        emissiveMap: decalTex,
-        emissiveIntensity: 0.34,
-        roughness: 0.5,
-        metalness: 0.45,
-        polygonOffset: true,
-        polygonOffsetFactor: -3,
-        polygonOffsetUnits: -3,
-      })
-    );
-    decal.rotation.x = -Math.PI / 2;
-    decal.position.y = 0.0085;
-    plate.add(decal);
-
-    // Functional backlit push-switches (raycast clickable, cleanly proud of decal)
-    layout.switches.forEach((sw, i) => {
-      const collar = new THREE.Mesh(switchCollarGeo, anodizedBezelMat);
-      collar.position.set(uOf(-0.012), 0.0125, switchZs[i]);
-      plate.add(collar);
-
-      const btnMesh = new THREE.Mesh(switchBtnGeo, new THREE.MeshBasicMaterial({ color: sw.color }));
-      btnMesh.position.set(uOf(-0.012), 0.0185, switchZs[i]);
-      btnMesh.userData = { kind: 'cockpit_button', action: sw.id };
-      plate.add(btnMesh);
-      clickableCockpitControls.push(btnMesh);
-
-      if (sw.id === 'boost') {
-        [-0.019, 0.019].forEach((gz) => {
-          const guard = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.016, 0.003), crimsonStripeMat);
-          guard.position.set(uOf(-0.012), 0.0165, switchZs[i] + gz);
-          plate.add(guard);
-        });
-      }
-    });
-
-    // Instanced bat-handle mini toggles (alternating ON/OFF throw)
-    const toggleBases = new THREE.InstancedMesh(miniToggleBaseGeo, anodizedBezelMat, toggleZs.length);
-    const toggleBats = new THREE.InstancedMesh(miniToggleBatGeo, miniToggleBatMat, toggleZs.length);
-    toggleZs.forEach((tz, i) => {
-      tmpMatrix.makeTranslation(uOf(0.037), 0.0105, tz);
-      toggleBases.setMatrixAt(i, tmpMatrix);
-      tmpQuat.setFromEuler(tmpEuler.set(i % 2 === 0 ? -0.42 : 0.42, 0, 0));
-      tmpMatrix.compose(new THREE.Vector3(uOf(0.037), 0.0125, tz), tmpQuat, unitScale);
-      toggleBats.setMatrixAt(i, tmpMatrix);
-    });
-    toggleBases.instanceMatrix.needsUpdate = true;
-    toggleBats.instanceMatrix.needsUpdate = true;
-    plate.add(toggleBases, toggleBats);
-
-    // Instanced knurled rotary knobs with white pointer caps
-    const knobs = new THREE.InstancedMesh(knobGeo, gunmetalMat, knobZs.length);
-    const pointers = new THREE.InstancedMesh(knobPointerGeo, knobPointerMat, knobZs.length);
-    knobZs.forEach((kz, i) => {
-      tmpMatrix.makeTranslation(uOf(-0.047), 0.013, kz);
-      knobs.setMatrixAt(i, tmpMatrix);
-      tmpQuat.setFromEuler(tmpEuler.set(0, (i - 1) * 0.9 + side * 0.3, 0));
-      tmpMatrix.compose(new THREE.Vector3(uOf(-0.047), 0.018, kz), tmpQuat, unitScale);
-      pointers.setMatrixAt(i, tmpMatrix);
-    });
-    knobs.instanceMatrix.needsUpdate = true;
-    pointers.instanceMatrix.needsUpdate = true;
-    plate.add(knobs, pointers);
+  // Clickable push switches on Left Console
+  const switchGeo = new THREE.CylinderGeometry(0.009, 0.010, 0.008, 20);
+  const leftSwitches = [
+    { id: 'headlights', color: '#fde047', z: -0.04 },
+    { id: 'sas', color: '#34d399', z: 0.02 },
+    { id: 'interior_lights', color: '#38bdf8', z: 0.08 },
+  ];
+  leftSwitches.forEach((sw) => {
+    const btn = new THREE.Mesh(switchGeo, new THREE.MeshBasicMaterial({ color: sw.color }));
+    btn.position.set(-0.265, 0.126, -0.98 + sw.z);
+    btn.rotation.z = -0.22;
+    btn.userData = { kind: 'cockpit_button', action: sw.id };
+    interiorGroup.add(btn);
+    clickableCockpitControls.push(btn);
   });
 
-  // Sculpted High-Poly HOTAS S-Curved Flight Stick cleanly mounted on right horizontal pad (zero Z-fighting!)
+  // Sliding HOTAS Throttle Quadrant (animated with throttle!)
+  const throttleSlot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.035, 0.006, 0.13),
+    anodizedBezelMat
+  );
+  throttleSlot.position.set(-0.215, 0.116, -0.98);
+  interiorGroup.add(throttleSlot);
+
+  const throttleGroup = new THREE.Group();
+  throttleGroup.position.set(-0.215, 0.120, -0.98);
+
+  const tLever = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.004, 0.05, 12),
+    titaniumTrimMat
+  );
+  tLever.position.set(0, 0.025, 0);
+  throttleGroup.add(tLever);
+
+  const tGrip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.050, 20),
+    gunmetalMat
+  );
+  tGrip.rotation.z = Math.PI / 2;
+  tGrip.position.set(0, 0.050, 0);
+  tGrip.userData = { kind: 'cockpit_button', action: 'throttle_step' };
+  throttleGroup.add(tGrip);
+  clickableCockpitControls.push(tGrip);
+
+  const tBand = new THREE.Mesh(
+    new THREE.BoxGeometry(0.032, 0.004, 0.006),
+    new THREE.MeshBasicMaterial({ color: '#38bdf8' })
+  );
+  tBand.position.set(0, 0.060, -0.008);
+  throttleGroup.add(tBand);
+
+  interiorGroup.add(throttleGroup);
+
+  // 7. Right Console: Tactical HOTAS Stick & Clickable Switches
+  const rightConsole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.05, 0.42),
+    cockpitConsoleMat
+  );
+  rightConsole.position.set(0.255, 0.09, -0.98);
+  rightConsole.rotation.z = 0.22;
+  interiorGroup.add(rightConsole);
+
+  const rightLabels: ConsolePanelLabel[] = [
+    { text: 'RADAR', u: 0.01, z: -0.04, size: 12, color: '#22d3ee', ring: 0.016 },
+    { text: 'ESCUDO', u: 0.01, z: 0.02, size: 12, color: '#a5b4fc', ring: 0.016 },
+    { text: 'DOBRA', u: 0.01, z: 0.08, size: 12, color: '#fb7185', ring: 0.016 },
+    { text: 'NAV', u: -0.035, z: -0.06, size: 10, color: '#cbd5e1' },
+    { text: 'TRIM', u: -0.035, z: -0.02, size: 10, color: '#cbd5e1' },
+    { text: 'AUX', u: -0.035, z: 0.02, size: 10, color: '#cbd5e1' },
+    { text: 'HUD', u: -0.035, z: 0.06, size: 10, color: '#cbd5e1' },
+  ];
+  const rightDecalTex = createConsolePanelTexture(plateW, plateL, rightLabels, 'TÁTICO', maxAniso);
+  const rightDecal = new THREE.Mesh(
+    new THREE.PlaneGeometry(plateW, plateL),
+    new THREE.MeshStandardMaterial({
+      map: rightDecalTex,
+      emissive: '#ffffff',
+      emissiveMap: rightDecalTex,
+      emissiveIntensity: 0.35,
+      roughness: 0.5,
+      metalness: 0.4,
+    })
+  );
+  rightDecal.rotation.x = -Math.PI / 2;
+  rightDecal.position.set(0.255, 0.118, -0.98);
+  rightDecal.rotation.z = 0.22;
+  interiorGroup.add(rightDecal);
+
+  // Clickable push switches on Right Console
+  const rightSwitches = [
+    { id: 'scanner', color: '#22d3ee', z: -0.04 },
+    { id: 'shields', color: '#a5b4fc', z: 0.02 },
+    { id: 'boost', color: '#fb7185', z: 0.08 },
+  ];
+  rightSwitches.forEach((sw) => {
+    const btn = new THREE.Mesh(switchGeo, new THREE.MeshBasicMaterial({ color: sw.color }));
+    btn.position.set(0.265, 0.126, -0.98 + sw.z);
+    btn.rotation.z = 0.22;
+    btn.userData = { kind: 'cockpit_button', action: sw.id };
+    interiorGroup.add(btn);
+    clickableCockpitControls.push(btn);
+  });
+
+  // Ergonomic HOTAS Flight Stick in yokeGroup (animated with pitch/roll/yaw!)
   const yokeGroup = new THREE.Group();
-  yokeGroup.position.set(0.245, 0.145, -1.038);
-  const stickBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.034, 0.026, 28), bolsterLeatherMat);
+  yokeGroup.position.set(0.225, 0.118, -0.98);
+
+  const stickBoot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.026, 0.020, 20),
+    bolsterLeatherMat
+  );
   yokeGroup.add(stickBoot);
 
   const stickCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0, 0.008, 0),
-    new THREE.Vector3(0, 0.048, -0.008),
-    new THREE.Vector3(0, 0.092, 0.008),
-    new THREE.Vector3(0, 0.122, 0.002),
+    new THREE.Vector3(0, 0.005, 0),
+    new THREE.Vector3(0, 0.045, -0.006),
+    new THREE.Vector3(0, 0.085, 0.006),
+    new THREE.Vector3(0, 0.115, 0.002),
   ]);
-  yokeGroup.add(new THREE.Mesh(new THREE.TubeGeometry(stickCurve, 28, 0.0105, 20, false), titaniumTrimMat));
-
-  const gripHead = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.0135, 0.046, 28), gunmetalMat);
-  gripHead.position.set(0, 0.128, 0.002);
-  gripHead.rotation.x = 0.20;
-  yokeGroup.add(gripHead);
-
-  const palmRest = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.020, 0.006, 28), bolsterLeatherMat);
-  palmRest.position.set(0.003, 0.106, 0.007);
-  yokeGroup.add(palmRest);
-
-  const pinkyLever = new THREE.Mesh(new THREE.BoxGeometry(0.0045, 0.022, 0.008), anodizedBezelMat);
-  pinkyLever.position.set(0, 0.118, -0.017);
-  pinkyLever.rotation.x = 0.35;
-  yokeGroup.add(pinkyLever);
-
-  const trimHat = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.0085, 0.0095, 0.007, 24),
-    anodizedBezelMat
+  const stickColumn = new THREE.Mesh(
+    new THREE.TubeGeometry(stickCurve, 20, 0.008, 14, false),
+    titaniumTrimMat
   );
-  trimHat.position.set(0, 0.155, 0.007);
-  yokeGroup.add(trimHat);
-  const castleLed = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.004, 0.004, 0.0035, 24),
-    new THREE.MeshBasicMaterial({ color: '#38bdf8' })
-  );
-  castleLed.position.set(0, 0.1595, 0.007);
-  yokeGroup.add(castleLed);
+  yokeGroup.add(stickColumn);
 
-  const fireCollar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.0065, 0.0072, 0.005, 24),
-    anodizedBezelMat
+  const stickGrip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.014, 0.012, 0.040, 20),
+    gunmetalMat
   );
-  fireCollar.rotation.x = Math.PI / 2;
-  fireCollar.position.set(0, 0.141, -0.016);
-  yokeGroup.add(fireCollar);
+  stickGrip.position.set(0, 0.120, 0.002);
+  stickGrip.rotation.x = 0.20;
+  yokeGroup.add(stickGrip);
 
+  // Red Weapons Fire Trigger Button (clickable to fire lasers!)
   const fireTrigger = new THREE.Mesh(
-    new THREE.SphereGeometry(0.0068, 24, 18),
+    new THREE.SphereGeometry(0.0065, 16, 14),
     new THREE.MeshBasicMaterial({ color: '#ef4444' })
   );
-  fireTrigger.position.set(0, 0.141, -0.022);
+  fireTrigger.position.set(0, 0.132, -0.014);
   fireTrigger.userData = { kind: 'cockpit_button', action: 'fire' };
   yokeGroup.add(fireTrigger);
   clickableCockpitControls.push(fireTrigger);
-  interiorGroup.add(yokeGroup);
 
-  // Twin-Lever Sliding HOTAS Throttle Quadrant mounted cleanly on left horizontal pad
-  const throttleSlideBase = new THREE.Mesh(
-    new THREE.BoxGeometry(0.075, 0.012, 0.125),
+  // Top castle hat & cyan indicator
+  const hatMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.007, 0.008, 0.006, 16),
     anodizedBezelMat
   );
-  throttleSlideBase.position.set(-0.248, 0.144, -1.038);
-  interiorGroup.add(throttleSlideBase);
+  hatMesh.position.set(0, 0.144, 0.006);
+  yokeGroup.add(hatMesh);
 
-  const frictionWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.008, 28), gunmetalMat);
-  frictionWheel.rotation.z = Math.PI / 2;
-  frictionWheel.position.set(-0.205, 0.145, -1.038);
-  interiorGroup.add(frictionWheel);
+  interiorGroup.add(yokeGroup);
 
-  [-1.083, -1.038, -0.993].forEach((dz) => {
-    const detentTick = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.004, 0.005), titaniumTrimMat);
-    detentTick.position.set(-0.278, 0.152, dz);
-    interiorGroup.add(detentTick);
+  // 8. Ergonomic Sci-Fi Pilot Ejection Seat
+  const seatGroup = new THREE.Group();
+  seatGroup.position.set(0, 0.04, -0.78);
+
+  // Seat pan
+  const seatPan = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.04, 0.28), armorDarkMat);
+  seatGroup.add(seatPan);
+
+  // Leather seat cushion
+  const seatCushion = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.024, 0.24), bolsterLeatherMat);
+  seatCushion.position.set(0, 0.030, 0);
+  seatGroup.add(seatCushion);
+
+  // Seat backrest (reclined 12 degrees)
+  const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.38, 0.04), armorDarkMat);
+  seatBack.position.set(0, 0.21, 0.12);
+  seatBack.rotation.x = 0.14;
+  seatGroup.add(seatBack);
+
+  // Leather backrest bolster pad
+  const backBolster = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.34, 0.02), bolsterLeatherMat);
+  backBolster.position.set(0, 0.21, 0.10);
+  backBolster.rotation.x = 0.14;
+  seatGroup.add(backBolster);
+
+  // Ergonomic winged headrest
+  const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.045), bolsterLeatherMat);
+  headrest.position.set(0, 0.44, 0.15);
+  seatGroup.add(headrest);
+
+  // Dual shoulder harness straps
+  [-0.065, 0.065].forEach((hx) => {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.28, 0.006), harnessStrapMat);
+    strap.position.set(hx, 0.20, 0.088);
+    strap.rotation.x = 0.14;
+    seatGroup.add(strap);
   });
 
-  const detentLed = new THREE.Mesh(
-    new THREE.BoxGeometry(0.006, 0.003, 0.105),
-    new THREE.MeshBasicMaterial({ color: '#38bdf8' })
+  // Yellow/black striped emergency ejection handle loop between pilot knees
+  const ejectHandle = new THREE.Mesh(
+    new THREE.TorusGeometry(0.028, 0.005, 8, 16, Math.PI),
+    hazardStripeMat
   );
-  detentLed.position.set(-0.218, 0.1515, -1.038);
-  interiorGroup.add(detentLed);
+  ejectHandle.position.set(0, 0.045, -0.14);
+  ejectHandle.rotation.x = -0.35;
+  seatGroup.add(ejectHandle);
 
-  const throttleGroup = new THREE.Group();
-  throttleGroup.position.set(-0.248, 0.148, -1.038);
-  [-0.014, 0.014].forEach((lx) => {
-    const tLeverCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(lx, 0, 0),
-      new THREE.Vector3(lx, 0.052, -0.008),
-    ]);
-    throttleGroup.add(new THREE.Mesh(new THREE.TubeGeometry(tLeverCurve, 16, 0.0065, 16, false), titaniumTrimMat));
+  interiorGroup.add(seatGroup);
+
+  // 9. Canopy Roll-Cage Structural Arch
+  const archCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.35, 0.18, -1.14),
+    new THREE.Vector3(-0.30, 0.34, -1.13),
+    new THREE.Vector3(-0.16, 0.43, -1.12),
+    new THREE.Vector3(0, 0.45, -1.12),
+    new THREE.Vector3(0.16, 0.43, -1.12),
+    new THREE.Vector3(0.30, 0.34, -1.13),
+    new THREE.Vector3(0.35, 0.18, -1.14),
+  ]);
+  const archMesh = new THREE.Mesh(
+    new THREE.TubeGeometry(archCurve, 28, 0.010, 16, false),
+    titaniumTrimMat
+  );
+  interiorGroup.add(archMesh);
+
+  // Canopy lock status LEDs
+  [-0.14, 0.14].forEach((lx) => {
+    const lockLed = new THREE.Mesh(
+      new THREE.BoxGeometry(0.008, 0.005, 0.005),
+      new THREE.MeshBasicMaterial({ color: '#10b981' })
+    );
+    lockLed.position.set(lx, 0.428, -1.115);
+    interiorGroup.add(lockLed);
   });
-  const tGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.068, 28), gunmetalMat);
-  tGrip.rotation.z = Math.PI / 2;
-  tGrip.position.set(0, 0.056, -0.010);
-  tGrip.userData = { kind: 'cockpit_button', action: 'throttle_step' };
-  throttleGroup.add(tGrip);
-  const tGripBand = new THREE.Mesh(
-    new THREE.BoxGeometry(0.044, 0.005, 0.008),
-    new THREE.MeshBasicMaterial({ color: '#38bdf8' })
-  );
-  tGripBand.position.set(0, 0.068, -0.019);
-  throttleGroup.add(tGripBand);
-  clickableCockpitControls.push(tGrip);
-  interiorGroup.add(throttleGroup);
 
-  // Dual Scale-Invariant Cockpit Interior Illumination (illuminates dashboard, consoles & seated pilot clearly!)
-  const interiorLight = new THREE.PointLight('#e0f2fe', 2.85, 5.2, 0);
-  interiorLight.position.set(0, 0.45, -0.96);
+  // 10. Cabin Lighting (Realistic soft cockpit illumination, zero glare outside!)
+  const interiorLight = new THREE.PointLight('#e0f2fe', 2.0, 4.5, 1);
+  interiorLight.position.set(0, 0.40, -0.92);
   interiorGroup.add(interiorLight);
 
-  const consoleGlowLight = new THREE.PointLight('#38bdf8', 1.35, 4.2, 0);
-  consoleGlowLight.position.set(0, 0.26, -1.22);
+  const consoleGlowLight = new THREE.PointLight('#38bdf8', 1.0, 2.5, 1);
+  consoleGlowLight.position.set(0, 0.18, -1.22);
   interiorGroup.add(consoleGlowLight);
 
-  // Panoramic Pilot Eye Anchor inside fitted cockpit bay (auto-inherits interiorGroup transform)
+  // Panoramic Pilot Eye Camera Anchor (placed right at eye level looking straight forward!)
   const cockpitSeatAnchor = new THREE.Object3D();
-  cockpitSeatAnchor.position.set(0, 0.345, -0.90);
+  cockpitSeatAnchor.position.set(0, 0.34, -0.88);
   interiorGroup.add(cockpitSeatAnchor);
 
-  // Seated 3D Pilot Character Anchor aligned to cockpit seat bucket (facing forward -Z)
+  // Seated 3D Pilot Character Anchor (for astronaut mesh)
   const pilotSeatAnchor = new THREE.Group();
   pilotSeatAnchor.name = 'light-fighter-pilot-seat-anchor';
-  pilotSeatAnchor.position.set(0, 0.038, -0.82);
+  pilotSeatAnchor.position.set(0, 0.038, -0.80);
   interiorGroup.add(pilotSeatAnchor);
 
   // Cinematic 3rd-Person Chase Camera Anchor behind & slightly above Light Fighter
@@ -2560,10 +1978,10 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
       radarPulseRing.visible = false;
     }
 
-    // 7. Refresh 4K Cockpit MFD Screens & Holographic HUD (~15 fps only while inside cockpit)
+    // 7. Refresh Cockpit MFD Screens & Holographic HUD (~10 fps only while inside cockpit)
     if (isCockpitView) {
       mfdTimer += dt;
-      if (mfdTimer > 0.066) {
+      if (mfdTimer > 0.10) {
         mfdTimer = 0;
         renderPFDCanvas(
           pfdCanvas,
