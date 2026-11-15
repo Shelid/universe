@@ -32,6 +32,7 @@ import {
   SpacecraftControlState,
   SpacecraftTelemetry,
 } from '../types/astronomy';
+import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 
 export interface VirtualSteerInput {
@@ -53,6 +54,7 @@ interface SpacecraftCockpitHUDProps {
   activeShipName?: string;
   activeShipAccent?: string;
   onDeployToStation?: () => void;
+  flightControlPrefs?: FlightControlPrefs;
 }
 
 type ShipMenuTab = 'systems' | 'navigation' | 'controls';
@@ -69,6 +71,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   activeShipName = 'CAÇA ESTELAR',
   activeShipAccent = '#38bdf8',
   onDeployToStation,
+  flightControlPrefs = DEFAULT_FLIGHT_CONTROL_PREFS,
 }) => {
   const [isShipMenuOpen, setIsShipMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ShipMenuTab>('systems');
@@ -704,11 +707,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Subir / Descer</span>
-                    <span className="font-mono text-white">↑ Sobe / ↓ Desce</span>
+                    <span className="font-mono text-white">
+                      {flightControlPrefs.invertPitchArrows ? '↓ Sobe / ↑ Desce' : '↑ Sobe / ↓ Desce'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Inclinar / Rolar Asas (360°)</span>
-                    <span className="font-mono text-white">← / →</span>
+                    <span className="font-mono text-white">
+                      {flightControlPrefs.invertRollArrows ? '← Dir. / → Esq.' : '← Esq. / → Dir.'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Andar Dentro da Nave / Sentar</span>

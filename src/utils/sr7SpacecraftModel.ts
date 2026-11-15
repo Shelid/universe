@@ -52,6 +52,8 @@ export interface SR7SpacecraftRefs {
   interiorWalkerAnchor: THREE.Group;
   readonly interiorCollider: ShipInteriorCollider | null;
   modelReadyPromise: Promise<void>;
+  setLandingGearDeployed: (deployed: boolean) => void;
+  getFloorOffsetY: (withGear?: boolean) => number;
   setVariant: (preset: SpacecraftPreset) => void;
   dispose: () => void;
   updateAnimations: (params: {
@@ -292,9 +294,15 @@ export function createSR7Spacecraft3DGroup(options?: {
 
   let modelReadyPromise: Promise<void> = Promise.resolve();
   let interiorCollider: ShipInteriorCollider | null = null;
+  const exteriorHullMaterials: THREE.MeshStandardMaterial[] = [];
   const tailLightMaterials: THREE.MeshStandardMaterial[] = [];
   const neonMaterials: THREE.MeshStandardMaterial[] = [];
   const screenMaterials: THREE.MeshStandardMaterial[] = [];
+  const landingGearMeshes: THREE.Mesh[] = [];
+  let isLandingGearDeployed = false;
+  let floorMinYWithGear = -1.25;
+  let floorMinYRetracted = -1.05;
+  let activeVariantPreset: SpacecraftPreset | null = null;
   let nativeYokeNode: THREE.Object3D | null = null;
   const nativeYokeBaseQuat = new THREE.Quaternion();
 
@@ -424,6 +432,8 @@ export function createSR7Spacecraft3DGroup(options?: {
                         std.name === 'pcKeyboard'
                       ) {
                         screenMaterials.push(std);
+                      } else if (std.name.startsWith('SShip')) {
+                        exteriorHullMaterials.push(std);
                       }
                       std.needsUpdate = true;
                     }
@@ -438,7 +448,8 @@ export function createSR7Spacecraft3DGroup(options?: {
                   if (mesh.material === canopyGlassMat) {
                     mesh.renderOrder = 12;
                   }
-                  // Retract/hide wheeled runway landing gear struts (Cube.010/012/013/019 & freio) during spaceflight
+                  // Retract/hide wheeled runway landing gear struts (Cube.010/012/013/019 & freio) during spaceflight;
+                  // deploy them dynamically when parked on the Hangar landing pad!
                   const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
                   const cName = mesh.name || '';
                   const pName = mesh.parent?.name || '';
@@ -451,11 +462,13 @@ export function createSR7Spacecraft3DGroup(options?: {
                     pName.includes('012') ||
                     pName.includes('013') ||
                     pName.includes('019');
-                  if (
-                    isLandingGearNode ||
-                    mats.some((m) => m && (m.name === 'freio' || m.name === ''))
-                  ) {
+                  const isBrakePad = mats.some((m) => m && m.name === 'freio');
+                  const hasUnnamedEmptyMat = mats.some((m) => m && m.name === '');
+                  if (hasUnnamedEmptyMat) {
                     mesh.visible = false;
+                  } else if (isLandingGearNode || isBrakePad) {
+                    landingGearMeshes.push(mesh);
+                    mesh.visible = isLandingGearDeployed;
                   }
                 }
               });
@@ -599,6 +612,40 @@ export function createSR7Spacecraft3DGroup(options?: {
 
               glbWrapper.add(loadedRoot);
 
+              // Measure exact local vertical bounds in hullGroup coordinates (independent of rootGroup world scale)
+              const measureHullMinY = (showGear: boolean): number => {
+                landingGearMeshes.forEach((m) => {
+                  m.visible = showGear;
+                });
+                let minY = Infinity;
+                const tmpBox = new THREE.Box3();
+                const tmpMat = new THREE.Matrix4();
+                const walkMinY = (obj: THREE.Object3D, parentMat: THREE.Matrix4) => {
+                  obj.updateMatrix();
+                  const localMat = new THREE.Matrix4().multiplyMatrices(parentMat, obj.matrix);
+                  const msh = obj as THREE.Mesh;
+                  if (msh.isMesh && msh.visible && msh.geometry) {
+                    if (!msh.geometry.boundingBox) msh.geometry.computeBoundingBox();
+                    if (msh.geometry.boundingBox) {
+                      tmpBox.copy(msh.geometry.boundingBox).applyMatrix4(localMat);
+                      if (tmpBox.min.y < minY) minY = tmpBox.min.y;
+                    }
+                  }
+                  for (let c = 0; c < obj.children.length; c++) {
+                    walkMinY(obj.children[c], localMat);
+                  }
+                };
+                tmpMat.copy(glbWrapper.matrix);
+                walkMinY(loadedRoot, tmpMat);
+                return Number.isFinite(minY) ? minY : -1.1;
+              };
+              glbWrapper.updateMatrix();
+              floorMinYWithGear = measureHullMinY(true);
+              floorMinYRetracted = measureHullMinY(false);
+              landingGearMeshes.forEach((m) => {
+                m.visible = isLandingGearDeployed;
+              });
+
               // Bake physical 3D collision mesh for cabin walkthrough strictly in hullGroup-local coordinates
               glbWrapper.updateMatrix();
               const hullRelMeshes: Array<{ mesh: THREE.Mesh; matrix: THREE.Matrix4 }> = [];
@@ -715,7 +762,13 @@ export function createSR7Spacecraft3DGroup(options?: {
                   const baseTex = await loadResizedTexture(spec.baseColorUri, true, baseDim);
                   if (baseTex && !disposed) {
                     targetMats.forEach((m) => {
-                      m.color.set('#ffffff');
+                      const tintHex =
+                        m.name.startsWith('SShip') &&
+                        activeVariantPreset &&
+                        activeVariantPreset.id !== 'sr7-vanguard'
+                          ? activeVariantPreset.hullTintHex
+                          : '#ffffff';
+                      m.color.set(tintHex);
                       m.map = baseTex;
                       if (isScreen) {
                         m.emissive.set('#ffffff');
@@ -991,9 +1044,43 @@ export function createSR7Spacecraft3DGroup(options?: {
     }
   };
 
-  // Preserve 100% of the native Spaceship.glb PBR colors & textures (no color tint overrides)
-  const setVariant = (_preset: SpacecraftPreset) => {
-    // Fixed original look per user preference
+  const setLandingGearDeployed = (deployed: boolean) => {
+    isLandingGearDeployed = deployed;
+    landingGearMeshes.forEach((m) => {
+      m.visible = deployed;
+    });
+  };
+
+  const getFloorOffsetY = (withGear = false) =>
+    withGear ? floorMinYWithGear : floorMinYRetracted;
+
+  // Preserve 100% native Spaceship.glb PBR look on Flagship ('sr7-vanguard') while letting alternate
+  // Hangar editions customize exterior hull armor shade, thruster glow, and tactical LED accents.
+  const setVariant = (preset: SpacecraftPreset) => {
+    activeVariantPreset = preset;
+    const isDefault = preset.id === 'sr7-vanguard';
+    const hullTint = isDefault ? '#ffffff' : preset.hullTintHex;
+    exteriorHullMaterials.forEach((mat) => {
+      if (mat.map) {
+        mat.color.set(hullTint);
+        mat.needsUpdate = true;
+      }
+    });
+    const tailHex = isDefault ? '#38bdf8' : preset.plumePrimaryHex;
+    tailLightMaterials.forEach((mat) => {
+      mat.color.set(tailHex);
+      mat.emissive.set(tailHex);
+      mat.needsUpdate = true;
+    });
+    const neonBaseHex = isDefault ? '#22d3ee' : preset.accentHex;
+    const neonGlowHex = isDefault ? '#00f0ff' : preset.emissiveTintHex;
+    neonMaterials.forEach((mat) => {
+      mat.color.set(neonBaseHex);
+      mat.emissive.set(neonGlowHex);
+      mat.needsUpdate = true;
+    });
+    radarPulseRingMat.color.set(preset.accentHex);
+    muzzleFlashMat.color.set(preset.accentHex);
   };
 
   const dispose = () => {
@@ -1043,6 +1130,8 @@ export function createSR7Spacecraft3DGroup(options?: {
       return interiorCollider;
     },
     modelReadyPromise,
+    setLandingGearDeployed,
+    getFloorOffsetY,
     setVariant,
     dispose,
     updateAnimations,

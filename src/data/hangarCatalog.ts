@@ -30,6 +30,54 @@ export const SPACECRAFT_HANGAR_CATALOG: SpacecraftPreset[] = [
       boost: 1.0,
     },
   },
+  {
+    id: 'xr9-phantom',
+    name: 'XR-9 Phantom',
+    codename: 'SPECTRE-09',
+    role: 'Interceptador Orbital de Alta Agilidade',
+    description:
+      'Acabamento furtivo em grafite escuro e neon âmbar com propulsores de resposta rápida para manobras ágeis entre planetas e a Estação Espacial.',
+    accentHex: '#f59e0b',
+    plumePrimaryHex: '#fbbf24',
+    plumeWarpHex: '#fde047',
+    hullTintHex: '#a8b4c4',
+    emissiveTintHex: '#f59e0b',
+    stats: {
+      speed: 99,
+      agility: 99,
+      armor: 80,
+      warp: 95,
+    },
+    flightMultipliers: {
+      speed: 1.24,
+      agility: 1.22,
+      boost: 1.18,
+    },
+  },
+  {
+    id: 'aegis-titan',
+    name: 'Aegis Titan-IV',
+    codename: 'NOVA-04',
+    role: 'Cruzador de Exploração & Dobra Longa',
+    description:
+      'Blindagem em titânio glacial e iluminação esmeralda projetada para estabilidade giroscópica superior e autonomia máxima no Motor de Dobra.',
+    accentHex: '#10b981',
+    plumePrimaryHex: '#34d399',
+    plumeWarpHex: '#2dd4bf',
+    hullTintHex: '#dbeafe',
+    emissiveTintHex: '#10b981',
+    stats: {
+      speed: 88,
+      agility: 84,
+      armor: 100,
+      warp: 100,
+    },
+    flightMultipliers: {
+      speed: 0.94,
+      agility: 0.9,
+      boost: 1.38,
+    },
+  },
 ];
 
 export const CHARACTER_CREW_CATALOG: CharacterPreset[] = [

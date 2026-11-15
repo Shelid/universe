@@ -57,6 +57,8 @@ import {
 import { createSR7Spacecraft3DGroup, SR7SpacecraftRefs } from '../utils/sr7SpacecraftModel';
 import { createAstronautCharacter3D, AstronautCharacterRefs } from '../utils/astronautCharacterModel';
 import { createOrbitalStation3DGroup } from '../utils/orbitalStationModel';
+import { createHangarBay3D, HangarCameraFocus } from '../utils/hangarBayModel';
+import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
 import { propagateSingleSatellite, VERIFIED_SATELLITE_CATALOG } from '../data/satellitesData';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
@@ -111,6 +113,8 @@ interface UniverseCanvasProps {
   selectedCharacterId?: CharacterVariantId;
   stationDeployCommand?: StationDeployCommand;
   lobbyShowcaseActive?: boolean;
+  lobbyFocusTarget?: HangarCameraFocus;
+  flightControlPrefs?: FlightControlPrefs;
   bodySelectSeq?: number;
   hideHud?: boolean;
 }
@@ -282,6 +286,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   selectedCharacterId = 'cmd-artemis',
   stationDeployCommand,
   lobbyShowcaseActive = false,
+  lobbyFocusTarget = 'OVERVIEW',
+  flightControlPrefs = DEFAULT_FLIGHT_CONTROL_PREFS,
   bodySelectSeq = 0,
   hideHud = false,
 }) => {
@@ -339,6 +345,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     selectedCharacterId,
     stationDeployCommand,
     lobbyShowcaseActive,
+    lobbyFocusTarget,
+    flightControlPrefs,
   });
 
   const callbacksRef = useRef({
@@ -387,6 +395,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       selectedCharacterId,
       stationDeployCommand,
       lobbyShowcaseActive,
+      lobbyFocusTarget,
+      flightControlPrefs,
     };
   });
 
@@ -555,6 +565,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     const stopAutoCamera = () => {
       cameraCommandRef.current.activeTransition = false;
+      hangarTransitionActive = false;
       if (
         stateRef.current.spacecraftControl.isActive &&
         stateRef.current.spacecraftControl.cameraView === 'EXTERNAL'
@@ -1450,7 +1461,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let activeNearPlane = 0.00005;
     const gatewayRecordFallback = VERIFIED_SATELLITE_CATALOG[0];
 
+    // PRISTINE PRE-GAME 3D HANGAR BAY ("GALPÃO ESPACIAL" — replaces universe behind MainMenuLobby)
+    const hangarBay = createHangarBay3D();
+    hangarBay.rootGroup.visible = false;
+    scene.add(hangarBay.rootGroup);
+    const _spaceBgColor = new THREE.Color('#010206');
+    const _hangarBgColor = new THREE.Color('#070b12');
+    let hangarTransitionActive = false;
+    const _hangarFocusCamPos = new THREE.Vector3();
+    const _hangarFocusTarget = new THREE.Vector3();
+
     let wasLobbyShowcaseActive = false;
+    let prevLobbyFocusTarget: HangarCameraFocus = stateRef.current.lobbyFocusTarget || 'OVERVIEW';
     let wasEvaActive = false;
     let evaAttachedToShip = true;
     const evaVelocity = new THREE.Vector3();
@@ -1976,6 +1998,182 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const _tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const _projVec = new THREE.Vector3();
 
+    const applyHangarShowcaseFrame = (dtStep: number, timeSec: number, forceSnap: boolean) => {
+      const activeShipPresetLobby = getSpacecraftPreset(stateRef.current.selectedShipId || 'sr7-vanguard');
+      const focusMode: HangarCameraFocus = stateRef.current.lobbyFocusTarget || 'OVERVIEW';
+
+      // Completely conceal ALL universe meshes, skybox stars, orbits & cosmic lights so zero game world leaks behind the Hangar menu
+      starGroup.visible = false;
+      sunPointLight.visible = false;
+      spaceHemisphereLight.visible = false;
+      shipRimLight.visible = false;
+      beltGroup.visible = false;
+      missionsGroup.visible = false;
+      satelliteGroup.visible = false;
+      warpTunnelGroup.visible = false;
+      projectileGroup.visible = false;
+      activeSatelliteOrbitLine.visible = false;
+      ALL_CELESTIAL_BODIES.forEach((b) => {
+        const node = bodyNodes[b.id];
+        if (node) {
+          node.rootGroup.visible = false;
+          node.orbitLine.visible = false;
+        }
+      });
+
+      if (!(scene.background as THREE.Color).equals(_hangarBgColor)) {
+        (scene.background as THREE.Color).copy(_hangarBgColor);
+      }
+
+      hangarBay.rootGroup.visible = true;
+      hangarBay.setAccentColor(activeShipPresetLobby.accentHex);
+      hangarBay.update(timeSec);
+
+      if (Math.abs(camera.fov - 44) > 0.1) {
+        camera.fov = 44;
+        camera.updateProjectionMatrix();
+      }
+
+      // Park selected Spaceship firmly on landing pad with deployed landing gear wheels
+      const hangarShipScale = 1.05;
+      currentShipScale = hangarShipScale;
+      sr7.setLandingGearDeployed(true);
+      sr7.rootGroup.visible = true;
+      sr7.rootGroup.scale.setScalar(hangarShipScale);
+      manualRollAngle = 0;
+      sr7.hullGroup.rotation.z = 0;
+      sr7.interiorGroup.rotation.z = 0;
+      sr7.rootGroup.position.set(
+        hangarBay.shipAnchorPos.x,
+        hangarBay.padTopY - sr7.getFloorOffsetY(true) * hangarShipScale,
+        hangarBay.shipAnchorPos.z
+      );
+      sr7.rootGroup.rotation.set(0, -0.72, 0);
+
+      sr7.updateAnimations({
+        dt: dtStep,
+        clockTime: timeSec,
+        throttle: 0.04,
+        boostActive: false,
+        headlightsOn: true,
+        interiorLightsOn: true,
+        shieldsOn: false,
+        pitchInput: 0,
+        rollInput: 0,
+        yawInput: 0,
+        pitchDeg: 0,
+        rollDeg: 0,
+        radarPulseAgeSec: 99,
+        muzzleFlashAlpha: 0,
+        speedFormatted: 'GALPÃO 01',
+        nearestName: activeShipPresetLobby.name,
+        nearestDist: 'EM MANUTENÇÃO',
+        reactorTempC: 245,
+        sasEnabled: true,
+        autopilotActive: false,
+        isCockpitView: false,
+        shipScale: hangarShipScale,
+        driftAngleDeg: 0,
+      });
+
+      // Position standing Astronaut on the Hangar floor right beside the pad (clear of left sidebar)
+      if (evaAttachedToShip) {
+        scene.add(astronaut.rootGroup);
+        evaAttachedToShip = false;
+      }
+      astronaut.rootGroup.visible = true;
+      astronaut.rootGroup.scale.setScalar(1.0);
+      astronaut.rootGroup.position.set(
+        hangarBay.astronautAnchorPos.x,
+        0.002,
+        hangarBay.astronautAnchorPos.z
+      );
+      astronaut.rootGroup.rotation.set(0, Math.PI + 0.34, 0);
+
+      astronaut.update({
+        dt: dtStep,
+        clockTime: timeSec,
+        mode: 'EVA_IDLE',
+        moveSpeed01: 0,
+        boostActive: false,
+        pitchTilt: 0,
+        rollTilt: 0,
+        visorLightOn: false,
+        worldScale: 1.0,
+      });
+
+      // Frame either Overview (Ship + Astronaut), Close-up Ship, or Close-up Astronaut (offset right for left sidebar)
+      if (focusMode === 'SHIP') {
+        _hangarFocusTarget.set(
+          hangarBay.shipAnchorPos.x - 1.35,
+          1.05,
+          hangarBay.shipAnchorPos.z + 0.15
+        );
+        _hangarFocusCamPos.set(
+          hangarBay.shipAnchorPos.x + 2.85,
+          2.25,
+          hangarBay.shipAnchorPos.z + 6.85
+        );
+      } else if (focusMode === 'CHARACTER') {
+        _hangarFocusTarget.set(
+          hangarBay.astronautAnchorPos.x - 0.72,
+          1.02,
+          hangarBay.astronautAnchorPos.z
+        );
+        _hangarFocusCamPos.set(
+          hangarBay.astronautAnchorPos.x - 0.35,
+          1.45,
+          hangarBay.astronautAnchorPos.z + 3.15
+        );
+      } else {
+        _hangarFocusTarget.set(-1.35, 1.25, 0.25);
+        _hangarFocusCamPos.set(0.35, 2.75, 11.85);
+      }
+
+      if (forceSnap || !wasLobbyShowcaseActive) {
+        wasLobbyShowcaseActive = true;
+        prevLobbyFocusTarget = focusMode;
+        hangarTransitionActive = false;
+        const prevDamping = controls.enableDamping;
+        controls.enableDamping = false;
+        controls.target.copy(_hangarFocusTarget);
+        camera.position.copy(_hangarFocusCamPos);
+        controls.update();
+        controls.enableDamping = prevDamping;
+        hasInitializedTargetPos = true;
+      } else if (focusMode !== prevLobbyFocusTarget) {
+        prevLobbyFocusTarget = focusMode;
+        hangarTransitionActive = true;
+      }
+
+      if (hangarTransitionActive) {
+        const lerpAlpha = 1 - Math.exp(-dtStep * 6.2);
+        controls.target.lerp(_hangarFocusTarget, lerpAlpha);
+        camera.position.lerp(_hangarFocusCamPos, lerpAlpha);
+        if (
+          controls.target.distanceTo(_hangarFocusTarget) < 0.025 &&
+          camera.position.distanceTo(_hangarFocusCamPos) < 0.04
+        ) {
+          hangarTransitionActive = false;
+        }
+      }
+
+      controls.enabled = true;
+      controls.minDistance = 2.1;
+      controls.maxDistance = 13.5;
+      controls.minPolarAngle = 0.28;
+      controls.maxPolarAngle = Math.PI * 0.485;
+      controls.update();
+
+      // Keep camera strictly inside the 30m x 36m x 10.6m Hangar walls & ceiling
+      camera.position.x = THREE.MathUtils.clamp(camera.position.x, -12.6, 12.6);
+      camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0.48, 8.6);
+      camera.position.z = THREE.MathUtils.clamp(camera.position.z, -14.2, 14.8);
+      controls.target.x = THREE.MathUtils.clamp(controls.target.x, -7.5, 7.5);
+      controls.target.y = THREE.MathUtils.clamp(controls.target.y, 0.35, 3.8);
+      controls.target.z = THREE.MathUtils.clamp(controls.target.z, -8.5, 8.5);
+    };
+
     const animate = (now: number) => {
       animationFrameId = requestAnimationFrame(animate);
       const dt = Math.min(0.05, (now - lastTimestamp) / 1000);
@@ -2306,21 +2504,37 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       }
 
-      // Dynamic logarithmic near plane adjustment for sub-meter Cockpit / EVA / Station hull close-ups
+      // Dynamic logarithmic near plane adjustment for sub-meter Cockpit / EVA / Station hull / Hangar Bay
       const wantUltraCloseNear =
         st.spacecraftControl.isActive ||
         st.evaActive ||
         st.lobbyShowcaseActive ||
         (st.selectedBodyId === 'earth' && st.selectedSatelliteId === 'sat-orbital-gateway');
-      const desiredNear = st.spacecraftControl.isActive
-        ? Math.max(0.00000025, currentShipScale * 0.012)
-        : wantUltraCloseNear
-          ? 0.0000018
-          : 0.00005;
+      const desiredNear = st.lobbyShowcaseActive
+        ? 0.08
+        : st.spacecraftControl.isActive
+          ? Math.max(0.00000025, currentShipScale * 0.012)
+          : wantUltraCloseNear
+            ? 0.0000018
+            : 0.00005;
       if (Math.abs(desiredNear - activeNearPlane) > 1e-8) {
         activeNearPlane = desiredNear;
         camera.near = desiredNear;
         camera.updateProjectionMatrix();
+      }
+
+      if (!st.lobbyShowcaseActive) {
+        hangarBay.rootGroup.visible = false;
+        starGroup.visible = true;
+        sunPointLight.visible = true;
+        spaceHemisphereLight.visible = true;
+        projectileGroup.visible = true;
+        if (!(scene.background as THREE.Color).equals(_spaceBgColor)) {
+          (scene.background as THREE.Color).copy(_spaceBgColor);
+        }
+        sr7.setLandingGearDeployed(false);
+        controls.minPolarAngle = 0;
+        controls.maxPolarAngle = Math.PI;
       }
 
       // Maintain parked/flying Spacecraft position in its local orbital reference frame
@@ -2617,149 +2831,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       } else if (st.lobbyShowcaseActive) {
         // ====================================================================
-        // PRE-GAME AAA 3D TITLE LOBBY SHOWCASE (Hero Starfighter + Astronaut)
+        // PRE-GAME ENCLOSED 3D HANGAR BAY ("GALPÃO ESPACIAL" — Zero Game World)
         // ====================================================================
         wasWarpingLastFrame = false;
         wasSpacecraftActive = false;
         wasEvaActive = false;
         prevSpaceParkedValid = false;
-        warpTunnelGroup.visible = false;
         spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
-
-        if (Math.abs(camera.fov - 42) > 0.1) {
-          camera.fov = 42;
-          camera.updateProjectionMatrix();
-        }
-
-        const earthShowPos = bodyWorldPositions['earth'] || _originVec;
-        const earthShowRadius = Math.max(0.00015, getScaledRadius(getCelestialBody('earth'), st.scaleMode));
-        const lobbyScale =
-          THREE.MathUtils.clamp(earthShowRadius * 0.0038, 0.0000028, 0.00175) * 1.15;
-        currentShipScale = lobbyScale;
-
-        const sunlitDir = computeSunlitCameraOffsetDir(earthShowPos, 'earth', _tmpV1);
-        const stagingCenter = _tmpV2.copy(earthShowPos).addScaledVector(sunlitDir, earthShowRadius * 2.15);
-        const toEarth = _tmpV3.copy(earthShowPos).sub(stagingCenter).normalize();
-        const stageRight = _tmpV4.crossVectors(toEarth, _worldUp).normalize();
-        const stageUp = _tmpV5.crossVectors(stageRight, toEarth).normalize();
-
-        // Position Hero Spacecraft banked gracefully in center-right orbital space (showing dorsal hull, wings & canopy)
-        _stationBasisMat.makeBasis(stageRight, stageUp, _tmpV6.copy(toEarth).negate());
-        _tmpQuat1.setFromRotationMatrix(_stationBasisMat);
-        _tmpEuler.set(-0.34, Math.PI * 0.74, 0.24, 'YXZ');
-        const _shipOffsetQ = new THREE.Quaternion().setFromEuler(_tmpEuler);
-
-        const shipLobbyScale = lobbyScale * 0.64;
-        sr7.rootGroup.visible = true;
-        sr7.rootGroup.scale.setScalar(shipLobbyScale);
-        manualRollAngle = 0;
-        sr7.hullGroup.rotation.z = 0;
-        sr7.interiorGroup.rotation.z = 0;
-        sr7.rootGroup.position
-          .copy(stagingCenter)
-          .addScaledVector(stageRight, lobbyScale * 1.65)
-          .addScaledVector(stageUp, lobbyScale * 0.22 + Math.sin(clockTime * 1.1) * lobbyScale * 0.04)
-          .addScaledVector(toEarth, lobbyScale * 1.45);
-        sr7.rootGroup.quaternion.copy(_tmpQuat1).multiply(_shipOffsetQ);
-
-        const activeShipPresetLobby = getSpacecraftPreset(st.selectedShipId || 'sr7-vanguard');
-        sr7.updateAnimations({
-          dt,
-          clockTime,
-          throttle: 0.24,
-          boostActive: false,
-          headlightsOn: false,
-          interiorLightsOn: true,
-          shieldsOn: false,
-          pitchInput: 0,
-          rollInput: 0,
-          yawInput: 0,
-          pitchDeg: 0,
-          rollDeg: 0,
-          radarPulseAgeSec: 99,
-          muzzleFlashAlpha: 0,
-          speedFormatted: 'HANGAR ORBITAL',
-          nearestName: activeShipPresetLobby.name,
-          nearestDist: 'PRONTO',
-          reactorTempC: 310,
-          sasEnabled: true,
-          autopilotActive: false,
-          isCockpitView: false,
-          shipScale: shipLobbyScale,
-          driftAngleDeg: 0,
-        });
-
-        // Position Hero Rigged Astronaut prominently in foreground-left of Starfighter
-        if (evaAttachedToShip) {
-          scene.add(astronaut.rootGroup);
-          evaAttachedToShip = false;
-        }
-        const astroLobbyScale = lobbyScale * 0.85;
-        astronaut.rootGroup.visible = true;
-        astronaut.rootGroup.scale.setScalar(astroLobbyScale);
-        astronaut.rootGroup.position
-          .copy(stagingCenter)
-          .addScaledVector(stageRight, -lobbyScale * 0.75)
-          .addScaledVector(stageUp, -lobbyScale * 0.48 + Math.sin(clockTime * 1.3 + 0.7) * lobbyScale * 0.03)
-          .addScaledVector(toEarth, -lobbyScale * 1.05);
-        _tmpEuler.set(0.02, Math.PI - 0.28 + Math.sin(clockTime * 0.55) * 0.08, 0, 'YXZ');
-        const _astroOffsetQ = new THREE.Quaternion().setFromEuler(_tmpEuler);
-        astronaut.rootGroup.quaternion.copy(_tmpQuat1).multiply(_astroOffsetQ);
-
-        astronaut.update({
-          dt,
-          clockTime,
-          mode: 'EVA_IDLE',
-          moveSpeed01: 0,
-          boostActive: false,
-          pitchTilt: 0,
-          rollTilt: 0,
-          visorLightOn: false,
-          worldScale: lobbyScale,
-        });
-
-        // Hero sunlit rim light across both Starfighter & Astronaut
-        shipRimLight.visible = true;
-        shipRimLight.position
-          .copy(sr7.rootGroup.position)
-          .addScaledVector(stageRight, lobbyScale * 8)
-          .addScaledVector(stageUp, lobbyScale * 10)
-          .addScaledVector(toEarth, -lobbyScale * 9);
-        shipRimLight.target.position.copy(sr7.rootGroup.position);
-        shipRimLight.target.updateMatrixWorld();
-
-        // Orbit Target shifted left so Ship + Astronaut sit unobstructed on center-right
-        const desiredLobbyTarget = _tmpV6
-          .copy(stagingCenter)
-          .addScaledVector(stageRight, -lobbyScale * 0.95)
-          .addScaledVector(stageUp, lobbyScale * 0.05);
-
-        if (!wasLobbyShowcaseActive) {
-          wasLobbyShowcaseActive = true;
-          const prevDamping = controls.enableDamping;
-          controls.enableDamping = false;
-          controls.target.copy(desiredLobbyTarget);
-          camera.position
-            .copy(desiredLobbyTarget)
-            .addScaledVector(stageRight, lobbyScale * 0.35)
-            .addScaledVector(stageUp, lobbyScale * 0.38)
-            .addScaledVector(toEarth, -lobbyScale * 7.4);
-          controls.update();
-          controls.enableDamping = prevDamping;
-          previousTargetWorldPos.copy(earthShowPos);
-          hasInitializedTargetPos = true;
-        } else {
-          // Gently track Earth's motion if time is running while preserving user orbit angle
-          const _earthDelta = _tmpV1.subVectors(earthShowPos, previousTargetWorldPos);
-          camera.position.add(_earthDelta);
-          controls.target.copy(desiredLobbyTarget);
-          previousTargetWorldPos.copy(earthShowPos);
-        }
-
-        controls.enabled = true;
-        controls.minDistance = lobbyScale * 3.4;
-        controls.maxDistance = lobbyScale * 14.5;
-        controls.update();
+        applyHangarShowcaseFrame(dt, clockTime, false);
       } else if (st.spacecraftControl.isActive) {
         wasWarpingLastFrame = false;
         const sc = st.spacecraftControl;
@@ -2824,6 +2903,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           shipYaw = _tmpEuler.y;
           hasExternalCamQuat = true;
           wasSpacecraftActive = true;
+          wasLobbyShowcaseActive = false;
           wasWalkingInside = false;
           wasEvaActive = false;
           prevCameraView = sc.cameraView;
@@ -3071,11 +3151,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitDragSteerY *= dragDecay;
         }
 
-        // Direct vertical pitch on Arrow keys (ArrowUp = nose UP / climb; ArrowDown = nose DOWN / dive)
+        // Configurable vertical pitch & wing roll on Arrow keys (default: ↓ climb / ↑ dive, ← roll left / → roll right)
+        const pitchDir = st.flightControlPrefs?.invertPitchArrows ? -1 : 1;
+        const rollDir = st.flightControlPrefs?.invertRollArrows ? -1 : 1;
         let pitchInput = isWalkingInside
           ? 0
-          : (pressedKeys.has('ArrowUp') ? 1 : 0) -
-            (pressedKeys.has('ArrowDown') ? 1 : 0) +
+          : ((pressedKeys.has('ArrowUp') ? 1 : 0) - (pressedKeys.has('ArrowDown') ? 1 : 0)) *
+              pitchDir +
             (vSteer?.pitch || 0) +
             cockpitSteerSmoothY;
         let yawInput = isWalkingInside
@@ -3086,8 +3168,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             cockpitSteerSmoothX;
         let rollInput = isWalkingInside
           ? 0
-          : (pressedKeys.has('ArrowLeft') ? 1 : 0) -
-            (pressedKeys.has('ArrowRight') ? 1 : 0) +
+          : ((pressedKeys.has('ArrowLeft') ? 1 : 0) - (pressedKeys.has('ArrowRight') ? 1 : 0)) *
+              rollDir +
             (vSteer?.roll || 0);
 
         pitchInput = THREE.MathUtils.clamp(pitchInput, -1.1, 1.1);
@@ -3138,7 +3220,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         const targetAngPitch = pitchInput * 0.40 * agilityMult;
         const targetAngYaw = yawInput * 0.46 * agilityMult;
-        const targetAngRoll = -rollInput * 0.68 * agilityMult;
+        const targetAngRoll = rollInput * 0.68 * agilityMult;
 
         const rotAccel = Math.min(1, dt * 2.6);
         const rotDamp = Math.min(1, dt * (isWalkingInside || sc.sasEnabled ? 3.8 : 0.65));
@@ -3887,6 +3969,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         // ====================================================================
         wasWarpingLastFrame = false;
         wasSpacecraftActive = false;
+        wasLobbyShowcaseActive = false;
         wasWalkingInside = false;
         warpTunnelGroup.visible = false;
         if (Math.abs(camera.fov - 48) > 0.1) {
@@ -4458,7 +4541,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       // ADAPTIVE LOG-DEPTH NEAR PLANE + VIEW-SPACE SHADER LIGHTING SYNC (eliminates float32 outer-planet jitter!)
       const activeCamDist = Math.max(0.0000004, camera.position.distanceTo(controls.target));
       let targetNear = THREE.MathUtils.clamp(activeCamDist * 0.004, 1e-7, 0.02);
-      if (st.spacecraftControl.isActive) {
+      if (st.lobbyShowcaseActive) {
+        targetNear = 0.08;
+      } else if (st.spacecraftControl.isActive) {
         targetNear = st.spacecraftControl.walkingInside
           ? THREE.MathUtils.clamp(currentShipScale * 0.008, 1e-8, 0.0005)
           : st.spacecraftControl.cameraView === 'COCKPIT'
@@ -4855,10 +4940,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       const prevSr7Vis = sr7.rootGroup.visible;
       const prevAstroVis = astronaut.rootGroup.visible;
+      const prevHangarVis = hangarBay.rootGroup.visible;
       const prevBeltVis = beltGroup.visible;
       const prevSatVis = satelliteGroup.visible;
       sr7.rootGroup.visible = true;
       astronaut.rootGroup.visible = true;
+      hangarBay.rootGroup.visible = true;
       sr7.rootGroup.position.copy(initialPos);
       beltGroup.visible = true;
       satelliteGroup.visible = true;
@@ -4867,6 +4954,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       sr7.rootGroup.visible = prevSr7Vis;
       astronaut.rootGroup.visible = prevAstroVis;
+      hangarBay.rootGroup.visible = prevHangarVis;
       beltGroup.visible = prevBeltVis;
       satelliteGroup.visible = prevSatVis;
 
@@ -4895,10 +4983,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           if (isDisposed) return;
           requestAnimationFrame(() => {
             if (isDisposed) return;
+            if (stateRef.current.lobbyShowcaseActive) {
+              applyHangarShowcaseFrame(0.016, 0, true);
+            }
             renderer.render(scene, camera);
             emitBootProgress({
               progress: 100,
-              stage: 'Observatório 100% carregado',
+              stage: 'Hangar 100% carregado',
               detail: 'Abrindo menu espacial...',
               loadedTextures: totalLoadedFinal,
               totalTextures: totalLoadedFinal,
@@ -4947,6 +5038,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       sr7.dispose();
       astronaut.dispose();
       orbitalStation.dispose();
+      hangarBay.dispose();
       controls.dispose();
       spaceAudio.dispose();
 

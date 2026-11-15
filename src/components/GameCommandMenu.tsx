@@ -34,6 +34,7 @@ import {
   SpacecraftVariantId,
 } from '../types/astronomy';
 import { QualityPreference, ResolvedQualityTier } from '../utils/performanceProfile';
+import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
 
 export type GamePlayerMode = 'EXPLORE' | 'SPACECRAFT' | 'EVA';
 export type CommandMenuTab = 'hangar' | 'crew' | 'station' | 'travel' | 'graphics';
@@ -85,6 +86,8 @@ interface GameCommandMenuProps {
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onReturnToLobby?: () => void;
+  flightControlPrefs?: FlightControlPrefs;
+  onChangeFlightControlPrefs?: (prefs: FlightControlPrefs) => void;
 }
 
 const BODY_CATEGORIES: Array<{ id: 'all' | BodyCategory; label: string }> = [
@@ -210,6 +213,8 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
   isFullscreen,
   onToggleFullscreen,
   onReturnToLobby,
+  flightControlPrefs = DEFAULT_FLIGHT_CONTROL_PREFS,
+  onChangeFlightControlPrefs,
 }) => {
   const [activeTab, setActiveTab] = useState<CommandMenuTab>(initialTab || 'hangar');
   const [searchQuery, setSearchQuery] = useState('');
@@ -996,6 +1001,44 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                     onChange={(e) => onChangeAudioVolume(parseInt(e.target.value, 10))}
                     className="w-full accent-sky-400 cursor-pointer"
                   />
+                  {onChangeFlightControlPrefs && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      <button
+                        onClick={() =>
+                          onChangeFlightControlPrefs({
+                            ...flightControlPrefs,
+                            invertPitchArrows: !flightControlPrefs.invertPitchArrows,
+                          })
+                        }
+                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${
+                          flightControlPrefs.invertPitchArrows
+                            ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
+                            : 'bg-white/5 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        {flightControlPrefs.invertPitchArrows
+                          ? '✓ ↓ Sobe / ↑ Desce'
+                          : '↑ Sobe / ↓ Desce'}
+                      </button>
+                      <button
+                        onClick={() =>
+                          onChangeFlightControlPrefs({
+                            ...flightControlPrefs,
+                            invertRollArrows: !flightControlPrefs.invertRollArrows,
+                          })
+                        }
+                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${
+                          flightControlPrefs.invertRollArrows
+                            ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
+                            : 'bg-white/5 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        {flightControlPrefs.invertRollArrows
+                          ? '✓ Inclinação ←/→ Inv.'
+                          : 'Inclinação ←/→ Normal'}
+                      </button>
+                    </div>
+                  )}
                   <div className="bg-slate-950/75 border border-white/5 rounded-xl p-2.5 text-[11px] text-slate-300 space-y-1 font-mono">
                     <div>
                       <span className="text-amber-300">NAVE:</span> W/S Motor · A/D/Setas Manobra · Shift Dobra · V Cabine

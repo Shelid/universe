@@ -55,6 +55,7 @@ import {
   EVAVirtualInput,
 } from './components/EVACharacterHUD';
 import {
+  ALL_CELESTIAL_BODIES,
   getCelestialBody,
   getScaledRadius,
 } from './data/solarSystemData';
@@ -65,8 +66,15 @@ import {
   VERIFIED_SATELLITE_CATALOG,
 } from './data/satellitesData';
 import { StationDeployCommand, UniverseCanvas } from './components/UniverseCanvas';
+import { HangarCameraFocus } from './utils/hangarBayModel';
+import {
+  FlightControlPrefs,
+  loadSavedFlightControlPrefs,
+  saveFlightControlPrefs,
+} from './utils/flightControlPrefs';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LobbyStartDestination, MainMenuLobby } from './components/MainMenuLobby';
+import { UniverseLogo } from './components/UniverseLogo';
 import { ScientificDossierPanel } from './components/ScientificDossierPanel';
 import { EarthSurfaceExplorerModal } from './components/EarthSurfaceExplorerModal';
 import { MissionsExplorerModal } from './components/MissionsExplorerModal';
@@ -101,6 +109,14 @@ export function App() {
   const [isHudHidden, setIsHudHidden] = useState<boolean>(false);
   const [lobbyStartDestination, setLobbyStartDestination] =
     useState<LobbyStartDestination>('EXPLORE');
+  const [lobbyFocusTarget, setLobbyFocusTarget] = useState<HangarCameraFocus>('OVERVIEW');
+  const [flightControlPrefs, setFlightControlPrefs] = useState<FlightControlPrefs>(() =>
+    loadSavedFlightControlPrefs()
+  );
+  const handleChangeFlightControlPrefs = useCallback((next: FlightControlPrefs) => {
+    setFlightControlPrefs(next);
+    saveFlightControlPrefs(next);
+  }, []);
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState<boolean>(false);
   const [commandMenuTab, setCommandMenuTab] = useState<CommandMenuTab>('hangar');
   const [selectedShipId, setSelectedShipId] = useState<SpacecraftVariantId>(() =>
@@ -513,6 +529,7 @@ export function App() {
       walkingInside: false,
     }));
     setWarpState((w) => ({ ...w, isActive: false, stage: 'IDLE' }));
+    setLobbyFocusTarget('OVERVIEW');
     setIsMainMenuOpen(true);
   }, []);
 
@@ -618,10 +635,10 @@ export function App() {
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
       setIsFullscreen(true);
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
       setIsFullscreen(false);
     }
   };
@@ -678,6 +695,8 @@ export function App() {
         selectedCharacterId={selectedCharacterId}
         stationDeployCommand={stationDeployCommand}
         lobbyShowcaseActive={isMainMenuOpen && !warpState.isActive}
+        lobbyFocusTarget={lobbyFocusTarget}
+        flightControlPrefs={flightControlPrefs}
         bodySelectSeq={bodySelectSeq}
         qualityPreference={qualityPreference}
         onResolvedQualityChange={setResolvedQualityTier}
@@ -695,7 +714,7 @@ export function App() {
         />
       )}
 
-      {/* 1C. PRE-GAME HANGAR / ORBITAL LOBBY SHOWCASING 3D SHIP & ASTRONAUT */}
+      {/* 1C. PRE-GAME HANGAR BAY MENU SHOWCASING 3D SHIP, ASTRONAUT & CONFIGURAÇÕES (NO GAME WORLD BEHIND) */}
       {!showLoadingScreen && isMainMenuOpen && (
         <MainMenuLobby
           isOpen={true}
@@ -711,12 +730,30 @@ export function App() {
             setSelectedCharacterId(id);
             saveCharacterVariant(id);
           }}
+          lobbyFocusTarget={lobbyFocusTarget}
+          onChangeLobbyFocusTarget={setLobbyFocusTarget}
           qualityPreference={qualityPreference}
           resolvedQualityTier={resolvedQualityTier}
           onChangeQuality={handleChangeQualityPreference}
           isAudioMuted={isAudioMuted}
           onToggleAudioMuted={toggleAudioMuted}
-          onOpenCommandMenu={() => openMenuOnTab('travel')}
+          audioVolume={audioVolume}
+          onChangeAudioVolume={(vol) => {
+            setAudioVolume(vol);
+            spaceAudio.setMasterVolume(vol / 100);
+          }}
+          flightControlPrefs={flightControlPrefs}
+          onChangeFlightControlPrefs={handleChangeFlightControlPrefs}
+          showOrbits={showOrbits}
+          onToggleOrbits={setShowOrbits}
+          showLabels={showLabels}
+          onToggleLabels={setShowLabels}
+          showAsteroidBelt={showAsteroidBelt}
+          onToggleAsteroidBelt={setShowAsteroidBelt}
+          cinematicTravelEnabled={cinematicTravelEnabled}
+          onToggleCinematicTravel={setCinematicTravelEnabled}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
           onStartGame={handleStartFromLobby}
         />
       )}
@@ -726,11 +763,10 @@ export function App() {
         <div className="pointer-events-auto fixed top-3 right-3 z-30 flex items-center gap-1.5">
           <button
             onClick={() => setIsHudHidden((v) => !v)}
-            className={`p-2 rounded-full border backdrop-blur-xl transition-all ${
-              isHudHidden
+            className={`p-2 rounded-full border backdrop-blur-xl transition-all ${isHudHidden
                 ? 'bg-slate-950/40 hover:bg-slate-950/85 border-white/10 text-slate-400 hover:text-white opacity-45 hover:opacity-100'
                 : 'bg-slate-950/70 hover:bg-slate-900 border-white/15 text-slate-300 hover:text-white shadow-lg'
-            }`}
+              }`}
             title={isHudHidden ? 'Mostrar Interface (H)' : 'Ocultar HUD — Tela 100% Limpa (H)'}
           >
             {isHudHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -885,11 +921,10 @@ export function App() {
 
                 <button
                   onClick={() => setIsExploringInterior((v) => !v)}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
-                    isExploringInterior
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${isExploringInterior
                       ? 'bg-amber-500/25 border-amber-400 text-amber-200'
                       : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-200'
-                  }`}
+                    }`}
                 >
                   <Layers className="w-3.5 h-3.5 text-amber-400" />
                   <span>Interior</span>
@@ -909,11 +944,10 @@ export function App() {
               {selectedBodyId === 'saturn' && (
                 <button
                   onClick={() => setSaturnRingDiveMode((v) => !v)}
-                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl border text-xs font-medium transition-all ${
-                    saturnRingDiveMode
+                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl border text-xs font-medium transition-all ${saturnRingDiveMode
                       ? 'bg-amber-500/25 border-amber-400 text-amber-200'
                       : 'bg-white/5 hover:bg-white/10 border-white/15 text-amber-200'
-                  }`}
+                    }`}
                 >
                   <Disc className="w-3.5 h-3.5 text-amber-300" />
                   <span>
@@ -994,6 +1028,7 @@ export function App() {
           activeShipName={activeShipPreset.name}
           activeShipAccent={activeShipPreset.accentHex}
           onDeployToStation={() => handleDeployToStation('SHIP_DOCK')}
+          flightControlPrefs={flightControlPrefs}
         />
       )}
 
@@ -1081,6 +1116,8 @@ export function App() {
         isFullscreen={isFullscreen}
         onToggleFullscreen={toggleFullscreen}
         onReturnToLobby={handleReturnToLobby}
+        flightControlPrefs={flightControlPrefs}
+        onChangeFlightControlPrefs={handleChangeFlightControlPrefs}
       />
 
       {/* 7. LEVEL 4 EARTH SATELLITE SURFACE EXPLORER MODAL */}
