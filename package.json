@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
     "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
-    "preview": "node ./node_modules/vite/bin/vite.js preview"
+    "preview": "node ./node_modules/vite/bin/vite.js preview",
+    "import-model": "node ./scripts/import-large-glb.mjs",
+    "cf:upload-models": "node ./scripts/upload-r2-models.mjs",
+    "cf:deploy": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build && node ./scripts/deploy-cloudflare.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

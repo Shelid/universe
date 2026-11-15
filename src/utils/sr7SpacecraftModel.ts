@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CockpitSeatPosition, SpacecraftPreset } from '../types/astronomy';
+import {
+  fetchCachedAssetResponse,
+  fetchCachedBlob,
+  resolveModelAssetUrl,
+} from './assetCdnCache';
 
 export interface SR7SpacecraftRefs {
   rootGroup: THREE.Group;
@@ -283,8 +288,9 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
 
   if (!isNodeEnv) {
     const loader = new GLTFLoader();
+    const spaceshipBaseDir = `${resolveModelAssetUrl('spaceship').replace(/\/+$/, '')}/`;
     modelReadyPromise = new Promise<void>((resolve) => {
-      fetch('/models/spaceship/spaceship.gltf')
+      fetchCachedAssetResponse(resolveModelAssetUrl('spaceship/spaceship.gltf'))
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
@@ -339,7 +345,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
 
           loader.parse(
             JSON.stringify(geomOnlyGltf),
-            '/models/spaceship/',
+            spaceshipBaseDir,
             (gltf) => {
               if (disposed) {
                 disposeNodeResources(gltf.scene);
@@ -571,8 +577,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                 const existing = textureCache.get(cacheKey);
                 if (existing) return existing;
 
-                const p = fetch(`/models/spaceship/${uri}`)
-                  .then((r) => (r.ok ? r.blob() : null))
+                const p = fetchCachedBlob(resolveModelAssetUrl(`spaceship/${uri}`))
                   .then((blob) => {
                     if (!blob || disposed) return null;
                     return createImageBitmap(blob, {
