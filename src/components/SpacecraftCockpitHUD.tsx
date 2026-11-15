@@ -118,18 +118,18 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between select-none">
-      {/* MINIMAL SHIP PILL BAR: COMPACT CAMERA, EVA, SHIP MENU & EXIT */}
-      <div className="px-3 pt-14 sm:px-4 sm:pt-14 flex items-center justify-between gap-2">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 sm:gap-2 bg-slate-950/80 backdrop-blur-xl border border-white/15 rounded-full px-3 py-1.5 shadow-xl">
+      {/* MINIMAL SHIP PILL BAR: ESSENTIAL CAMERA, CABIN WALK & SHIP MENU */}
+      <div className="px-3 pt-3 sm:px-4 sm:pt-3 pr-28 flex items-center justify-between gap-2">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/72 backdrop-blur-xl border border-white/15 rounded-full px-2.5 py-1 shadow-xl">
           <span
-            className="w-2 h-2 rounded-full animate-pulse"
+            className="w-2 h-2 rounded-full animate-pulse ml-0.5"
             style={{ backgroundColor: activeShipAccent, boxShadow: `0 0 8px ${activeShipAccent}` }}
           />
-          <span className="text-xs font-bold tracking-wider text-white font-mono uppercase">
+          <span className="hidden md:inline text-[11px] font-bold tracking-wider text-white font-mono uppercase">
             {activeShipName}
           </span>
 
-          <div className="h-4 w-px bg-white/15 mx-0.5" />
+          <div className="hidden md:block h-3.5 w-px bg-white/15 mx-0.5" />
 
           <button
             onClick={() =>
@@ -198,7 +198,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   return { ...prev, cockpitSeat: next };
                 })
               }
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-100 text-[11px] font-medium transition-colors"
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-100 text-[11px] font-medium transition-colors"
               title="Alternar Assento dentro da Cabine: Comandante (Esq) / Visão Central / Co-Piloto (Dir) (Tecla B)"
             >
               <span>
@@ -211,93 +211,23 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             </button>
           )}
 
-          <button
-            onClick={() =>
-              onUpdateControl((prev) => ({
-                ...prev,
-                recenterTrigger: (prev.recenterTrigger || 0) + 1,
-              }))
-            }
-            className="flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 text-[11px] transition-colors"
-            title={
-              controlState.cameraView === 'COCKPIT'
-                ? 'Centralizar Visão do Piloto (Tecla C ou Duplo Clique)'
-                : 'Alinhar Câmera Atrás da Nave (Tecla C)'
-            }
-          >
-            <Orbit className="w-3 h-3 text-slate-300" />
-            <span className="hidden sm:inline">Centralizar</span>
-          </button>
-
-          <button
-            onClick={() =>
-              onUpdateControl((prev) => {
-                spaceAudio.playCockpitSwitch(!prev.sasEnabled);
-                return { ...prev, sasEnabled: !prev.sasEnabled };
-              })
-            }
-            className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] font-mono transition-colors ${
-              controlState.sasEnabled
-                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
-                : 'bg-amber-500/20 border-amber-400/45 text-amber-200 hover:bg-amber-500/30'
-            }`}
-            title={
-              controlState.sasEnabled
-                ? 'SAS Ativo — Estabilização Giroscópica (Tecla Z para Deriva Newtoniana Livre)'
-                : 'Deriva Newtoniana Livre — Zero Atrito no Vácuo (Tecla Z para Ativar SAS)'
-            }
-          >
-            <Compass className="w-3 h-3" />
-            <span>{controlState.sasEnabled ? 'SAS' : 'NEWTON'}</span>
-          </button>
-
-          <button
-            onClick={() => setIsShipMenuOpen((open) => !open)}
-            className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
-              isShipMenuOpen
-                ? 'bg-cyan-500/30 border-cyan-300 text-white shadow-[0_0_14px_rgba(34,211,238,0.4)]'
-                : 'bg-white/10 hover:bg-white/15 border-white/20 text-white'
-            }`}
-            title="Abrir Menu Completo da Nave (Telemetria, Radar, Piloto Automático e Sistemas)"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Menu da Nave</span>
-            {controlState.autopilotTargetId && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            )}
-          </button>
-
-          <button
-            onClick={onToggleAudioMuted}
-            className={`p-1.5 rounded-full border transition-colors ${
-              isAudioMuted
-                ? 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
-                : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/35'
-            }`}
-            title={isAudioMuted ? 'Ativar Efeitos Sonoros' : 'Silenciar Áudio'}
-          >
-            {isAudioMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-          </button>
-
-          {onEnterEVA && (
+          {!controlState.walkingInside && (
             <button
-              onClick={onEnterEVA}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/45 text-cyan-100 text-[11px] font-medium transition-colors"
-              title="Sair da Nave em Caminhada Espacial (Astronauta EVA)"
+              onClick={() => setIsShipMenuOpen((open) => !open)}
+              className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
+                isShipMenuOpen
+                  ? 'bg-cyan-500/30 border-cyan-300 text-white shadow-[0_0_14px_rgba(34,211,238,0.4)]'
+                  : 'bg-white/10 hover:bg-white/15 border-white/20 text-white'
+              }`}
+              title="Abrir Menu Completo da Nave (Telemetria, Radar, Piloto Automático e Sistemas)"
             >
-              <User className="w-3.5 h-3.5 text-cyan-300" />
-              <span className="hidden sm:inline">Sair EVA</span>
+              <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-300" />
+              <span>Menu da Nave</span>
+              {controlState.autopilotTargetId && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              )}
             </button>
           )}
-
-          <button
-            onClick={onExitSpacecraft}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-100 text-[11px] font-medium transition-colors"
-            title="Voltar ao Modo Observatório"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Sair</span>
-          </button>
         </div>
 
         {/* Active Autopilot Micro Indicator (Only visible while navigating automatically) */}
@@ -611,10 +541,39 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       setAudioVol(val);
                       spaceAudio.unlock();
                       spaceAudio.setMasterVolume(val / 100);
-                      if (val > 0 && isAudioMuted) onToggleAudioMuted();
+                    if (val > 0 && isAudioMuted) onToggleAudioMuted();
                     }}
                     className="w-full accent-emerald-400 cursor-pointer"
                   />
+                </div>
+
+                {/* Quick Exit / EVA / Station Actions (moved from top bar to keep flight screen clean) */}
+                <div className="bg-slate-900/75 border border-white/10 rounded-xl p-3 space-y-2">
+                  <div className="text-[10px] font-mono text-slate-400">OPERAÇÕES EXTERNAS</div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-medium">
+                    {onEnterEVA && (
+                      <button
+                        onClick={() => {
+                          setIsShipMenuOpen(false);
+                          onEnterEVA();
+                        }}
+                        className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/45 text-cyan-100 transition-colors"
+                      >
+                        <User className="w-3.5 h-3.5 text-cyan-300" />
+                        <span>Sair EVA</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setIsShipMenuOpen(false);
+                        onExitSpacecraft();
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-100 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Modo Explorar</span>
+                    </button>
+                  </div>
                 </div>
               </>
             )}
@@ -744,8 +703,8 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     <span className="font-mono text-white">A / D</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Subir / Descer (Vertical Invertida)</span>
-                    <span className="font-mono text-white">↓ Sobe / ↑ Desce</span>
+                    <span className="text-slate-400">Subir / Descer</span>
+                    <span className="font-mono text-white">↑ Sobe / ↓ Desce</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Inclinar / Rolar Asas (360°)</span>
@@ -802,9 +761,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
             <button
-              {...holdButtonProps('pitch', -1)}
+              {...holdButtonProps('pitch', 1)}
               className="w-8 h-8 rounded-lg bg-white/10 active:bg-sky-500/45 flex items-center justify-center text-white"
-              title="Descer (Seta Cima Invertida)"
+              title="Subir (Seta ↑)"
             >
               <ChevronUp className="w-4 h-4" />
             </button>
@@ -836,9 +795,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
             <div />
             <button
-              {...holdButtonProps('pitch', 1)}
+              {...holdButtonProps('pitch', -1)}
               className="w-8 h-8 rounded-lg bg-white/10 active:bg-sky-500/45 flex items-center justify-center text-white"
-              title="Subir (Seta Baixo Invertida)"
+              title="Descer (Seta ↓)"
             >
               <ChevronDown className="w-4 h-4" />
             </button>

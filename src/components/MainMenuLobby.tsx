@@ -6,6 +6,7 @@ import {
   Play,
   Rocket,
   Satellite,
+  SlidersHorizontal,
   Sparkles,
   User,
   Volume2,
@@ -34,6 +35,7 @@ interface MainMenuLobbyProps {
   onChangeQuality: (pref: QualityPreference) => void;
   isAudioMuted: boolean;
   onToggleAudioMuted: () => void;
+  onOpenCommandMenu?: () => void;
   onStartGame: () => void;
 }
 
@@ -87,6 +89,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
   onChangeQuality,
   isAudioMuted,
   onToggleAudioMuted,
+  onOpenCommandMenu,
   onStartGame,
 }) => {
   if (!isOpen) return null;
@@ -129,16 +132,29 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onToggleAudioMuted}
-            className={`p-2 rounded-xl border transition-all shrink-0 ${isAudioMuted
-              ? 'bg-slate-900/90 border-white/10 text-slate-400 hover:text-white'
-              : 'bg-emerald-500/18 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
-              }`}
-            title={isAudioMuted ? 'Ativar Áudio Espacial' : 'Silenciar Áudio'}
-          >
-            {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onOpenCommandMenu && (
+              <button
+                onClick={onOpenCommandMenu}
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl border border-sky-400/35 bg-sky-500/15 hover:bg-sky-500/30 text-sky-100 text-[11px] font-semibold transition-all"
+                title="Configurar Planetas, Órbitas, Missões e Gráficos antes de iniciar"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-sky-300" />
+                <span>Opções</span>
+              </button>
+            )}
+
+            <button
+              onClick={onToggleAudioMuted}
+              className={`p-2 rounded-xl border transition-all shrink-0 ${isAudioMuted
+                ? 'bg-slate-900/90 border-white/10 text-slate-400 hover:text-white'
+                : 'bg-emerald-500/18 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
+                }`}
+              title={isAudioMuted ? 'Ativar Áudio Espacial' : 'Silenciar Áudio'}
+            >
+              {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
         {/* Interactive Pre-Game Setup Scroll Area */}
@@ -332,7 +348,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
         </div>
 
         <div className="bg-slate-950/65 backdrop-blur-md border border-white/10 rounded-full px-3.5 py-1.5 text-[10px] font-mono text-slate-300">
-          TECLA <span className="text-sky-300 font-bold">M</span> DURANTE O JOGO ABRE O MENU COMPLETO
+          DENTRO DO JOGO: <span className="text-sky-300 font-bold">M</span> ABRE O MENU · <span className="text-emerald-300 font-bold">H</span> OCULTA HUD (TELA LIMPA)
         </div>
       </div>
     </div>

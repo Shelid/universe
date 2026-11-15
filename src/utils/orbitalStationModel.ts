@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { fetchCachedArrayBuffer, resolveModelAssetUrl } from './assetCdnCache';
 
 export interface OrbitalStationRefs {
   rootGroup: THREE.Group;
@@ -130,72 +131,86 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
 
   if (!isNodeEnv) {
     const loader = new GLTFLoader();
+    const stationUrl = resolveModelAssetUrl('orbital-station.glb');
     modelReadyPromise = new Promise<void>((resolve) => {
-      loader.load(
-        '/models/orbital-station.glb',
-        (gltf) => {
+      const onGltfReady = (gltf: { scene: THREE.Group }) => {
+        if (disposed) {
+          disposeNode(gltf.scene);
+          resolve();
+          return;
+        }
+
+        const loadedScene = gltf.scene;
+        loadedScene.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(loadedScene);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        loadedScene.position.sub(center);
+
+        loadedScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.frustumCulled = false;
+            if (mesh.geometry) {
+              mesh.geometry.computeBoundingBox();
+              mesh.geometry.computeBoundingSphere();
+            }
+            raycastMeshes.push(mesh);
+
+            const matList = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            matList.forEach((rawMat) => {
+              const mat = rawMat as THREE.MeshStandardMaterial;
+              if (!mat || !mat.isMeshStandardMaterial) return;
+              const matName = (mat.name || '').toLowerCase();
+              if (matName.includes('glass')) {
+                mat.color.set('#7dd3fc');
+                mat.transparent = true;
+                mat.opacity = 0.42;
+                mat.roughness = 0.08;
+                mat.metalness = 0.15;
+                mat.depthWrite = false;
+                mat.side = THREE.DoubleSide;
+                mat.envMapIntensity = 1.85;
+              } else if (matName.includes('solar')) {
+                mat.metalness = 0.65;
+                mat.roughness = 0.22;
+                mat.envMapIntensity = 1.75;
+              } else if (matName.includes('foil')) {
+                mat.metalness = 0.85;
+                mat.roughness = 0.28;
+                mat.envMapIntensity = 1.7;
+              } else {
+                mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.45);
+              }
+              mat.needsUpdate = true;
+            });
+          }
+        });
+
+        stationMeshGroup.add(loadedScene);
+        resolve();
+      };
+
+      const onGltfError = (err: unknown) => {
+        console.warn('Falha ao carregar /models/orbital-station.glb:', err);
+        resolve();
+      };
+
+      fetchCachedArrayBuffer(stationUrl)
+        .then((buf) => {
           if (disposed) {
-            disposeNode(gltf.scene);
             resolve();
             return;
           }
-
-          const loadedScene = gltf.scene;
-          loadedScene.updateMatrixWorld(true);
-          const box = new THREE.Box3().setFromObject(loadedScene);
-          const center = new THREE.Vector3();
-          box.getCenter(center);
-          loadedScene.position.sub(center);
-
-          loadedScene.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              const mesh = child as THREE.Mesh;
-              mesh.frustumCulled = false;
-              if (mesh.geometry) {
-                mesh.geometry.computeBoundingBox();
-                mesh.geometry.computeBoundingSphere();
-              }
-              raycastMeshes.push(mesh);
-
-              const matList = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-              matList.forEach((rawMat) => {
-                const mat = rawMat as THREE.MeshStandardMaterial;
-                if (!mat || !mat.isMeshStandardMaterial) return;
-                const matName = (mat.name || '').toLowerCase();
-                if (matName.includes('glass')) {
-                  mat.color.set('#7dd3fc');
-                  mat.transparent = true;
-                  mat.opacity = 0.42;
-                  mat.roughness = 0.08;
-                  mat.metalness = 0.15;
-                  mat.depthWrite = false;
-                  mat.side = THREE.DoubleSide;
-                  mat.envMapIntensity = 1.85;
-                } else if (matName.includes('solar')) {
-                  mat.metalness = 0.65;
-                  mat.roughness = 0.22;
-                  mat.envMapIntensity = 1.75;
-                } else if (matName.includes('foil')) {
-                  mat.metalness = 0.85;
-                  mat.roughness = 0.28;
-                  mat.envMapIntensity = 1.7;
-                } else {
-                  mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.45);
-                }
-                mat.needsUpdate = true;
-              });
-            }
-          });
-
-          stationMeshGroup.add(loadedScene);
-          resolve();
-        },
-        undefined,
-        (err) => {
-          console.warn('Falha ao carregar /models/orbital-station.glb:', err);
-          resolve();
-        }
-      );
+          if (buf) {
+            loader.parse(buf, '', onGltfReady, onGltfError);
+          } else {
+            loader.load(stationUrl, onGltfReady, undefined, onGltfError);
+          }
+        })
+        .catch(() => {
+          loader.load(stationUrl, onGltfReady, undefined, onGltfError);
+        });
     });
   }
 

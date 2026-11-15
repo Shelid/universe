@@ -2,16 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   Disc,
+  Eye,
+  EyeOff,
   Globe,
   Layers,
   Menu,
   Radio,
-  Rocket,
   Satellite,
-  SlidersHorizontal,
-  User,
-  Volume2,
-  VolumeX,
   X,
 } from 'lucide-react';
 import { spaceAudio } from './utils/spaceAudioEngine';
@@ -58,7 +55,6 @@ import {
   EVAVirtualInput,
 } from './components/EVACharacterHUD';
 import {
-  ALL_CELESTIAL_BODIES,
   getCelestialBody,
   getScaledRadius,
 } from './data/solarSystemData';
@@ -71,7 +67,6 @@ import {
 import { StationDeployCommand, UniverseCanvas } from './components/UniverseCanvas';
 import { LoadingScreen } from './components/LoadingScreen';
 import { LobbyStartDestination, MainMenuLobby } from './components/MainMenuLobby';
-import { UniverseLogo } from './components/UniverseLogo';
 import { ScientificDossierPanel } from './components/ScientificDossierPanel';
 import { EarthSurfaceExplorerModal } from './components/EarthSurfaceExplorerModal';
 import { MissionsExplorerModal } from './components/MissionsExplorerModal';
@@ -103,6 +98,7 @@ export function App() {
   const [isDossierOpen, setIsDossierOpen] = useState<boolean>(false);
   const [isQuickCardOpen, setIsQuickCardOpen] = useState<boolean>(false);
   const [isMainMenuOpen, setIsMainMenuOpen] = useState<boolean>(true);
+  const [isHudHidden, setIsHudHidden] = useState<boolean>(false);
   const [lobbyStartDestination, setLobbyStartDestination] =
     useState<LobbyStartDestination>('EXPLORE');
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState<boolean>(false);
@@ -363,6 +359,8 @@ export function App() {
       if (key === 'm' || e.key === 'Tab') {
         e.preventDefault();
         setIsCommandMenuOpen((o) => !o);
+      } else if (key === 'h') {
+        setIsHudHidden((v) => !v);
       } else if (e.key === 'Escape') {
         setIsCommandMenuOpen(false);
       } else if (evaActive && !spacecraftControl.isActive) {
@@ -606,7 +604,7 @@ export function App() {
       if (!triggerWarp || !cinematicTravelEnabled || !isDifferentMajorBody) {
         spaceAudio.playSelectBody(targetBody.category);
       }
-      setIsQuickCardOpen(true);
+      setIsQuickCardOpen(false);
       if (targetBody.category === 'galaxy') {
         setZoomLevel('COSMIC_GALAXY');
       } else if (targetBody.category === 'moon') {
@@ -627,14 +625,6 @@ export function App() {
       setIsFullscreen(false);
     }
   };
-
-  const solarMainStrip = useMemo(
-    () =>
-      ALL_CELESTIAL_BODIES.filter(
-        (b) => b.category === 'star' || b.category === 'planet'
-      ),
-    []
-  );
 
   return (
     <div className="relative w-screen h-screen bg-[#02040a] text-slate-100 overflow-hidden select-none font-sans">
@@ -692,6 +682,7 @@ export function App() {
         qualityPreference={qualityPreference}
         onResolvedQualityChange={setResolvedQualityTier}
         onBootProgress={setBootProgress}
+        hideHud={isHudHidden}
       />
 
       {/* 1B. CINEMATIC PRELOAD SPLASH SCREEN WITH LOGO */}
@@ -725,137 +716,41 @@ export function App() {
           onChangeQuality={handleChangeQualityPreference}
           isAudioMuted={isAudioMuted}
           onToggleAudioMuted={toggleAudioMuted}
+          onOpenCommandMenu={() => openMenuOnTab('travel')}
           onStartGame={handleStartFromLobby}
         />
       )}
 
-      {/* 2. AAA GAME TOP HUD BAR */}
+      {/* 2. MINIMAL FLOATING CORNER MENU & CLEAN-SCREEN TOGGLE */}
       {!isMainMenuOpen && (
-      <header className="pointer-events-none fixed top-0 inset-x-0 z-30 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2">
-        {/* Left: Compact Brand + Selected Body Focus + Estação Orbital Quick Deploy */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
+        <div className="pointer-events-auto fixed top-3 right-3 z-30 flex items-center gap-1.5">
           <button
-            onClick={() => openMenuOnTab('travel')}
-            className="flex items-center gap-2 bg-slate-950/82 hover:bg-slate-900/95 backdrop-blur-xl border border-white/15 px-2.5 sm:px-3 py-1.5 rounded-full shadow-lg transition-colors"
-            title="Mapa Estelar e Planetas (M)"
-          >
-            <UniverseLogo
-              size="sm"
-              animated={false}
-              className="w-5 h-5 sm:w-6 sm:h-6 rounded-md shadow-[0_0_12px_rgba(56,189,248,0.35)]"
-            />
-            <span className="hidden lg:inline text-[11px] font-display font-bold tracking-wider text-white">
-              COSMOS
-            </span>
-            <span className="hidden lg:inline text-slate-600">·</span>
-            <span
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{
-                backgroundColor: selectedBody.primaryColorHex,
-                boxShadow: `0 0 8px ${selectedBody.primaryColorHex}`,
-              }}
-            />
-            <span className="text-[11px] font-medium text-sky-200 max-w-[85px] sm:max-w-[130px] truncate">
-              {selectedBody.name}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleDeployToStation('ORBIT_INSPECT')}
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-cyan-500/18 hover:bg-cyan-500/32 border border-cyan-400/45 text-[11px] font-semibold text-cyan-100 backdrop-blur-xl shadow-lg transition-all"
-            title="Ir para a Estação Espacial em Órbita da Terra (Inspecionar, Aproximar ou Caminhar em EVA)"
-          >
-            <Satellite className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Estação Orbital</span>
-          </button>
-
-          <button
-            onClick={() => openMenuOnTab('hangar')}
-            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-950/82 hover:bg-slate-900 border border-white/12 text-[11px] text-slate-200 backdrop-blur-xl shadow-lg transition-all"
-            title="Hangar de Naves e Personagem"
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: activeShipPreset.accentHex }}
-            />
-            <span className="font-mono text-slate-200">{activeShipPreset.name}</span>
-            <span className="text-slate-600">·</span>
-            <span className="font-mono text-cyan-300">{activeCharacterPreset.callsign}</span>
-          </button>
-        </div>
-
-        {/* Center: Clean 3-Mode Player Switcher (Observatório | Nave | Astronauta) */}
-        <div className="pointer-events-auto flex items-center bg-slate-950/85 backdrop-blur-xl border border-white/15 p-1 rounded-full shadow-lg gap-0.5">
-          {[
-            { id: 'EXPLORE' as const, label: 'Explorar', icon: Globe },
-            { id: 'SPACECRAFT' as const, label: 'Nave', icon: Rocket },
-            { id: 'EVA' as const, label: 'Astronauta', icon: User },
-          ].map((m) => {
-            const Icon = m.icon;
-            const active = playerMode === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => switchPlayerMode(m.id)}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
-                  active
-                    ? m.id === 'SPACECRAFT'
-                      ? 'bg-amber-500 text-slate-950 shadow-[0_0_14px_rgba(245,158,11,0.45)]'
-                      : m.id === 'EVA'
-                        ? 'bg-cyan-400 text-slate-950 shadow-[0_0_14px_rgba(34,211,238,0.45)]'
-                        : 'bg-sky-500 text-slate-950 shadow-[0_0_14px_rgba(56,189,248,0.4)]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
-                <span className={active ? 'inline' : 'hidden sm:inline'}>{m.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right: Quality 4K Badge + Audio Mute + Hangar/Game Menu */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
-          <button
-            onClick={() => openMenuOnTab('graphics')}
-            className="hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/28 border border-emerald-400/40 text-[10px] font-mono font-bold text-emerald-200 backdrop-blur-xl transition-all"
-            title="Configurar Qualidade Gráfica 4K"
-          >
-            <span>
-              {resolvedQualityTier === 'high'
-                ? '4K ALTA'
-                : resolvedQualityTier === 'medium'
-                  ? 'MÉDIA'
-                  : 'LEVE'}
-            </span>
-          </button>
-
-          <button
-            onClick={toggleAudioMuted}
-            className={`p-2 rounded-full border backdrop-blur-xl shadow-lg transition-all ${
-              isAudioMuted
-                ? 'bg-slate-950/78 border-white/12 text-slate-400 hover:text-white'
-                : 'bg-emerald-500/18 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
+            onClick={() => setIsHudHidden((v) => !v)}
+            className={`p-2 rounded-full border backdrop-blur-xl transition-all ${
+              isHudHidden
+                ? 'bg-slate-950/40 hover:bg-slate-950/85 border-white/10 text-slate-400 hover:text-white opacity-45 hover:opacity-100'
+                : 'bg-slate-950/70 hover:bg-slate-900 border-white/15 text-slate-300 hover:text-white shadow-lg'
             }`}
-            title={isAudioMuted ? 'Ativar Áudio' : 'Silenciar Áudio'}
+            title={isHudHidden ? 'Mostrar Interface (H)' : 'Ocultar HUD — Tela 100% Limpa (H)'}
           >
-            {isAudioMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+            {isHudHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           </button>
 
-          <button
-            onClick={() => openMenuOnTab('hangar')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/50 text-xs font-semibold text-white backdrop-blur-xl shadow-[0_0_16px_rgba(56,189,248,0.22)] transition-all"
-            title="Abrir Menu de Jogo, Hangar & Personagens (M)"
-          >
-            <Menu className="w-3.5 h-3.5 text-sky-300" />
-            <span>Menu</span>
-          </button>
+          {!isHudHidden && (
+            <button
+              onClick={() => openMenuOnTab('hangar')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/75 hover:bg-slate-900 border border-sky-400/40 text-xs font-semibold text-white backdrop-blur-xl shadow-lg transition-all"
+              title="Abrir Menu de Jogo, Modos, Hangar & Planetas (M)"
+            >
+              <Menu className="w-3.5 h-3.5 text-sky-300" />
+              <span>Menu</span>
+            </button>
+          )}
         </div>
-      </header>
       )}
 
-      {/* 3. SLEEK FLOATING BODY SUMMARY (Explorer Mode Only, Collapsed by Default) */}
-      {!isMainMenuOpen && !isDossierOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
+      {/* 3. SLEEK FLOATING BODY / SATELLITE SUMMARY (Shown ONLY when explicitly selected) */}
+      {!isMainMenuOpen && !isHudHidden && !isDossierOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
         <div className="pointer-events-none fixed left-3 right-3 sm:left-auto sm:right-4 top-14 z-20 flex flex-col items-end gap-2">
           {/* Selected Satellite Quick Card */}
           {selectedBodyId === 'earth' && currentSelectedSatellite && (
@@ -915,7 +810,7 @@ export function App() {
             </div>
           )}
 
-          {isQuickCardOpen ? (
+          {isQuickCardOpen && (
             <div className="pointer-events-auto w-full sm:w-80 max-w-sm bg-slate-950/85 backdrop-blur-2xl border border-white/15 rounded-2xl p-3.5 shadow-2xl space-y-2.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -1037,14 +932,6 @@ export function App() {
                 </button>
               )}
             </div>
-          ) : (
-            <button
-              onClick={() => setIsQuickCardOpen(true)}
-              className="pointer-events-auto flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/75 hover:bg-slate-900 border border-white/12 text-[11px] font-medium text-slate-200 shadow-lg backdrop-blur-xl transition-all"
-            >
-              <BookOpen className="w-3 h-3 text-sky-400" />
-              <span>Dados de {selectedBody.name}</span>
-            </button>
           )}
         </div>
       )}
@@ -1090,58 +977,11 @@ export function App() {
         </div>
       </div>
 
-      {/* 5. MINIMALIST BOTTOM PLANETARY QUICK-STRIP (Explorer Mode Only) */}
-      {!isMainMenuOpen && !warpState.isActive && playerMode === 'EXPLORE' && (
-        <footer className="pointer-events-none fixed bottom-3 inset-x-3 z-20 flex items-center justify-center">
-          <div className="pointer-events-auto flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 px-2 py-1 rounded-full shadow-xl overflow-x-auto max-w-full">
-            {solarMainStrip.map((body) => {
-              const isSelected =
-                selectedBodyId === body.id || selectedBody.parentId === body.id;
-              return (
-                <button
-                  key={body.id}
-                  onClick={() => handleSelectBody(body.id, true)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all shrink-0 ${
-                    isSelected
-                      ? 'bg-sky-500/25 border border-sky-400/70 text-white'
-                      : 'text-slate-300 hover:bg-white/10 hover:text-white border border-transparent'
-                  }`}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: body.primaryColorHex }}
-                  />
-                  <span>{body.name}</span>
-                </button>
-              );
-            })}
-
-            <button
-              onClick={() => openMenuOnTab('station')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/18 hover:bg-cyan-500/32 border border-cyan-400/45 text-[11px] text-cyan-200 font-semibold shrink-0 ml-1"
-              title="Estação Espacial em Órbita da Terra"
-            >
-              <Satellite className="w-3 h-3 text-cyan-300" />
-              <span className="hidden sm:inline">Estação Orbital</span>
-            </button>
-
-            <button
-              onClick={() => openMenuOnTab('hangar')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 hover:bg-sky-500/20 border border-white/10 text-[11px] text-sky-300 font-medium shrink-0"
-              title="Abrir Menu, Hangar de Naves e Personagens"
-            >
-              <SlidersHorizontal className="w-3 h-3" />
-              <span className="hidden sm:inline">Hangar</span>
-            </button>
-          </div>
-        </footer>
-      )}
-
       {/* 6. CINEMATIC WARP SPACE TRAVEL HUD */}
       <WarpOverlayHUD warpState={warpState} onUpdateWarpState={setWarpState} />
 
       {/* 6B. LIGHT FIGHTER 3D COCKPIT & FLIGHT CONTROL HUD */}
-      {!isMainMenuOpen && spacecraftControl.isActive && (
+      {!isMainMenuOpen && !isHudHidden && spacecraftControl.isActive && (
         <SpacecraftCockpitHUD
           controlState={spacecraftControl}
           telemetry={spacecraftTelemetry}
@@ -1158,7 +998,7 @@ export function App() {
       )}
 
       {/* 6C. RIGGED ASTRONAUT EVA SPACEWALK HUD */}
-      {!isMainMenuOpen && playerMode === 'EVA' && (
+      {!isMainMenuOpen && !isHudHidden && playerMode === 'EVA' && (
         <EVACharacterHUD
           visorLightOn={evaVisorLightOn}
           onToggleVisorLight={() => {

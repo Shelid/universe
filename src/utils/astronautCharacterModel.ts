@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CharacterPreset } from '../types/astronomy';
+import { fetchCachedArrayBuffer, resolveModelAssetUrl } from './assetCdnCache';
 
 export type AstronautActionMode = 'SEATED' | 'EVA_IDLE' | 'EVA_WALK' | 'EVA_RUN' | 'EVA_JETPACK';
 
@@ -261,85 +262,95 @@ export function createAstronautCharacter3D(): AstronautCharacterRefs {
 
   if (!isNodeEnv) {
     const loader = new GLTFLoader();
+    const astronautUrl = resolveModelAssetUrl('astronaut.glb');
     modelReadyPromise = new Promise<void>((resolve) => {
-      loader.load(
-        '/models/astronaut.glb',
-        (gltf) => {
+      const onGltfReady = (gltf: { scene: THREE.Group; animations?: THREE.AnimationClip[] }) => {
+        if (disposed) {
+          disposeObjectResources(gltf.scene);
+          resolve();
+          return;
+        }
+
+        loadedScene = gltf.scene;
+        loadedScene.updateMatrixWorld(true);
+
+        loadedScene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            mesh.frustumCulled = false;
+            const mat = mesh.material as THREE.MeshStandardMaterial;
+            if (mat && mat.isMeshStandardMaterial) {
+              mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.35);
+              if (!suitMaterials.includes(mat)) {
+                suitMaterials.push(mat);
+              }
+              mat.needsUpdate = true;
+            }
+          }
+          if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
+            enableMeshRelativeSkinning(child as THREE.SkinnedMesh);
+          }
+          if ((child as THREE.Bone).isBone) {
+            allBoneRestStates.push({
+              bone: child,
+              pos: child.position.clone(),
+              quat: child.quaternion.clone(),
+              scale: child.scale.clone(),
+            });
+          }
+          const name = child.name as TrackedBoneName;
+          if (TRACKED_BONES.includes(name) && child.parent) {
+            child.parent.getWorldQuaternion(tmpChildWorldQ);
+            bones.set(name, {
+              bone: child,
+              restQuat: child.quaternion.clone(),
+              parentInvWorldQuat: tmpChildWorldQ.clone().invert(),
+            });
+          }
+        });
+
+        characterOffsetGroup.add(loadedScene);
+        if (pendingPreset) {
+          setVariant(pendingPreset);
+        }
+
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixer = new THREE.AnimationMixer(loadedScene);
+          const walkClip =
+            gltf.animations.find((a) => a.name.toLowerCase().includes('walk')) ||
+            gltf.animations[0];
+          const runClip =
+            gltf.animations.find((a) => a.name.toLowerCase().includes('run')) ||
+            walkClip;
+
+          if (walkClip) {
+            walkAction = mixer.clipAction(walkClip);
+            walkAction.enabled = true;
+          }
+          if (runClip) {
+            runAction = mixer.clipAction(runClip);
+            runAction.enabled = true;
+          }
+        }
+
+        resolve();
+      };
+
+      fetchCachedArrayBuffer(astronautUrl)
+        .then((buf) => {
           if (disposed) {
-            disposeObjectResources(gltf.scene);
             resolve();
             return;
           }
-
-          loadedScene = gltf.scene;
-          loadedScene.updateMatrixWorld(true);
-
-          loadedScene.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              const mesh = child as THREE.Mesh;
-              mesh.frustumCulled = false;
-              const mat = mesh.material as THREE.MeshStandardMaterial;
-              if (mat && mat.isMeshStandardMaterial) {
-                mat.envMapIntensity = Math.max(mat.envMapIntensity ?? 1, 1.35);
-                if (!suitMaterials.includes(mat)) {
-                  suitMaterials.push(mat);
-                }
-                mat.needsUpdate = true;
-              }
-            }
-            if ((child as THREE.SkinnedMesh).isSkinnedMesh) {
-              enableMeshRelativeSkinning(child as THREE.SkinnedMesh);
-            }
-            if ((child as THREE.Bone).isBone) {
-              allBoneRestStates.push({
-                bone: child,
-                pos: child.position.clone(),
-                quat: child.quaternion.clone(),
-                scale: child.scale.clone(),
-              });
-            }
-            const name = child.name as TrackedBoneName;
-            if (TRACKED_BONES.includes(name) && child.parent) {
-              child.parent.getWorldQuaternion(tmpChildWorldQ);
-              bones.set(name, {
-                bone: child,
-                restQuat: child.quaternion.clone(),
-                parentInvWorldQuat: tmpChildWorldQ.clone().invert(),
-              });
-            }
-          });
-
-          characterOffsetGroup.add(loadedScene);
-          if (pendingPreset) {
-            setVariant(pendingPreset);
+          if (buf) {
+            loader.parse(buf, '', onGltfReady, () => resolve());
+          } else {
+            loader.load(astronautUrl, onGltfReady, undefined, () => resolve());
           }
-
-          if (gltf.animations && gltf.animations.length > 0) {
-            mixer = new THREE.AnimationMixer(loadedScene);
-            const walkClip =
-              gltf.animations.find((a) => a.name.toLowerCase().includes('walk')) ||
-              gltf.animations[0];
-            const runClip =
-              gltf.animations.find((a) => a.name.toLowerCase().includes('run')) ||
-              walkClip;
-
-            if (walkClip) {
-              walkAction = mixer.clipAction(walkClip);
-              walkAction.enabled = true;
-            }
-            if (runClip) {
-              runAction = mixer.clipAction(runClip);
-              runAction.enabled = true;
-            }
-          }
-
-          resolve();
-        },
-        undefined,
-        () => {
-          resolve();
-        }
-      );
+        })
+        .catch(() => {
+          loader.load(astronautUrl, onGltfReady, undefined, () => resolve());
+        });
     });
   }
 

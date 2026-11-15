@@ -43,7 +43,6 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
   onTriggerRadarScan,
   onEnterShip,
   onExitToExplorer,
-  onOpenMenu,
   onVirtualInputChange,
   speedFormatted,
   nearestBodyName,
@@ -73,7 +72,7 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4">
       {/* Top EVA Action Pill */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-11 sm:pt-12">
+      <div className="flex flex-wrap items-center justify-start gap-2 pt-0.5 pr-28">
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/78 backdrop-blur-xl border border-cyan-400/35 rounded-full px-3 py-1.5 shadow-xl">
           <div className="flex items-center gap-1.5 pr-2 border-r border-white/10">
             <User className="w-3.5 h-3.5 text-cyan-400" />
@@ -157,13 +156,6 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
             <LogOut className="w-3 h-3" />
           </button>
         </div>
-
-        <button
-          onClick={onOpenMenu}
-          className="pointer-events-auto hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/78 hover:bg-slate-900 backdrop-blur-xl border border-white/15 text-xs text-slate-200 transition-colors"
-        >
-          <span>Menu (M)</span>
-        </button>
       </div>
 
       {/* Bottom EVA Touch Pad + Clean Keyboard Key Hint Strip */}

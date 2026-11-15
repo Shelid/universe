@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CockpitSeatPosition, SpacecraftPreset } from '../types/astronomy';
 import {
+  fetchCachedArrayBuffer,
   fetchCachedAssetResponse,
   fetchCachedBlob,
   resolveModelAssetUrl,
@@ -180,8 +181,12 @@ function applyInitialMaterialFallback(std: THREE.MeshStandardMaterial, name: str
  * so the 3D spaceship appears in <150ms without blocking or exhausting WebGL VRAM.
  * Local orientation: Nose = -Z, Thrusters = +Z, Up = +Y, Right = +X.
  */
-export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number }): SR7SpacecraftRefs {
+export function createSR7Spacecraft3DGroup(options?: {
+  maxAnisotropy?: number;
+  onLoadProgress?: (loaded: number, total: number, detail: string) => void;
+}): SR7SpacecraftRefs {
   const maxAniso = Math.max(1, options?.maxAnisotropy ?? 8);
+  const onLoadProgress = options?.onLoadProgress;
   const rootGroup = new THREE.Group();
   rootGroup.name = 'spaceship-root';
 
@@ -297,19 +302,29 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     const loader = new GLTFLoader();
     const spaceshipBaseDir = `${resolveModelAssetUrl('spaceship').replace(/\/+$/, '')}/`;
     modelReadyPromise = new Promise<void>((resolve) => {
-      fetchCachedAssetResponse(resolveModelAssetUrl('spaceship/spaceship.gltf'))
-        .then((res) => {
+      Promise.all([
+        fetchCachedAssetResponse(resolveModelAssetUrl('spaceship/spaceship.gltf')).then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
-        })
-        .then((rawGltf) => {
+        }),
+        fetchCachedArrayBuffer(resolveModelAssetUrl('spaceship/spaceship.bin')),
+      ])
+        .then(([rawGltf, binBuf]) => {
           if (disposed) {
             resolve();
             return;
           }
 
+          let binBlobUrl: string | null = null;
+          const cleanupBinBlob = () => {
+            if (binBlobUrl) {
+              URL.revokeObjectURL(binBlobUrl);
+              binBlobUrl = null;
+            }
+          };
+
           // Extract material texture specs and build a geometry-only glTF JSON so
-          // GLTFLoader.parse loads spaceship.bin (9.67 MB) in ~120ms without waiting for 99 4K PNGs!
+          // GLTFLoader.parse loads spaceship.bin (9.67 MB) from cache/CDN before awaiting all textures!
           const texSpecs: MaterialTextureSpec[] = [];
           const getUriForTexIndex = (texIdx?: number): string | undefined => {
             if (texIdx === undefined || !rawGltf.textures || !rawGltf.images) return undefined;
@@ -319,8 +334,19 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
             return imgDef?.uri;
           };
 
+          const cleanBuffers = Array.isArray(rawGltf.buffers)
+            ? rawGltf.buffers.map((bufDef: Record<string, any>, bIdx: number) => {
+                if (bIdx === 0 && binBuf && typeof bufDef?.uri === 'string') {
+                  binBlobUrl = URL.createObjectURL(new Blob([binBuf]));
+                  return { ...bufDef, uri: binBlobUrl };
+                }
+                return bufDef;
+              })
+            : rawGltf.buffers;
+
           const geomOnlyGltf = {
             ...rawGltf,
+            buffers: cleanBuffers,
             textures: undefined,
             images: undefined,
             materials: (rawGltf.materials || []).map((matDef: Record<string, any>, idx: number) => {
@@ -354,6 +380,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
             JSON.stringify(geomOnlyGltf),
             spaceshipBaseDir,
             (gltf) => {
+              cleanupBinBlob();
               if (disposed) {
                 disposeNodeResources(gltf.scene);
                 resolve();
@@ -596,9 +623,8 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                 0.04
               );
 
-              resolve();
-
-              // Stream PBR textures progressively in the background with bounded GPU VRAM & concurrency
+              // Load ALL PBR textures completely BEFORE resolving modelReadyPromise
+              // so the entire spaceship (exterior hull, cockpit screens & cabin) opens 100% textured!
               const textureCache = new Map<string, Promise<THREE.Texture | null>>();
               const loadResizedTexture = (
                 uri: string,
@@ -651,10 +677,28 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                 return score(a) - score(b);
               });
 
+              const totalTextureSteps = Math.max(
+                1,
+                prioritizedSpecs.reduce((acc, spec) => {
+                  const targetMats = materialsByIndex.get(spec.matIndex);
+                  if (!targetMats || targetMats.length === 0) return acc;
+                  const isScreen =
+                    spec.matName.toLowerCase().includes('screen') || spec.matName === 'pcKeyboard';
+                  let steps = spec.baseColorUri ? 1 : 0;
+                  if (!isScreen) {
+                    if (spec.mrUri) steps += 1;
+                    if (spec.normalUri && !FLAT_NORMAL_URIS.has(spec.normalUri)) steps += 1;
+                  }
+                  return acc + steps;
+                }, 0)
+              );
+              let completedTextureSteps = 0;
+              onLoadProgress?.(0, totalTextureSteps, 'Geometria 3D da nave');
+
               let baseCursor = 0;
               let auxCursor = 0;
               const worker = async () => {
-                // Pass 1: Load all BaseColor & Screen textures first so full ship colors appear immediately
+                // Pass 1: Load all BaseColor & Screen textures
                 while (!disposed && baseCursor < prioritizedSpecs.length) {
                   const spec = prioritizedSpecs[baseCursor++];
                   const targetMats = materialsByIndex.get(spec.matIndex);
@@ -681,9 +725,15 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                       m.needsUpdate = true;
                     });
                   }
+                  completedTextureSteps++;
+                  onLoadProgress?.(
+                    Math.min(completedTextureSteps, totalTextureSteps),
+                    totalTextureSteps,
+                    `Nave: ${spec.matName}`
+                  );
                 }
 
-                // Pass 2: Stream Roughness/Metalness and Normal maps in the background
+                // Pass 2: Load all Roughness/Metalness and Normal maps
                 while (!disposed && auxCursor < prioritizedSpecs.length) {
                   const spec = prioritizedSpecs[auxCursor++];
                   const targetMats = materialsByIndex.get(spec.matIndex);
@@ -705,6 +755,12 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                         m.needsUpdate = true;
                       });
                     }
+                    completedTextureSteps++;
+                    onLoadProgress?.(
+                      Math.min(completedTextureSteps, totalTextureSteps),
+                      totalTextureSteps,
+                      `Nave PBR: ${spec.matName}`
+                    );
                   }
 
                   if (spec.normalUri && !FLAT_NORMAL_URIS.has(spec.normalUri)) {
@@ -715,20 +771,27 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                         m.needsUpdate = true;
                       });
                     }
+                    completedTextureSteps++;
+                    onLoadProgress?.(
+                      Math.min(completedTextureSteps, totalTextureSteps),
+                      totalTextureSteps,
+                      `Nave Normal: ${spec.matName}`
+                    );
                   }
                 }
               };
 
-              // Start 4 background texture workers so all BaseColor maps finish in ~1.5s
-              setTimeout(() => {
-                if (!disposed) {
-                  for (let w = 0; w < 4; w++) {
-                    void worker();
-                  }
-                }
-              }, 100);
+              const workers: Promise<void>[] = [];
+              for (let w = 0; w < 6; w++) {
+                workers.push(worker());
+              }
+              void Promise.all(workers).finally(() => {
+                onLoadProgress?.(totalTextureSteps, totalTextureSteps, 'Nave 100% carregada');
+                resolve();
+              });
             },
             () => {
+              cleanupBinBlob();
               resolve();
             }
           );

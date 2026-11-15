@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Plus, Minus, Focus } from 'lucide-react';
 import {
   CelestialBodyData,
   CharacterVariantId,
@@ -113,6 +112,7 @@ interface UniverseCanvasProps {
   stationDeployCommand?: StationDeployCommand;
   lobbyShowcaseActive?: boolean;
   bodySelectSeq?: number;
+  hideHud?: boolean;
 }
 
 interface ScreenLabel {
@@ -283,6 +283,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   stationDeployCommand,
   lobbyShowcaseActive = false,
   bodySelectSeq = 0,
+  hideHud = false,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
@@ -808,13 +809,46 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     const totalTexCount = uniqueTextureUrlSet.size;
     let settledTexCount = 0;
+    let shipTexLoaded = 0;
+    let shipTexTotal = 0;
+    let astronautLoaded = 0;
+    let stationLoaded = 0;
+    let lastBootProgressEmitMs = 0;
+
+    const emitUnifiedBootProgress = (detail: string, forceEmit = false) => {
+      if (isDisposed || bootCompleted) return;
+      const totalUnits = totalTexCount + Math.max(1, shipTexTotal) + 2;
+      const doneUnits = settledTexCount + shipTexLoaded + astronautLoaded + stationLoaded;
+      const nowMs = performance.now();
+      if (!forceEmit && doneUnits < totalUnits && nowMs - lastBootProgressEmitMs < 85) {
+        return;
+      }
+      lastBootProgressEmitMs = nowMs;
+      const pct = 22 + Math.round((doneUnits / Math.max(1, totalUnits)) * 68);
+      const stage =
+        shipTexTotal > 0 && shipTexLoaded < shipTexTotal
+          ? 'Carregando Nave Espacial 3D & Cabine...'
+          : settledTexCount < totalTexCount
+            ? 'Carregando texturas planetárias NASA...'
+            : astronautLoaded + stationLoaded < 2
+              ? 'Carregando Astronauta & Estação Orbital...'
+              : 'Preparando shaders 3D...';
+      emitBootProgress({
+        progress: Math.min(90, pct),
+        stage,
+        detail,
+        loadedTextures: doneUnits,
+        totalTextures: totalUnits,
+        ready: false,
+      });
+    };
 
     emitBootProgress({
-      progress: 24,
-      stage: 'Carregando texturas planetárias NASA...',
-      detail: 'Preparando cache em VRAM',
+      progress: 22,
+      stage: 'Carregando universo, nave e texturas 3D...',
+      detail: 'Preparando downloads e cache em VRAM',
       loadedTextures: 0,
-      totalTextures: totalTexCount,
+      totalTextures: totalTexCount + 2,
       ready: false,
     });
 
@@ -836,15 +870,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             tex.wrapT = THREE.ClampToEdgeWrapping;
             const optimized = configurePlanetTexture(tex);
             settledTexCount++;
-            const pct = 24 + Math.round((settledTexCount / Math.max(1, totalTexCount)) * 60);
-            emitBootProgress({
-              progress: pct,
-              stage: 'Carregando texturas planetárias NASA...',
-              detail: getTextureDisplayLabel(url),
-              loadedTextures: settledTexCount,
-              totalTextures: totalTexCount,
-              ready: false,
-            });
+            emitUnifiedBootProgress(getTextureDisplayLabel(url));
             resolve(optimized);
           },
           undefined,
@@ -854,15 +880,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               return;
             }
             settledTexCount++;
-            const pct = 24 + Math.round((settledTexCount / Math.max(1, totalTexCount)) * 60);
-            emitBootProgress({
-              progress: pct,
-              stage: 'Carregando texturas planetárias NASA...',
-              detail: `Fallback procedural: ${getTextureDisplayLabel(url)}`,
-              loadedTextures: settledTexCount,
-              totalTextures: totalTexCount,
-              ready: false,
-            });
+            emitUnifiedBootProgress(`Fallback procedural: ${getTextureDisplayLabel(url)}`);
             resolve(null);
           }
         );
@@ -1388,7 +1406,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     warpTunnelGroup.add(warpLines);
 
     // SR-7 EXPLORER 3D SPACECRAFT & INTERACTIVE 4K COCKPIT + VENTRAL PULSE PROJECTILES
-    const sr7 = createSR7Spacecraft3DGroup({ maxAnisotropy });
+    const sr7 = createSR7Spacecraft3DGroup({
+      maxAnisotropy,
+      onLoadProgress: (loaded, total, detail) => {
+        shipTexLoaded = loaded;
+        shipTexTotal = total;
+        emitUnifiedBootProgress(detail, loaded >= total);
+      },
+    });
     sr7.rootGroup.scale.setScalar(0.34);
     sr7.rootGroup.visible = false;
     sr7.setVariant(getSpacecraftPreset(stateRef.current.selectedShipId || 'sr7-vanguard'));
@@ -1397,6 +1422,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     // RIGGED 3D ASTRONAUT CHARACTER (Shared seamlessly between Cockpit Pilot Seat & Zero-G EVA Mode)
     const astronaut = createAstronautCharacter3D();
+    astronaut.modelReadyPromise.finally(() => {
+      astronautLoaded = 1;
+      emitUnifiedBootProgress('Astronauta 3D carregado', true);
+    });
     astronaut.rootGroup.scale.setScalar(0.43);
     astronaut.rootGroup.visible = false;
     astronaut.setVariant(getCharacterPreset(stateRef.current.selectedCharacterId || 'cmd-artemis'));
@@ -1405,6 +1434,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     // ASSEMBLED ORBITAL STATION GLB (41.5m x 12.34m x 49.49m in Earth LEO)
     const orbitalStation = createOrbitalStation3DGroup();
+    orbitalStation.modelReadyPromise.finally(() => {
+      stationLoaded = 1;
+      emitUnifiedBootProgress('Estação Orbital 3D carregada', true);
+    });
     const orbitalStationWorldPos = new THREE.Vector3();
     let orbitalStationWorldScale = 0.0000145;
     let hasOrbitalStationPos = false;
@@ -3038,11 +3071,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitDragSteerY *= dragDecay;
         }
 
-        // Inverted vertical pitch on Arrow keys (ArrowDown = pull stick / nose UP; ArrowUp = nose DOWN)
+        // Direct vertical pitch on Arrow keys (ArrowUp = nose UP / climb; ArrowDown = nose DOWN / dive)
         let pitchInput = isWalkingInside
           ? 0
-          : (pressedKeys.has('ArrowDown') ? 1 : 0) -
-            (pressedKeys.has('ArrowUp') ? 1 : 0) +
+          : (pressedKeys.has('ArrowUp') ? 1 : 0) -
+            (pressedKeys.has('ArrowDown') ? 1 : 0) +
             (vSteer?.pitch || 0) +
             cockpitSteerSmoothY;
         let yawInput = isWalkingInside
@@ -4837,12 +4870,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       beltGroup.visible = prevBeltVis;
       satelliteGroup.visible = prevSatVis;
 
+      const totalLoadedFinal = totalTexCount + Math.max(1, shipTexTotal) + 2;
+
       emitBootProgress({
         progress: 96,
         stage: 'Sincronizando órbitas 1:1 e telemetria SGP4...',
         detail: 'Finalizando primeiro quadro 3D',
-        loadedTextures: totalTexCount,
-        totalTextures: totalTexCount,
+        loadedTextures: totalLoadedFinal,
+        totalTextures: totalLoadedFinal,
         ready: false,
       });
 
@@ -4863,10 +4898,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             renderer.render(scene, camera);
             emitBootProgress({
               progress: 100,
-              stage: 'Observatório pronto',
-              detail: 'Iniciando exploração espacial...',
-              loadedTextures: totalTexCount,
-              totalTextures: totalTexCount,
+              stage: 'Observatório 100% carregado',
+              detail: 'Abrindo menu espacial...',
+              loadedTextures: totalLoadedFinal,
+              totalTextures: totalLoadedFinal,
               ready: true,
             });
           });
@@ -4874,7 +4909,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       });
     };
 
-    bootTimeoutId = window.setTimeout(finalizeSceneBoot, 14000);
+    // Wait genuinely for ALL planet textures, spaceship geometry + all PBR textures, astronaut & orbital station
+    // (180s failsafe prevents infinite hang only if browser loses network permanently)
+    bootTimeoutId = window.setTimeout(finalizeSceneBoot, 180000);
     Promise.all([
       ...Array.from(texturePromiseCache.values()),
       sr7.modelReadyPromise,
@@ -4971,113 +5008,73 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     <div className="relative w-full h-full select-none overflow-hidden">
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-      {/* Cosmoscope-Style Multi-Scale Switcher & Live Vertical Scale Readout ("↕ 157.377 ly") */}
-      {!spacecraftControl.isActive && !lobbyShowcaseActive && (
-        <>
-          <div className="fixed left-3.5 top-16 sm:top-20 z-20 flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-slate-950/75 backdrop-blur-xl border border-white/12 p-1 rounded-full shadow-xl">
-              <button
-                onClick={() => {
-                  const selCat = getCelestialBody(selectedBodyId).category;
-                  if (selCat === 'galaxy' || selectedBodyId === 'sun') {
-                    onSelectBody('earth', false);
-                  } else {
-                    cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
-                    cameraCommandRef.current.activeTransition = true;
-                  }
-                }}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel !== 'SOLAR_SYSTEM' && zoomLevel !== 'COSMIC_GALAXY'
-                    ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/10'
-                  }`}
-                title="Escala Planetária (Ver Planeta de Perto)"
-              >
-                <span>🌍</span>
-                <span className="hidden sm:inline">Planeta</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (selectedBodyId === 'sun') {
-                    cameraCommandRef.current.desiredDistanceMultiplier = 520.0;
-                    cameraCommandRef.current.activeTransition = true;
-                  } else {
-                    overrideDistanceMultiplierRef.current = 520.0;
-                    onSelectBody('sun', false);
-                  }
-                }}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'SOLAR_SYSTEM'
-                    ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/10'
-                  }`}
-                title="Escala do Sistema Solar (Órbitas Planetárias)"
-              >
-                <span>🪐</span>
-                <span className="hidden sm:inline">Sistema Solar</span>
-              </button>
-              <button
-                onClick={() => {
-                  onSelectBody('milky-way', false);
-                  cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
-                  cameraCommandRef.current.activeTransition = true;
-                }}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'COSMIC_GALAXY'
-                    ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/10'
-                  }`}
-                title="Escala Galáctica (Via Láctea 3D)"
-              >
-                <span>🌌</span>
-                <span className="hidden sm:inline">Galáxia</span>
-              </button>
-            </div>
-
-            <div
-              className="px-3 py-1.5 rounded-full bg-slate-950/75 backdrop-blur-xl border border-white/12 text-[11px] font-mono text-slate-200 shadow-xl flex items-center gap-1.5"
-              title="Escala Vertical do Campo de Visão Atual"
-            >
-              <span className="text-sky-400 font-bold">↕</span>
-              <span>{scaleReadout}</span>
-            </div>
-          </div>
-
-          {/* Sleek Camera Zoom Controls on Left Edge */}
-          <div className="fixed left-3.5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-slate-950/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl shadow-xl">
+      {/* Compact Top-Left Scale Switcher & Live Vertical Scale Readout (Minimal clean screen) */}
+      {!spacecraftControl.isActive && !lobbyShowcaseActive && !hideHud && (
+        <div className="fixed left-3 top-3 z-20 flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5 bg-slate-950/70 backdrop-blur-xl border border-white/10 p-1 rounded-full shadow-xl">
             <button
               onClick={() => {
-                cameraCommandRef.current.manualZoomStep = 1;
+                const selCat = getCelestialBody(selectedBodyId).category;
+                if (selCat === 'galaxy' || selectedBodyId === 'sun') {
+                  onSelectBody('earth', false);
+                } else {
+                  cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
+                  cameraCommandRef.current.activeTransition = true;
+                }
               }}
-              className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
-              title="Aproximar Câmera (Zoom +)"
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel !== 'SOLAR_SYSTEM' && zoomLevel !== 'COSMIC_GALAXY'
+                  ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              title="Escala Planetária (Ver Planeta de Perto)"
             >
-              <Plus className="w-4 h-4" />
+              <span>🌍</span>
+              <span className="hidden sm:inline">Planeta</span>
             </button>
             <button
               onClick={() => {
-                const sel = getCelestialBody(selectedBodyId);
-                cameraCommandRef.current.desiredDistanceMultiplier =
-                  selectedBodyId === 'milky-way'
-                    ? 1.65
-                    : sel.category === 'galaxy'
-                      ? 2.05
-                      : 3.4;
+                if (selectedBodyId === 'sun') {
+                  cameraCommandRef.current.desiredDistanceMultiplier = 520.0;
+                  cameraCommandRef.current.activeTransition = true;
+                } else {
+                  overrideDistanceMultiplierRef.current = 520.0;
+                  onSelectBody('sun', false);
+                }
+              }}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'SOLAR_SYSTEM'
+                  ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              title="Escala do Sistema Solar (Órbitas Planetárias)"
+            >
+              <span>🪐</span>
+              <span className="hidden sm:inline">Sistema Solar</span>
+            </button>
+            <button
+              onClick={() => {
+                onSelectBody('milky-way', false);
+                cameraCommandRef.current.desiredDistanceMultiplier = 1.65;
                 cameraCommandRef.current.activeTransition = true;
               }}
-              className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors border-y border-white/5"
-              title="Centralizar Astro"
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'COSMIC_GALAXY'
+                  ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              title="Escala Galáctica (Via Láctea 3D)"
             >
-              <Focus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => {
-                cameraCommandRef.current.manualZoomStep = -1;
-              }}
-              className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
-              title="Afastar Câmera (Zoom -)"
-            >
-              <Minus className="w-4 h-4" />
+              <span>🌌</span>
+              <span className="hidden sm:inline">Galáxia</span>
             </button>
           </div>
-        </>
+
+          <div
+            className="hidden sm:flex px-2.5 py-1 rounded-full bg-slate-950/65 backdrop-blur-xl border border-white/10 text-[10px] font-mono text-slate-300 shadow-lg items-center gap-1"
+            title="Escala Vertical do Campo de Visão Atual"
+          >
+            <span className="text-sky-400 font-bold">↕</span>
+            <span>{scaleReadout}</span>
+          </div>
+        </div>
       )}
 
       {/* Clean 3D-Projected Object Markers */}
