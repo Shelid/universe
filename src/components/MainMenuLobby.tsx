@@ -274,12 +274,12 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
               </span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { id: 'auto' as const, label: 'Auto' },
-                { id: 'high' as const, label: 'Alta 4K' },
-                { id: 'medium' as const, label: 'Média' },
-                { id: 'low' as const, label: 'Leve' },
-              ].map((q) => {
+              {([
+                { id: 'AUTO', label: 'Auto' },
+                { id: 'HIGH', label: 'Alta 4K' },
+                { id: 'MEDIUM', label: 'Média' },
+                { id: 'LOW', label: 'Leve' },
+              ] as Array<{ id: QualityPreference; label: string }>).map((q) => {
                 const active = qualityPreference === q.id;
                 return (
                   <button
