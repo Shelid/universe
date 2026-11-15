@@ -63,6 +63,7 @@ export interface SR7SpacecraftRefs {
     clockTime: number;
     throttle: number;
     boostActive: boolean;
+    isBraking?: boolean;
     headlightsOn: boolean;
     interiorLightsOn: boolean;
     shieldsOn: boolean;
@@ -953,17 +954,9 @@ export function createSR7Spacecraft3DGroup(options?: {
     new THREE.Vector3(0.68, -0.04, -3.68),
   ];
 
-  // Lightweight compatibility proxies (no external flame cones added to Rear_metal)
+  // Lightweight compatibility proxies for wingtips / nav stubs
   const yokeGroup = new THREE.Group();
   const throttleGroup = new THREE.Group();
-  const leftPlumeMesh = new THREE.Mesh();
-  leftPlumeMesh.visible = false;
-  const rightPlumeMesh = new THREE.Mesh();
-  rightPlumeMesh.visible = false;
-  const leftCoreMesh = new THREE.Mesh();
-  leftCoreMesh.visible = false;
-  const rightCoreMesh = new THREE.Mesh();
-  rightCoreMesh.visible = false;
   const leftWingTipGlow = new THREE.Mesh();
   leftWingTipGlow.visible = false;
   const rightWingTipGlow = new THREE.Mesh();
@@ -976,6 +969,242 @@ export function createSR7Spacecraft3DGroup(options?: {
   const sensorTurretGroup = new THREE.Group();
   const strobeLightMesh = new THREE.Mesh();
   strobeLightMesh.visible = false;
+
+  // === Realistic Twin Engine Exhaust Fire / Plasma Plumes, Mach Shock Diamonds & Dynamic Aft Light ===
+  // Exact nozzle anchors measured from Spaceship.glb in hullGroup coordinates:
+  // Left bell (-0.463, 0.0024, 3.53..3.715), Right bell (+0.468, 0.0024, 3.53..3.715)
+  const createNozzleGlowTexture = (): THREE.CanvasTexture | null => {
+    if (isNodeEnv) return null;
+    const cvs = document.createElement('canvas');
+    cvs.width = 128;
+    cvs.height = 128;
+    const ctx2d = cvs.getContext('2d');
+    if (!ctx2d) return null;
+    const grad = ctx2d.createRadialGradient(64, 64, 2, 64, 64, 64);
+    grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.22, 'rgba(255, 224, 166, 0.95)');
+    grad.addColorStop(0.48, 'rgba(255, 128, 36, 0.58)');
+    grad.addColorStop(0.78, 'rgba(255, 64, 12, 0.16)');
+    grad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+    ctx2d.fillStyle = grad;
+    ctx2d.fillRect(0, 0, 128, 128);
+    const tex = new THREE.CanvasTexture(cvs);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+  const nozzleGlowTex = createNozzleGlowTexture();
+
+  const createPlumeConeGeo = (baseRad: number, tipRad: number): THREE.BufferGeometry => {
+    const geo = new THREE.CylinderGeometry(tipRad, baseRad, 1.0, 28, 18, true);
+    geo.translate(0, 0.5, 0);
+    geo.rotateX(Math.PI / 2);
+    // Subtle supersonic underexpansion bell bulge near nozzle lip (z = 0.08..0.28)
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = THREE.MathUtils.clamp(pos.getZ(i), 0, 1);
+      const bulge = 1.0 + 0.18 * Math.exp(-Math.pow((z - 0.14) / 0.12, 2));
+      pos.setXYZ(i, x * bulge, y * bulge, z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  const plumeVertexShader = `
+    varying vec2 vUv;
+    varying vec3 vNormalView;
+    varying vec3 vViewPos;
+    varying float vAlong;
+    void main() {
+      vUv = uv;
+      vAlong = clamp(position.z, 0.0, 1.0);
+      vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+      vViewPos = -mvPos.xyz;
+      vNormalView = normalize(normalMatrix * normal);
+      gl_Position = projectionMatrix * mvPos;
+    }
+  `;
+
+  const outerPlumeUniforms = {
+    uTime: { value: 0 },
+    uThrust: { value: 0 },
+    uBoost: { value: 0 },
+    uAccentColor: { value: new THREE.Color('#38bdf8') },
+  };
+
+  const outerPlumeMat = new THREE.ShaderMaterial({
+    uniforms: outerPlumeUniforms,
+    vertexShader: plumeVertexShader,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uThrust;
+      uniform float uBoost;
+      uniform vec3 uAccentColor;
+      varying vec2 vUv;
+      varying vec3 vNormalView;
+      varying vec3 vViewPos;
+      varying float vAlong;
+
+      void main() {
+        float ang = vUv.x * 6.2831853;
+        float speed = 13.0 + uThrust * 12.0 + uBoost * 18.0;
+        float wave1 = sin(vAlong * 16.0 - uTime * speed + sin(ang * 3.0 + uTime * 7.0) * 0.9);
+        float wave2 = cos(vAlong * 29.0 - uTime * (speed * 1.45) + cos(ang * 5.0 - uTime * 11.0) * 0.7);
+        float turb = 0.65 + 0.22 * wave1 + 0.13 * wave2;
+
+        // Feather cylinder silhouette edges smoothly so cone never looks polygonal
+        float ndotv = abs(dot(normalize(vNormalView), normalize(vViewPos)));
+        float radialFeather = pow(clamp(ndotv, 0.0, 1.0), 1.35);
+
+        float rootFade = smoothstep(0.0, 0.045, vAlong);
+        float tipCutoff = clamp(1.0 - vAlong * (0.94 + (1.0 - turb) * 0.18), 0.0, 1.0);
+        float longFade = pow(tipCutoff, 1.42);
+
+        // Multi-temperature realistic fire -> afterburner ionization
+        vec3 whiteHot = vec3(1.0, 0.97, 0.90);
+        vec3 amberFire = vec3(1.0, 0.56, 0.12);
+        vec3 deepFlame = vec3(0.96, 0.22, 0.04);
+        vec3 ionPlasma = mix(vec3(0.32, 0.78, 1.0), uAccentColor, 0.55);
+
+        vec3 fireCol = mix(whiteHot, amberFire, smoothstep(0.02, 0.36, vAlong));
+        fireCol = mix(fireCol, deepFlame, smoothstep(0.34, 0.88, vAlong));
+
+        // Intense boost adds blue/accent ionization especially near core throat & edges
+        float ionMask = uBoost * (0.48 + 0.35 * (1.0 - radialFeather));
+        vec3 finalCol = mix(fireCol, mix(whiteHot, ionPlasma, smoothstep(0.08, 0.72, vAlong)), clamp(ionMask, 0.0, 0.85));
+
+        float alpha = radialFeather * rootFade * longFade * turb * clamp(0.18 + uThrust * 0.95 + uBoost * 0.45, 0.0, 1.0);
+        gl_FragColor = vec4(finalCol * (1.35 + uThrust * 0.65 + uBoost * 0.75), alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const innerCoreUniforms = {
+    uTime: { value: 0 },
+    uThrust: { value: 0 },
+    uBoost: { value: 0 },
+    uCoreColor: { value: new THREE.Color('#7dd3fc') },
+  };
+
+  const innerCoreMat = new THREE.ShaderMaterial({
+    uniforms: innerCoreUniforms,
+    vertexShader: plumeVertexShader,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uThrust;
+      uniform float uBoost;
+      uniform vec3 uCoreColor;
+      varying vec2 vUv;
+      varying vec3 vNormalView;
+      varying vec3 vViewPos;
+      varying float vAlong;
+
+      void main() {
+        float ndotv = abs(dot(normalize(vNormalView), normalize(vViewPos)));
+        float radialCore = pow(clamp(ndotv, 0.0, 1.0), 1.6);
+
+        // Supersonic standing compression waves ("Mach Shock Diamonds")
+        float jitter = sin(uTime * 38.0) * 0.22 + cos(uTime * 23.0) * 0.14;
+        float shockNode = pow(clamp(0.5 + 0.5 * sin(vAlong * 26.0 - 0.8 + jitter), 0.0, 1.0), 3.4);
+        float coreFade = pow(clamp(1.0 - vAlong, 0.0, 1.0), 1.15);
+
+        vec3 coreWhite = vec3(1.0, 0.98, 0.94);
+        vec3 hotGold = vec3(1.0, 0.78, 0.38);
+        vec3 boostTint = mix(vec3(0.52, 0.90, 1.0), uCoreColor, 0.5);
+        vec3 baseCol = mix(hotGold, boostTint, clamp(uBoost * 0.85, 0.0, 0.9));
+        vec3 col = mix(baseCol, coreWhite, shockNode * 0.85 + (1.0 - vAlong) * 0.35);
+
+        float machGain = mix(0.45, 1.15, shockNode);
+        float alpha = radialCore * coreFade * machGain * clamp(uThrust * 1.15 + uBoost * 0.5, 0.0, 1.0);
+        gl_FragColor = vec4(col * (1.8 + shockNode * 1.2 + uBoost * 0.8), alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const nozzleGlowMat = new THREE.MeshBasicMaterial({
+    map: nozzleGlowTex,
+    color: '#ffab5e',
+    transparent: true,
+    opacity: 0.75,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const nozzleGlowGeo = new THREE.PlaneGeometry(0.44, 0.44);
+  const outerPlumeGeo = createPlumeConeGeo(0.228, 0.045);
+  const innerCoreGeo = createPlumeConeGeo(0.125, 0.02);
+
+  const createThrusterAssembly = (x: number, y: number, z: number) => {
+    const grp = new THREE.Group();
+    grp.position.set(x, y, z);
+
+    const outerMesh = new THREE.Mesh(outerPlumeGeo, outerPlumeMat);
+    outerMesh.renderOrder = 14;
+    grp.add(outerMesh);
+
+    const innerMesh = new THREE.Mesh(innerCoreGeo, innerCoreMat);
+    innerMesh.renderOrder = 15;
+    grp.add(innerMesh);
+
+    // Inner combustion throat disc + nozzle lip optical halo
+    const throatDisc = new THREE.Mesh(nozzleGlowGeo, nozzleGlowMat);
+    throatDisc.position.set(0, 0, -0.02);
+    throatDisc.scale.setScalar(0.86);
+    throatDisc.renderOrder = 13;
+    grp.add(throatDisc);
+
+    const exitHalo = new THREE.Mesh(nozzleGlowGeo, nozzleGlowMat);
+    exitHalo.position.set(0, 0, 0.22);
+    exitHalo.scale.setScalar(1.38);
+    exitHalo.renderOrder = 16;
+    grp.add(exitHalo);
+
+    hullGroup.add(grp);
+    return { grp, outerMesh, innerMesh, throatDisc, exitHalo };
+  };
+
+  const leftThruster = createThrusterAssembly(-0.463, 0.0024, 3.56);
+  const rightThruster = createThrusterAssembly(0.468, 0.0024, 3.56);
+  const leftPlumeMesh = leftThruster.outerMesh;
+  const rightPlumeMesh = rightThruster.outerMesh;
+  const leftCoreMesh = leftThruster.innerMesh;
+  const rightCoreMesh = rightThruster.innerMesh;
+
+  // Dynamic Aft Exhaust Illumination Light (decay = 0 for Hangar 1:1 & cosmic flight scales)
+  const aftExhaustLight = new THREE.PointLight('#ff8b3d', 0.4, 18, 0);
+  aftExhaustLight.position.set(0, 0.03, 4.18);
+  hullGroup.add(aftExhaustLight);
+
+  // Hot Plasma Embers / Ion Sparks trailing out of both engines (single InstancedMesh)
+  const ENGINE_EMBER_COUNT = 24;
+  const engineEmberMat = new THREE.MeshBasicMaterial({
+    color: '#ffba66',
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const engineEmberInstanced = new THREE.InstancedMesh(
+    new THREE.OctahedronGeometry(0.015, 0),
+    engineEmberMat,
+    ENGINE_EMBER_COUNT
+  );
+  engineEmberInstanced.frustumCulled = false;
+  engineEmberInstanced.visible = false;
+  hullGroup.add(engineEmberInstanced);
+  const _emberMat4 = new THREE.Matrix4();
+  const _emberPos = new THREE.Vector3();
+  const _emberQuat = new THREE.Quaternion();
+  const _emberScale = new THREE.Vector3();
 
   // Deployable Thermal Radiator Wings on Dorsal Aft Hull (extend smoothly when radiatorsDeployed = true)
   const radiatorMat = new THREE.MeshStandardMaterial({
@@ -1079,16 +1308,24 @@ export function createSR7Spacecraft3DGroup(options?: {
 
   const _yokeAnimEuler = new THREE.Euler();
   const _yokeAnimQuat = new THREE.Quaternion();
+  const _worldAxisZ = new THREE.Vector3(0, 0, 1);
+  const _emberColorTmp = new THREE.Color();
+  const _lightFireColor = new THREE.Color('#ff8a34');
+  const _lightBoostColor = new THREE.Color('#7dd3fc');
   let radiatorDeployBlend = 0;
+  let plumeThrustSmooth = 0.04;
+  let plumeBoostSmooth = 0;
 
   const updateAnimations: SR7SpacecraftRefs['updateAnimations'] = ({
     dt,
     clockTime,
     throttle,
     boostActive,
+    isBraking = false,
     headlightsOn,
     interiorLightsOn,
     pitchInput,
+    yawInput,
     radarPulseAgeSec,
     muzzleFlashAlpha,
     isCockpitView = false,
@@ -1116,15 +1353,113 @@ export function createSR7Spacecraft3DGroup(options?: {
     canopyGlassMat.uniforms.uInteriorView.value = isCockpitView ? 1.0 : 0.0;
     canopyGlassMat.uniforms.uTintColor.value.set(isCockpitView ? '#e0f2fe' : '#7dd3fc');
 
-    // Modulate native Tail Light emissive intensity with engine throttle (without extra flame cones)
-    const absT = Math.abs(throttle);
-    const tailIntensity = boostActive ? 2.8 : 0.9 + absT * 1.35;
+    // Modulate native Tail Light + Twin Volumetric Engine Plumes, Mach Shock Diamonds & Aft Light
+    const absT = THREE.MathUtils.clamp(Math.abs(throttle), 0, 1.25);
+    const targetBoost = boostActive && !isBraking ? 1 : 0;
+    const targetThrustVis = isBraking ? Math.min(0.06, absT * 0.2) : absT;
+    plumeThrustSmooth = THREE.MathUtils.lerp(
+      plumeThrustSmooth,
+      targetThrustVis,
+      Math.min(1, dt * 7.5)
+    );
+    plumeBoostSmooth = THREE.MathUtils.lerp(
+      plumeBoostSmooth,
+      targetBoost,
+      Math.min(1, dt * (targetBoost > plumeBoostSmooth ? 6.5 : 4.2))
+    );
+
+    const flicker =
+      0.91 +
+      0.055 * Math.sin(clockTime * 43.0) +
+      0.035 * Math.cos(clockTime * 71.0);
+    const tailIntensity =
+      (boostActive ? 3.2 : 1.05 + plumeThrustSmooth * 1.75) * flicker;
     tailLightMaterials.forEach((m) => {
       m.emissiveIntensity = tailIntensity;
     });
 
-    // Cabin interior lights (decay = 0 so intensity is invariant across 1:1 cosmic scales)
     const scaleFactor = Math.max(0.0000025, shipScale);
+    const effectiveBurn = Math.max(plumeThrustSmooth, plumeBoostSmooth * 0.85);
+    const plumeLength =
+      (0.36 + effectiveBurn * 3.15 + plumeBoostSmooth * 2.45) * (0.94 + flicker * 0.06);
+    const plumeRad =
+      (0.88 + effectiveBurn * 0.36 + plumeBoostSmooth * 0.25) * (0.95 + flicker * 0.05);
+
+    outerPlumeUniforms.uTime.value = clockTime;
+    outerPlumeUniforms.uThrust.value = effectiveBurn;
+    outerPlumeUniforms.uBoost.value = plumeBoostSmooth;
+    innerCoreUniforms.uTime.value = clockTime;
+    innerCoreUniforms.uThrust.value = effectiveBurn;
+    innerCoreUniforms.uBoost.value = plumeBoostSmooth;
+
+    const nozzleGlowAlpha =
+      (0.28 + effectiveBurn * 0.62 + plumeBoostSmooth * 0.25) * flicker;
+    nozzleGlowMat.opacity = Math.min(0.98, nozzleGlowAlpha);
+    nozzleGlowMat.color.lerpColors(_lightFireColor, _lightBoostColor, plumeBoostSmooth * 0.72);
+
+    const gimbalPitch = THREE.MathUtils.clamp((pitchInput || 0) * 0.065, -0.09, 0.09);
+    const gimbalYaw = THREE.MathUtils.clamp(-(yawInput || 0) * 0.065, -0.09, 0.09);
+    const thrusters = [leftThruster, rightThruster];
+    for (let ti = 0; ti < thrusters.length; ti++) {
+      const th = thrusters[ti];
+      th.grp.visible = !isCockpitView;
+      th.grp.rotation.set(gimbalPitch, gimbalYaw, 0);
+      th.outerMesh.scale.set(plumeRad, plumeRad, plumeLength);
+      th.innerMesh.scale.set(
+        plumeRad * (0.85 + plumeBoostSmooth * 0.2),
+        plumeRad * (0.85 + plumeBoostSmooth * 0.2),
+        plumeLength * 0.84
+      );
+      const throatSc = 0.78 + effectiveBurn * 0.36;
+      th.throatDisc.scale.setScalar(throatSc);
+      const haloSc = (0.72 + effectiveBurn * 0.85 + plumeBoostSmooth * 0.45) * flicker;
+      th.exitHalo.scale.setScalar(haloSc);
+      th.exitHalo.visible = effectiveBurn > 0.025;
+    }
+
+    // Dynamic flickering PointLight behind nozzles illuminating aft wings, hull & hangar pad
+    const lightIntensity =
+      (0.32 + effectiveBurn * 3.1 + plumeBoostSmooth * 2.2) * flicker;
+    aftExhaustLight.intensity = isCockpitView ? lightIntensity * 0.35 : lightIntensity;
+    aftExhaustLight.distance = scaleFactor * (10 + effectiveBurn * 11 + plumeBoostSmooth * 8);
+    aftExhaustLight.color.lerpColors(_lightFireColor, _lightBoostColor, plumeBoostSmooth * 0.78);
+
+    // Hot exhaust plasma embers/sparks streaming backward when accelerating or boosting
+    const showEmbers = !isCockpitView && effectiveBurn > 0.14;
+    engineEmberInstanced.visible = showEmbers;
+    if (showEmbers) {
+      _emberColorTmp.lerpColors(
+        _lightFireColor,
+        _lightBoostColor,
+        plumeBoostSmooth * 0.8
+      );
+      engineEmberMat.color.copy(_emberColorTmp);
+      engineEmberMat.opacity = Math.min(0.95, 0.35 + effectiveBurn * 0.65);
+      const sparkSpeedBase = 1.65 + effectiveBurn * 1.9 + plumeBoostSmooth * 2.4;
+      for (let ei = 0; ei < ENGINE_EMBER_COUNT; ei++) {
+        const isLeft = ei % 2 === 0;
+        const nozzleX = isLeft ? -0.463 : 0.468;
+        const spdJitter = 0.72 + ((ei * 7) % 11) * 0.075;
+        const phase = (ei * 0.6180339887) % 1;
+        const life = (clockTime * sparkSpeedBase * spdJitter + phase) % 1;
+        const angle = ei * 2.39996 + clockTime * (3.2 + (ei % 4) * 1.1);
+        const spread = (0.045 + life * 0.16) * (0.75 + 0.45 * Math.sin(ei * 4.1 + clockTime * 5.0));
+        const zSpan = 3.74 + life * Math.max(1.4, plumeLength * 1.08);
+        _emberPos.set(
+          nozzleX + Math.cos(angle) * spread,
+          0.0024 + Math.sin(angle) * spread,
+          zSpan
+        );
+        _emberQuat.setFromAxisAngle(_worldAxisZ, angle);
+        const emberSc = (1 - life) * (0.45 + ((ei % 3) * 0.24) + effectiveBurn * 0.45);
+        _emberScale.set(emberSc * 0.55, emberSc * 0.55, emberSc * 3.1);
+        _emberMat4.compose(_emberPos, _emberQuat, _emberScale);
+        engineEmberInstanced.setMatrixAt(ei, _emberMat4);
+      }
+      engineEmberInstanced.instanceMatrix.needsUpdate = true;
+    }
+
+    // Cabin interior lights (decay = 0 so intensity is invariant across 1:1 cosmic scales)
     interiorLight.intensity = interiorLightsOn ? (isCockpitView ? 0.95 : 0.45) : 0.15;
     interiorLight.distance = scaleFactor * 6.5;
     consoleGlowLight.intensity = interiorLightsOn ? (isCockpitView ? 0.65 : 0.25) : 0.12;
@@ -1242,6 +1577,9 @@ export function createSR7Spacecraft3DGroup(options?: {
     });
     radarPulseRingMat.color.set(preset.accentHex);
     muzzleFlashMat.color.set(preset.accentHex);
+    outerPlumeUniforms.uAccentColor.value.set(tailHex);
+    innerCoreUniforms.uCoreColor.value.set(preset.plumeWarpHex);
+    _lightBoostColor.set(preset.plumeWarpHex);
   };
 
   const dispose = () => {

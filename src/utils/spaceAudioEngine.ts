@@ -13,6 +13,8 @@ export interface SpaceAudioFrameParams {
   warpProgress?: number; // 0..1
   warpStage?: string;
   miningIntensity?: number; // 0..1
+  miningDrilling?: boolean;
+  miningHotspotMult?: number;
 }
 
 /**
@@ -37,14 +39,24 @@ class SpaceAudioEngine {
   // Continuous SR-7 Engine & Reactor Rig
   private shipMasterGain: GainNode | null = null;
   private shipPerspectiveFilter: BiquadFilterNode | null = null;
+  private engineSubOsc: OscillatorNode | null = null;
+  private engineSubGain: GainNode | null = null;
   private reactorOscLow: OscillatorNode | null = null;
   private reactorOscHarmonic: OscillatorNode | null = null;
+  private reactorFilter: BiquadFilterNode | null = null;
   private reactorGain: GainNode | null = null;
   private jetNoiseSource: AudioBufferSourceNode | null = null;
+  private jetLowFilter: BiquadFilterNode | null = null;
+  private jetLowGain: GainNode | null = null;
   private jetFilter: BiquadFilterNode | null = null;
   private jetGain: GainNode | null = null;
+  private jetFlutterLfo: OscillatorNode | null = null;
+  private jetFlutterGain: GainNode | null = null;
   private turbineOsc: OscillatorNode | null = null;
+  private turbineOscHigh: OscillatorNode | null = null;
   private turbineGain: GainNode | null = null;
+  private brakeNoiseFilter: BiquadFilterNode | null = null;
+  private brakeNoiseGain: GainNode | null = null;
 
   // Continuous Warp Drive Rig
   private warpMasterGain: GainNode | null = null;
@@ -56,9 +68,15 @@ class SpaceAudioEngine {
   // Continuous Orbital Mining Laser Rig
   private miningMasterGain: GainNode | null = null;
   private miningFilter: BiquadFilterNode | null = null;
+  private miningSubOsc: OscillatorNode | null = null;
   private miningOscLow: OscillatorNode | null = null;
   private miningOscMid: OscillatorNode | null = null;
+  private miningLfoOsc: OscillatorNode | null = null;
+  private miningLfoGain: GainNode | null = null;
   private miningNoiseSource: AudioBufferSourceNode | null = null;
+  private miningSizzleFilter: BiquadFilterNode | null = null;
+  private miningSizzleGain: GainNode | null = null;
+  private lastMiningCrackleTime = 0;
 
   // Acoustic Space Delay Tail
   private echoDelay: DelayNode | null = null;
@@ -146,7 +164,7 @@ class SpaceAudioEngine {
           b3 = 0.86650 * b3 + white * 0.3104856;
           b4 = 0.55000 * b4 + white * 0.5329522;
           b5 = -0.7616 * b5 - white * 0.0168980;
-          const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.06;
+          const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.12;
           b6 = white * 0.115926;
           data[i] = Math.max(-1, Math.min(1, pink));
         }
@@ -197,33 +215,42 @@ class SpaceAudioEngine {
       this.droneOscB = droneOscB;
       this.ambientNoiseSource = ambientNoiseSource;
 
-      // 2. Dynamic SR-7 Fusion Reactor & Ion Thruster Rig
+      // 2. Dynamic SR-7 Twin Fusion Turbine & Rocket Afterburner Rig
       const shipMasterGain = ctx.createGain();
       shipMasterGain.gain.value = 0.0;
       const shipPerspectiveFilter = ctx.createBiquadFilter();
       shipPerspectiveFilter.type = 'lowpass';
-      shipPerspectiveFilter.frequency.value = 2600;
-      shipPerspectiveFilter.Q.value = 0.65;
+      shipPerspectiveFilter.frequency.value = 3200;
+      shipPerspectiveFilter.Q.value = 0.7;
 
-      // Warm sub-harmonic core with subtle overdrive curve
+      // Dedicated Chest-Thumping Sub-Bass Thrust Core (bypasses aggressive band filters)
+      const engineSubOsc = ctx.createOscillator();
+      engineSubOsc.type = 'sine';
+      engineSubOsc.frequency.value = 40;
+      const engineSubGain = ctx.createGain();
+      engineSubGain.gain.value = 0.18;
+      engineSubOsc.connect(engineSubGain);
+      engineSubGain.connect(shipPerspectiveFilter);
+
+      // Warm sub-harmonic core with saturation overdrive growl
       const shaper = ctx.createWaveShaper();
-      shaper.curve = this.createSoftSaturationCurve(14);
+      shaper.curve = this.createSoftSaturationCurve(22);
       shaper.oversample = '2x';
 
       const reactorOscLow = ctx.createOscillator();
       reactorOscLow.type = 'sawtooth';
-      reactorOscLow.frequency.value = 52;
+      reactorOscLow.frequency.value = 54;
       const reactorOscHarmonic = ctx.createOscillator();
-      reactorOscHarmonic.type = 'triangle';
-      reactorOscHarmonic.frequency.value = 104.5;
+      reactorOscHarmonic.type = 'sawtooth';
+      reactorOscHarmonic.frequency.value = 81.4; // Powerful fifth growl
 
       const reactorLP = ctx.createBiquadFilter();
       reactorLP.type = 'lowpass';
-      reactorLP.frequency.value = 180;
-      reactorLP.Q.value = 2.1;
+      reactorLP.frequency.value = 220;
+      reactorLP.Q.value = 1.9;
 
       const reactorGain = ctx.createGain();
-      reactorGain.gain.value = 0.25;
+      reactorGain.gain.value = 0.22;
 
       reactorOscLow.connect(reactorLP);
       reactorOscHarmonic.connect(reactorLP);
@@ -231,48 +258,103 @@ class SpaceAudioEngine {
       shaper.connect(reactorGain);
       reactorGain.connect(shipPerspectiveFilter);
 
-      // Turbulent Plasma Jet Roar
+      // Dual-Band Turbulent Rocket Combustion + Afterburner Jet Wash + LFO Flutter
       const jetNoiseSource = ctx.createBufferSource();
       jetNoiseSource.buffer = noiseBuf;
       jetNoiseSource.loop = true;
+
+      // Low combustion chamber thunder
+      const jetLowFilter = ctx.createBiquadFilter();
+      jetLowFilter.type = 'lowpass';
+      jetLowFilter.frequency.value = 260;
+      jetLowFilter.Q.value = 1.1;
+      const jetLowGain = ctx.createGain();
+      jetLowGain.gain.value = 0.24;
+
+      // High-velocity plasma exhaust whoosh
       const jetFilter = ctx.createBiquadFilter();
       jetFilter.type = 'bandpass';
-      jetFilter.frequency.value = 260;
-      jetFilter.Q.value = 0.85;
+      jetFilter.frequency.value = 460;
+      jetFilter.Q.value = 0.72;
       const jetGain = ctx.createGain();
-      jetGain.gain.value = 0.16;
+      jetGain.gain.value = 0.18;
+
+      // Retro-braking forward exhaust hiss
+      const brakeNoiseFilter = ctx.createBiquadFilter();
+      brakeNoiseFilter.type = 'bandpass';
+      brakeNoiseFilter.frequency.value = 780;
+      brakeNoiseFilter.Q.value = 1.25;
+      const brakeNoiseGain = ctx.createGain();
+      brakeNoiseGain.gain.value = 0;
+
+      // Organic 21Hz combustion pressure flutter modulating low-jet cutoff & roar
+      const jetFlutterLfo = ctx.createOscillator();
+      jetFlutterLfo.type = 'triangle';
+      jetFlutterLfo.frequency.value = 21;
+      const jetFlutterGain = ctx.createGain();
+      jetFlutterGain.gain.value = 55;
+      jetFlutterLfo.connect(jetFlutterGain);
+      jetFlutterGain.connect(jetLowFilter.frequency);
+
+      jetNoiseSource.connect(jetLowFilter);
+      jetLowFilter.connect(jetLowGain);
+      jetLowGain.connect(shipPerspectiveFilter);
 
       jetNoiseSource.connect(jetFilter);
       jetFilter.connect(jetGain);
       jetGain.connect(shipPerspectiveFilter);
 
-      // Ion Turbine Spool Whine (Smooth crystalline harmonic)
+      jetNoiseSource.connect(brakeNoiseFilter);
+      brakeNoiseFilter.connect(brakeNoiseGain);
+      brakeNoiseGain.connect(shipPerspectiveFilter);
+
+      // Twin Ion Turbine Spool Whine (Smooth dual-spool harmonic)
       const turbineOsc = ctx.createOscillator();
-      turbineOsc.type = 'sine';
-      turbineOsc.frequency.value = 190;
+      turbineOsc.type = 'triangle';
+      turbineOsc.frequency.value = 180;
+      const turbineOscHigh = ctx.createOscillator();
+      turbineOscHigh.type = 'sine';
+      turbineOscHigh.frequency.value = 360;
+      const turbineHighMix = ctx.createGain();
+      turbineHighMix.gain.value = 0.35;
       const turbineGain = ctx.createGain();
-      turbineGain.gain.value = 0.02;
+      turbineGain.gain.value = 0.025;
       turbineOsc.connect(turbineGain);
+      turbineOscHigh.connect(turbineHighMix);
+      turbineHighMix.connect(turbineGain);
       turbineGain.connect(shipPerspectiveFilter);
 
       shipPerspectiveFilter.connect(shipMasterGain);
       shipMasterGain.connect(compressor);
 
+      engineSubOsc.start();
       reactorOscLow.start();
       reactorOscHarmonic.start();
       jetNoiseSource.start();
+      jetFlutterLfo.start();
       turbineOsc.start();
+      turbineOscHigh.start();
 
       this.shipMasterGain = shipMasterGain;
       this.shipPerspectiveFilter = shipPerspectiveFilter;
+      this.engineSubOsc = engineSubOsc;
+      this.engineSubGain = engineSubGain;
       this.reactorOscLow = reactorOscLow;
       this.reactorOscHarmonic = reactorOscHarmonic;
+      this.reactorFilter = reactorLP;
       this.reactorGain = reactorGain;
       this.jetNoiseSource = jetNoiseSource;
+      this.jetLowFilter = jetLowFilter;
+      this.jetLowGain = jetLowGain;
       this.jetFilter = jetFilter;
       this.jetGain = jetGain;
+      this.jetFlutterLfo = jetFlutterLfo;
+      this.jetFlutterGain = jetFlutterGain;
       this.turbineOsc = turbineOsc;
+      this.turbineOscHigh = turbineOscHigh;
       this.turbineGain = turbineGain;
+      this.brakeNoiseFilter = brakeNoiseFilter;
+      this.brakeNoiseGain = brakeNoiseGain;
 
       // 3. Interplanetary Warp Drive Tunnel Rig
       const warpMasterGain = ctx.createGain();
@@ -317,32 +399,59 @@ class SpaceAudioEngine {
       this.warpNoiseSource = warpNoiseSource;
       this.warpFilter = warpFilter;
 
-      // 3B. Continuous Orbital Mining Laser Rig
+      // 3B. Continuous Multi-Layer Orbital Mining Extractor & Ablation Rig
       const miningMasterGain = ctx.createGain();
       miningMasterGain.gain.value = 0;
 
       const miningFilter = ctx.createBiquadFilter();
-      miningFilter.type = 'bandpass';
-      miningFilter.frequency.value = 680;
-      miningFilter.Q.value = 2.4;
+      miningFilter.type = 'lowpass';
+      miningFilter.frequency.value = 1450;
+      miningFilter.Q.value = 3.2;
+
+      const miningSubOsc = ctx.createOscillator();
+      miningSubOsc.type = 'sine';
+      miningSubOsc.frequency.value = 58;
+      const miningSubGain = ctx.createGain();
+      miningSubGain.gain.value = 0.42;
 
       const miningOscLow = ctx.createOscillator();
       miningOscLow.type = 'sawtooth';
-      miningOscLow.frequency.value = 84;
+      miningOscLow.frequency.value = 96;
       const miningLowGain = ctx.createGain();
-      miningLowGain.gain.value = 0.28;
+      miningLowGain.gain.value = 0.34;
 
       const miningOscMid = ctx.createOscillator();
       miningOscMid.type = 'triangle';
-      miningOscMid.frequency.value = 252;
+      miningOscMid.frequency.value = 288;
       const miningMidGain = ctx.createGain();
-      miningMidGain.gain.value = 0.16;
+      miningMidGain.gain.value = 0.24;
+
+      // Pulsating magnetic drill LFO modulation
+      const miningLfoOsc = ctx.createOscillator();
+      miningLfoOsc.type = 'sine';
+      miningLfoOsc.frequency.value = 14.5;
+      const miningLfoGain = ctx.createGain();
+      miningLfoGain.gain.value = 220;
+      miningLfoOsc.connect(miningLfoGain);
+      miningLfoGain.connect(miningFilter.frequency);
 
       const miningNoiseSource = ctx.createBufferSource();
       miningNoiseSource.buffer = this.noiseBuffer;
       miningNoiseSource.loop = true;
+
       const miningNoiseGain = ctx.createGain();
-      miningNoiseGain.gain.value = 0.34;
+      miningNoiseGain.gain.value = 0.36;
+
+      // High-energy rock/ice ablation plasma sizzle (bypass main lowpass into crisp bandpass)
+      const miningSizzleFilter = ctx.createBiquadFilter();
+      miningSizzleFilter.type = 'bandpass';
+      miningSizzleFilter.frequency.value = 1750;
+      miningSizzleFilter.Q.value = 1.15;
+      const miningSizzleGain = ctx.createGain();
+      miningSizzleGain.gain.value = 0;
+
+      miningSubOsc.connect(miningSubGain);
+      miningSubGain.connect(miningMasterGain);
 
       miningOscLow.connect(miningLowGain);
       miningLowGain.connect(miningFilter);
@@ -351,19 +460,30 @@ class SpaceAudioEngine {
       miningNoiseSource.connect(miningNoiseGain);
       miningNoiseGain.connect(miningFilter);
 
+      miningNoiseSource.connect(miningSizzleFilter);
+      miningSizzleFilter.connect(miningSizzleGain);
+      miningSizzleGain.connect(miningMasterGain);
+
       miningFilter.connect(miningMasterGain);
       miningMasterGain.connect(compressor);
       miningMasterGain.connect(echoBus);
 
+      miningSubOsc.start();
       miningOscLow.start();
       miningOscMid.start();
+      miningLfoOsc.start();
       miningNoiseSource.start();
 
       this.miningMasterGain = miningMasterGain;
       this.miningFilter = miningFilter;
+      this.miningSubOsc = miningSubOsc;
       this.miningOscLow = miningOscLow;
       this.miningOscMid = miningOscMid;
+      this.miningLfoOsc = miningLfoOsc;
+      this.miningLfoGain = miningLfoGain;
       this.miningNoiseSource = miningNoiseSource;
+      this.miningSizzleFilter = miningSizzleFilter;
+      this.miningSizzleGain = miningSizzleGain;
 
       this.isInitialized = true;
       return true;
@@ -416,45 +536,81 @@ class SpaceAudioEngine {
       this.ambientGain.gain.setTargetAtTime(ambLevel, now, 0.18);
     }
 
-    // Spacecraft engine & ion turbine modulation
+    // Spacecraft engine & ion afterburner modulation
     if (
       this.shipMasterGain &&
       this.shipPerspectiveFilter &&
+      this.engineSubOsc &&
+      this.engineSubGain &&
       this.reactorOscLow &&
       this.reactorOscHarmonic &&
+      this.reactorFilter &&
       this.reactorGain &&
+      this.jetLowFilter &&
+      this.jetLowGain &&
       this.jetFilter &&
       this.jetGain &&
+      this.jetFlutterLfo &&
+      this.jetFlutterGain &&
       this.turbineOsc &&
-      this.turbineGain
+      this.turbineOscHigh &&
+      this.turbineGain &&
+      this.brakeNoiseGain
     ) {
       if (params.mode === 'SPACECRAFT') {
         const thr = Math.min(1.2, Math.max(0, params.throttle || 0));
         const spd = Math.min(1.5, Math.max(0, params.speedNorm || 0));
         const boost = Math.min(1, Math.max(0, params.boostBlend || 0));
-        const energy = Math.min(1.2, Math.max(thr, spd * 0.72));
+        const braking = Boolean(params.isBraking);
+        const energy = Math.min(1.3, Math.max(thr * 0.95 + boost * 0.35, spd * 0.58));
+        const activeThrust = Math.min(1.25, Math.max(thr, boost * 0.9));
 
-        // Perspective acoustics: muffled warm insulation inside cockpit vs wide thruster roar in 3rd-person
-        const perspFreq = params.cameraView === 'COCKPIT' ? 920 + boost * 650 : 3400 + boost * 1600;
-        const perspGain = params.cameraView === 'COCKPIT' ? 0.34 : 0.48;
-        this.shipMasterGain.gain.setTargetAtTime(perspGain, now, 0.09);
-        this.shipPerspectiveFilter.frequency.setTargetAtTime(perspFreq, now, 0.09);
+        // Perspective acoustics: warm insulated cockpit rumble vs wide roaring exhaust outside
+        const perspFreq =
+          params.cameraView === 'COCKPIT'
+            ? 840 + activeThrust * 540 + boost * 420
+            : 3200 + activeThrust * 1600 + boost * 1400;
+        const perspGain =
+          params.cameraView === 'COCKPIT'
+            ? 0.26 + activeThrust * 0.16 + boost * 0.1
+            : 0.34 + activeThrust * 0.28 + boost * 0.16;
+        this.shipMasterGain.gain.setTargetAtTime(perspGain, now, 0.08);
+        this.shipPerspectiveFilter.frequency.setTargetAtTime(perspFreq, now, 0.08);
 
-        // Deep fusion core pitch rises smoothly with engine burn
-        const baseHz = 44 + energy * 34 + boost * 28;
-        this.reactorOscLow.frequency.setTargetAtTime(baseHz, now, 0.08);
-        this.reactorOscHarmonic.frequency.setTargetAtTime(baseHz * 2.01, now, 0.08);
-        this.reactorGain.gain.setTargetAtTime(0.14 + energy * 0.22 + boost * 0.12, now, 0.08);
+        // Chest-thumping sub-bass core scales smoothly from gentle idle to thunderous boost
+        this.engineSubOsc.frequency.setTargetAtTime(34 + energy * 24 + boost * 18, now, 0.08);
+        this.engineSubGain.gain.setTargetAtTime(0.08 + energy * 0.24 + boost * 0.18, now, 0.08);
 
-        // Plasma exhaust noise wash
-        const jetFreq = 160 + energy * 950 + boost * 1350;
+        // Dual-detuned reactor/rocket growl + harmonic filter opening with throttle
+        const baseHz = 44 + energy * 38 + boost * 32;
+        this.reactorOscLow.frequency.setTargetAtTime(baseHz, now, 0.07);
+        this.reactorOscHarmonic.frequency.setTargetAtTime(baseHz * 1.498, now, 0.07);
+        this.reactorFilter.frequency.setTargetAtTime(175 + energy * 680 + boost * 620, now, 0.08);
+        this.reactorGain.gain.setTargetAtTime(0.09 + energy * 0.24 + boost * 0.14, now, 0.08);
+
+        // Low combustion thunder + combustion LFO flutter
+        this.jetLowFilter.frequency.setTargetAtTime(190 + activeThrust * 340 + boost * 320, now, 0.08);
+        this.jetLowGain.gain.setTargetAtTime(0.09 + activeThrust * 0.38 + boost * 0.26, now, 0.08);
+        this.jetFlutterLfo.frequency.setTargetAtTime(17 + activeThrust * 10 + boost * 9, now, 0.1);
+        this.jetFlutterGain.gain.setTargetAtTime(35 + activeThrust * 85 + boost * 75, now, 0.09);
+
+        // High-velocity plasma exhaust whoosh
+        const jetFreq = 300 + activeThrust * 1150 + boost * 1450;
         this.jetFilter.frequency.setTargetAtTime(jetFreq, now, 0.08);
-        this.jetGain.gain.setTargetAtTime(0.08 + energy * 0.34 + boost * 0.24, now, 0.08);
+        this.jetGain.gain.setTargetAtTime(0.05 + activeThrust * 0.36 + boost * 0.32, now, 0.08);
 
-        // Ion turbine crystal spool whine
-        const turbHz = 165 + energy * 240 + boost * 260;
+        // Twin ion turbine spool whine (crisp turbine climb)
+        const turbHz = 148 + energy * 235 + boost * 195;
         this.turbineOsc.frequency.setTargetAtTime(turbHz, now, 0.09);
-        this.turbineGain.gain.setTargetAtTime(0.012 + energy * 0.045 + boost * 0.065, now, 0.09);
+        this.turbineOscHigh.frequency.setTargetAtTime(turbHz * 2.0, now, 0.09);
+        this.turbineGain.gain.setTargetAtTime(0.012 + energy * 0.055 + boost * 0.068, now, 0.09);
+
+        // Retro-braking forward exhaust hiss
+        this.brakeNoiseGain.gain.setTargetAtTime(
+          braking && spd > 0.04 ? (params.cameraView === 'COCKPIT' ? 0.12 : 0.22) : 0,
+          now,
+          0.07
+        );
 
         // Cold-gas Reaction Control System (RCS) micro-thruster bursts when maneuvering!
         const rcs = params.rcsIntensity || 0;
@@ -481,25 +637,57 @@ class SpaceAudioEngine {
       }
     }
 
-    // Continuous Orbital Mining Laser Harmonic Beam
-    if (this.miningMasterGain && this.miningFilter && this.miningOscLow && this.miningOscMid) {
+    // Continuous Orbital Mining Extractor Laser & Surface Ablation Sizzle
+    if (
+      this.miningMasterGain &&
+      this.miningFilter &&
+      this.miningSubOsc &&
+      this.miningOscLow &&
+      this.miningOscMid &&
+      this.miningLfoOsc &&
+      this.miningLfoGain &&
+      this.miningSizzleFilter &&
+      this.miningSizzleGain
+    ) {
       const mInt =
         params.mode === 'SPACECRAFT' ? Math.max(0, Math.min(1, params.miningIntensity || 0)) : 0;
+      const isDrilling = params.mode === 'SPACECRAFT' && Boolean(params.miningDrilling);
       const isCockpit = params.cameraView === 'COCKPIT';
-      const targetGain = mInt > 0.02 ? (isCockpit ? 0.085 : 0.145) * mInt : 0;
-      this.miningMasterGain.gain.setTargetAtTime(targetGain, now, 0.06);
+      const spotMult = Math.max(1, Math.min(2.6, params.miningHotspotMult || 1));
+      const baseVol = isDrilling ? (isCockpit ? 0.24 : 0.38) : isCockpit ? 0.12 : 0.18;
+      const targetGain = mInt > 0.02 ? baseVol * mInt : 0;
+      this.miningMasterGain.gain.setTargetAtTime(targetGain, now, 0.055);
       if (mInt > 0.02) {
+        const drillBoost = isDrilling ? 1 : 0.25;
         this.miningFilter.frequency.setTargetAtTime(
-          520 + mInt * 680 + Math.sin(params.clockTime * 11.5) * 145,
+          740 + mInt * 780 + (spotMult - 1) * 260 + Math.sin(params.clockTime * 11.5) * 180,
           now,
           0.05
         );
-        this.miningOscLow.frequency.setTargetAtTime(76 + mInt * 26, now, 0.06);
+        this.miningSubOsc.frequency.setTargetAtTime(52 + mInt * 18 + drillBoost * 8, now, 0.05);
+        this.miningOscLow.frequency.setTargetAtTime(84 + mInt * 32 + (spotMult - 1) * 14, now, 0.05);
         this.miningOscMid.frequency.setTargetAtTime(
-          232 + mInt * 82 + Math.sin(params.clockTime * 7.4) * 18,
+          252 + mInt * 96 + (spotMult - 1) * 42 + Math.sin(params.clockTime * 8.2) * 22,
           now,
           0.05
         );
+        this.miningLfoOsc.frequency.setTargetAtTime(isDrilling ? 15 + spotMult * 2.5 : 8.5, now, 0.08);
+        this.miningLfoGain.gain.setTargetAtTime(isDrilling ? 290 : 110, now, 0.08);
+        this.miningSizzleFilter.frequency.setTargetAtTime(
+          isDrilling ? 1600 + spotMult * 350 : 1200,
+          now,
+          0.06
+        );
+        this.miningSizzleGain.gain.setTargetAtTime(isDrilling ? 0.42 : 0.05, now, 0.06);
+
+        // Occasional hot rock/ice fracturing crackle when ablating planetary surface
+        const cracklePeriod = spotMult > 1.3 ? 0.19 : 0.28;
+        if (isDrilling && now - this.lastMiningCrackleTime > cracklePeriod) {
+          this.lastMiningCrackleTime = now;
+          this.triggerMiningCrackle(isCockpit, spotMult);
+        }
+      } else {
+        this.miningSizzleGain.gain.setTargetAtTime(0, now, 0.05);
       }
     }
   }
@@ -528,6 +716,163 @@ class SpaceAudioEngine {
     gain.connect(this.compressor);
 
     src.start(now, Math.random() * 1.5, 0.13);
+  }
+
+  private triggerMiningCrackle(isCockpit: boolean, hotspotMult: number): void {
+    if (!this.ctx || !this.noiseBuffer || !this.compressor || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    src.playbackRate.value = 0.85 + Math.random() * 0.9;
+
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime((isCockpit ? 980 : 1850) + Math.random() * 950, now);
+    bp.Q.value = 2.4;
+
+    const gain = this.ctx.createGain();
+    const peak = (isCockpit ? 0.05 : 0.095) * (0.85 + Math.min(1.5, hotspotMult - 1) * 0.35);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0004, now + 0.085);
+
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(this.compressor);
+    if (this.echoBus) gain.connect(this.echoBus);
+    src.start(now, Math.random() * 1.8, 0.095);
+  }
+
+  public playMiningEngage(isDrilling = false): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || !this.noiseBuffer || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    // 1. Magnetic Laser Capacitor Charge Sweep
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(76, now);
+    osc.frequency.exponentialRampToValueAtTime(360, now + 0.24);
+    osc.frequency.exponentialRampToValueAtTime(isDrilling ? 132 : 112, now + 0.44);
+
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'lowpass';
+    bp.frequency.setValueAtTime(320, now);
+    bp.frequency.exponentialRampToValueAtTime(2400, now + 0.22);
+    bp.Q.value = 3.6;
+
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.001, now);
+    g.gain.linearRampToValueAtTime(0.24, now + 0.045);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
+
+    osc.connect(bp);
+    bp.connect(g);
+    g.connect(this.compressor);
+    if (this.echoBus) g.connect(this.echoBus);
+    osc.start(now);
+    osc.stop(now + 0.5);
+
+    // 2. Plasma Lens Aperture Snap
+    const nSrc = this.ctx.createBufferSource();
+    nSrc.buffer = this.noiseBuffer;
+    const nBp = this.ctx.createBiquadFilter();
+    nBp.type = 'bandpass';
+    nBp.frequency.setValueAtTime(2200, now);
+    nBp.Q.value = 1.4;
+    const nG = this.ctx.createGain();
+    nG.gain.setValueAtTime(0.16, now);
+    nG.gain.exponentialRampToValueAtTime(0.0006, now + 0.16);
+    nSrc.connect(nBp);
+    nBp.connect(nG);
+    nG.connect(this.compressor);
+    nSrc.start(now, Math.random(), 0.18);
+  }
+
+  public playMiningSurfaceLock(): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || !this.noiseBuffer || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    // Sub-seismic crater contact thump + ablation hiss burst
+    const sub = this.ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(118, now);
+    sub.frequency.exponentialRampToValueAtTime(42, now + 0.24);
+    const subG = this.ctx.createGain();
+    subG.gain.setValueAtTime(0.26, now);
+    subG.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    sub.connect(subG);
+    subG.connect(this.compressor);
+    sub.start(now);
+    sub.stop(now + 0.3);
+
+    const nSrc = this.ctx.createBufferSource();
+    nSrc.buffer = this.noiseBuffer;
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(1600, now);
+    bp.frequency.exponentialRampToValueAtTime(920, now + 0.26);
+    const nG = this.ctx.createGain();
+    nG.gain.setValueAtTime(0.18, now);
+    nG.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    nSrc.connect(bp);
+    bp.connect(nG);
+    nG.connect(this.compressor);
+    nSrc.start(now, 0.15, 0.3);
+  }
+
+  public playMiningDisengage(): void {
+    if (!this.ctx || !this.compressor || this.muted) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(310, now);
+    osc.frequency.exponentialRampToValueAtTime(52, now + 0.32);
+
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.0005, now + 0.35);
+
+    osc.connect(g);
+    g.connect(this.compressor);
+    osc.start(now);
+    osc.stop(now + 0.36);
+  }
+
+  public playAfterburnerIgnite(): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || !this.noiseBuffer || this.muted) return;
+    const now = this.ctx.currentTime;
+
+    // Rocket / Ion Afterburner Detonation Punch
+    const sub = this.ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(98, now);
+    sub.frequency.exponentialRampToValueAtTime(34, now + 0.42);
+    const subG = this.ctx.createGain();
+    subG.gain.setValueAtTime(0.32, now);
+    subG.gain.exponentialRampToValueAtTime(0.001, now + 0.46);
+    sub.connect(subG);
+    subG.connect(this.compressor);
+    sub.start(now);
+    sub.stop(now + 0.48);
+
+    const nSrc = this.ctx.createBufferSource();
+    nSrc.buffer = this.noiseBuffer;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2800, now);
+    lp.frequency.exponentialRampToValueAtTime(420, now + 0.52);
+    const nG = this.ctx.createGain();
+    nG.gain.setValueAtTime(0.28, now);
+    nG.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    nSrc.connect(lp);
+    lp.connect(nG);
+    nG.connect(this.compressor);
+    if (this.echoBus) nG.connect(this.echoBus);
+    nSrc.start(now, 0.05, 0.58);
   }
 
   public playShipStartup(): void {
@@ -1019,15 +1364,20 @@ class SpaceAudioEngine {
       this.droneOscA?.stop();
       this.droneOscB?.stop();
       this.ambientNoiseSource?.stop();
+      this.engineSubOsc?.stop();
       this.reactorOscLow?.stop();
       this.reactorOscHarmonic?.stop();
       this.jetNoiseSource?.stop();
+      this.jetFlutterLfo?.stop();
       this.turbineOsc?.stop();
+      this.turbineOscHigh?.stop();
       this.warpOscLow?.stop();
       this.warpOscHigh?.stop();
       this.warpNoiseSource?.stop();
+      this.miningSubOsc?.stop();
       this.miningOscLow?.stop();
       this.miningOscMid?.stop();
+      this.miningLfoOsc?.stop();
       this.miningNoiseSource?.stop();
       if (this.ctx && this.ctx.state !== 'closed') {
         this.ctx.close().catch(() => {});

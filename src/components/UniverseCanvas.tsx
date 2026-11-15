@@ -1767,6 +1767,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let prevRadarAudioTs = 0;
     let prevBrakeAudio = false;
     let prevAutopilotIdAudio: string | null = null;
+    let prevMiningActiveAudio = false;
+    let prevMiningDrillingAudio = false;
+    let prevBoostAudio = false;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       spaceAudio.unlock();
@@ -2727,11 +2730,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             st.propagatedSatellites.find((s) => s.id === st.selectedSatelliteId) ||
             (st.selectedSatelliteId === 'sat-orbital-gateway' && gatewayRecordFallback
               ? propagateSingleSatellite(
-                  gatewayRecordFallback,
-                  new Date(currentSimTimeMs),
-                  currentEarthRadius,
-                  true
-                )
+                gatewayRecordFallback,
+                new Date(currentSimTimeMs),
+                currentEarthRadius,
+                true
+              )
               : undefined);
           if (st.showOrbits && selectedSat && selectedSat.orbitTrack3D.length > 1) {
             if (
@@ -2813,7 +2816,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             (st.evaActive &&
               !evaAttachedToShip &&
               astronaut.rootGroup.position.distanceTo(orbitalStationWorldPos) <
-                orbitalStationWorldScale * 380))
+              orbitalStationWorldScale * 380))
         ) {
           shipAnchorMode = 'STATION';
           prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
@@ -3158,6 +3161,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           continuousThrottle = sc.throttle;
           appliedThrottle = sc.throttle;
           brakeBlend = 0;
+          prevMiningActiveAudio = false;
+          prevMiningDrillingAudio = false;
+          prevBoostAudio = false;
           lastSyncedReactThrottle = sc.throttle;
           lastManualOrbitTimestamp = 0;
           cockpitLookTargetYaw = 0;
@@ -3432,20 +3438,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         let pitchInput = isWalkingInside
           ? 0
           : ((pressedKeys.has('ArrowUp') ? 1 : 0) - (pressedKeys.has('ArrowDown') ? 1 : 0)) *
-              pitchDir +
-            (vSteer?.pitch || 0) +
-            cockpitSteerSmoothY;
+          pitchDir +
+          (vSteer?.pitch || 0) +
+          cockpitSteerSmoothY;
         let yawInput = isWalkingInside
           ? 0
           : (pressedKeys.has('KeyA') ? 1 : 0) -
-            (pressedKeys.has('KeyD') ? 1 : 0) +
-            (vSteer?.yaw || 0) +
-            cockpitSteerSmoothX;
+          (pressedKeys.has('KeyD') ? 1 : 0) +
+          (vSteer?.yaw || 0) +
+          cockpitSteerSmoothX;
         let rollInput = isWalkingInside
           ? 0
           : ((pressedKeys.has('ArrowLeft') ? 1 : 0) - (pressedKeys.has('ArrowRight') ? 1 : 0)) *
-              rollDir +
-            (vSteer?.roll || 0);
+          rollDir +
+          (vSteer?.roll || 0);
 
         pitchInput = THREE.MathUtils.clamp(pitchInput, -1.1, 1.1);
         yawInput = THREE.MathUtils.clamp(yawInput, -1.1, 1.1);
@@ -3712,15 +3718,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           speedMult;
         const adaptiveCruise = autoPos
           ? THREE.MathUtils.clamp(
-              sr7.rootGroup.position.distanceTo(autoPos) * 0.32,
-              currentShipScale * 3.0,
-              1800.0
-            ) * speedMult
+            sr7.rootGroup.position.distanceTo(autoPos) * 0.32,
+            currentShipScale * 3.0,
+            1800.0
+          ) * speedMult
           : THREE.MathUtils.lerp(
-              subWarpSpeedCap,
-              warpSpeedCap,
-              Math.pow(THREE.MathUtils.clamp(boostBlend, 0, 1), 1.35)
-            );
+            subWarpSpeedCap,
+            warpSpeedCap,
+            Math.pow(THREE.MathUtils.clamp(boostBlend, 0, 1), 1.35)
+          );
 
         const maxSpeed = adaptiveCruise;
         const throttleCurve =
@@ -3831,16 +3837,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         cockpitFovOffset = THREE.MathUtils.lerp(cockpitFovOffset, cockpitFovTargetOffset, Math.min(1, dt * 10));
         const targetFov = isWalkingInside
           ? THREE.MathUtils.clamp(
-              (sc.cameraView === 'COCKPIT' ? 68 : 62) + cockpitFovOffset,
-              42,
-              86
-            )
+            (sc.cameraView === 'COCKPIT' ? 68 : 62) + cockpitFovOffset,
+            42,
+            86
+          )
           : sc.cameraView === 'COCKPIT'
             ? THREE.MathUtils.clamp(
-                THREE.MathUtils.lerp(76, 85, boostBlend) + cockpitFovOffset,
-                44,
-                94
-              )
+              THREE.MathUtils.lerp(76, 85, boostBlend) + cockpitFovOffset,
+              44,
+              94
+            )
             : THREE.MathUtils.lerp(48, 58, boostBlend);
         if (Math.abs(camera.fov - targetFov) > 0.1) {
           camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 6.5));
@@ -4082,8 +4088,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           _tmpQuat1.setFromEuler(_tmpEuler);
           const finalChaseQuat = _tmpQuat1.premultiply(externalCamQuat);
 
-          const chaseDist = (6.35 + boostBlend * 1.45) * externalZoomMult * currentShipScale;
-          const chaseHeight = (1.28 + angVelPitch * 0.06) * currentShipScale;
+          const chaseDist = (7.95 + boostBlend * 1.65) * externalZoomMult * currentShipScale;
+          const chaseHeight = (1.56 + angVelPitch * 0.06) * currentShipScale;
           const chaseSideLag = -angVelYaw * 0.14 * currentShipScale;
 
           _tmpV4.set(chaseSideLag, chaseHeight, chaseDist).applyQuaternion(finalChaseQuat);
@@ -4097,9 +4103,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             );
           }
 
-          // Aim slightly ahead of the starfighter nose so the ship sits heroically in the lower-center frame
+          // Frame full starfighter from nose to aft thruster plumes cleanly above the bottom HUD strip
           _tmpV5
-            .set(0, 0.38 * currentShipScale, -3.2 * currentShipScale)
+            .set(0, -0.04 * currentShipScale, -1.15 * currentShipScale)
             .applyQuaternion(sr7.rootGroup.quaternion)
             .add(sr7.rootGroup.position);
           _tmpV6.set(0, 1, 0).applyQuaternion(finalChaseQuat).normalize();
@@ -4374,6 +4380,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           spaceAudio.playBrakeRetro();
         }
         prevBrakeAudio = isBrakingNow;
+        if (boosting && !prevBoostAudio) {
+          spaceAudio.playAfterburnerIgnite();
+        }
+        prevBoostAudio = boosting;
+
+        const nowMiningActive = Boolean(postMiningSurv.mining.isActive);
+        const nowMiningDrilling = Boolean(postMiningSurv.mining.isDrilling);
+        if (nowMiningActive && !prevMiningActiveAudio) {
+          spaceAudio.playMiningEngage(nowMiningDrilling);
+        } else if (!nowMiningActive && prevMiningActiveAudio) {
+          spaceAudio.playMiningDisengage();
+        } else if (nowMiningDrilling && !prevMiningDrillingAudio) {
+          spaceAudio.playMiningSurfaceLock();
+        }
+        prevMiningActiveAudio = nowMiningActive;
+        prevMiningDrillingAudio = nowMiningDrilling;
+
         if (sc.autopilotTargetId !== prevAutopilotIdAudio) {
           prevAutopilotIdAudio = sc.autopilotTargetId;
           if (sc.autopilotTargetId) spaceAudio.playAutopilotLock();
@@ -4389,7 +4412,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           boostBlend,
           isBraking: isBrakingNow,
           rcsIntensity: Math.min(1, Math.hypot(pitchInput, yawInput, rollInput)),
-          miningIntensity: postMiningSurv.mining.isDrilling ? 0.92 : postMiningSurv.mining.isActive ? 0.25 : 0,
+          miningIntensity: nowMiningDrilling ? 1.0 : nowMiningActive ? 0.36 : 0,
+          miningDrilling: nowMiningDrilling,
+          miningHotspotMult: postMiningSurv.mining.hotspotMultiplier || 1,
         });
 
         // 7. Compute Nearest Contacts & Ship-Relative Radar Bearings
@@ -4472,10 +4497,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const displayKmSec = autoPos
             ? Math.max(subWarpKmSec, currentSpeed * 1_000_000)
             : THREE.MathUtils.lerp(
-                subWarpKmSec,
-                warpKmSec,
-                THREE.MathUtils.smoothstep(warpEngagement, 0.08, 0.5)
-              );
+              subWarpKmSec,
+              warpKmSec,
+              THREE.MathUtils.smoothstep(warpEngagement, 0.08, 0.5)
+            );
 
           if (displayKmSec < 1.0) {
             const kmPerHour = Math.max(1, Math.round(displayKmSec * 3600));
@@ -4506,6 +4531,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           clockTime,
           throttle: isBrakingNow ? appliedThrottle * (1 - brakeBlend) : effectiveThrottle,
           boostActive: boosting,
+          isBraking: isBrakingNow,
           headlightsOn: sc.headlightsOn,
           interiorLightsOn: sc.interiorLightsOn,
           shieldsOn: sc.shieldsOn,
@@ -5278,272 +5304,272 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         if (st.lobbyShowcaseActive) {
           setScreenLabels((prev) => (prev.length > 0 ? [] : prev));
         } else {
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        const nextLabels: ScreenLabel[] = [];
+          const width = container.clientWidth;
+          const height = container.clientHeight;
+          const nextLabels: ScreenLabel[] = [];
 
-        const isExternalGalaxy =
-          selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
-        const isGalacticScaleView =
-          isExternalGalaxy ||
-          selectedBody.id === 'milky-way' ||
-          distFromOrigin > galThresholds.fadeStart * 1.45;
+          const isExternalGalaxy =
+            selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
+          const isGalacticScaleView =
+            isExternalGalaxy ||
+            selectedBody.id === 'milky-way' ||
+            distFromOrigin > galThresholds.fadeStart * 1.45;
 
-        // Calculate real-time vertical field-of-view scale (Cosmoscope-style "↕ 157.377 ly" / "UA" / "km")
-        const fovSpanUnits =
-          2.0 * activeCamDist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-        let formattedScale = '';
-        if (isGalacticScaleView) {
-          const spanLy = fovSpanUnits * 59.8;
-          if (spanLy >= 1_000_000) {
-            formattedScale = `${(spanLy / 1_000_000).toLocaleString('pt-BR', {
-              maximumFractionDigits: 2,
-            })} Mly`;
-          } else if (spanLy >= 100) {
-            formattedScale = `${Math.round(spanLy).toLocaleString('pt-BR')} ly`;
-          } else {
-            formattedScale = `${spanLy.toLocaleString('pt-BR', {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1,
-            })} ly`;
-          }
-        } else if (st.zoomLevel === 'SOLAR_SYSTEM') {
-          const spanAU = Math.max(0.01, fovSpanUnits / 149.59787);
-          formattedScale = `${spanAU.toLocaleString('pt-BR', {
-            minimumFractionDigits: spanAU < 1 ? 2 : 1,
-            maximumFractionDigits: spanAU < 1 ? 2 : 1,
-          })} UA`;
-        } else {
-          const spanKm = Math.max(1, Math.round(fovSpanUnits * 1_000_000));
-          formattedScale = `${spanKm.toLocaleString('pt-BR')} km`;
-        }
-        if (formattedScale !== lastScaleReadout) {
-          lastScaleReadout = formattedScale;
-          setScaleReadout(formattedScale);
-        }
-
-        const projectPoint = (worldVec: THREE.Vector3) => {
-          _projVec.copy(worldVec).project(camera);
-          const visible = _projVec.z >= -1 && _projVec.z <= 1;
-          return {
-            x: (_projVec.x * 0.5 + 0.5) * width,
-            y: (-(_projVec.y * 0.5) + 0.5) * height,
-            visible,
-          };
-        };
-
-        if (st.showLabels) {
+          // Calculate real-time vertical field-of-view scale (Cosmoscope-style "↕ 157.377 ly" / "UA" / "km")
+          const fovSpanUnits =
+            2.0 * activeCamDist * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+          let formattedScale = '';
           if (isGalacticScaleView) {
-            // AT GALACTIC SCALE: Show Clean Cosmoscope-Style Galaxy Titles & 3D Milky Way Landmarks!
-            ALL_CELESTIAL_BODIES.forEach((b) => {
-              if (b.category !== 'galaxy') return;
-              const wPos = bodyWorldPositions[b.id];
-              if (!wPos) return;
-              _tmpV1
-                .copy(wPos)
-                .add(
-                  _tmpV2.set(0, b.id === 'milky-way' ? 65 : getScaledRadius(b, st.scaleMode) * 0.55, 0)
-                );
-              const proj = projectPoint(_tmpV1);
-              if (
-                proj.visible &&
-                proj.x > 24 &&
-                proj.x < width - 24 &&
-                proj.y > 24 &&
-                proj.y < height - 24
-              ) {
-                nextLabels.push({
-                  id: `lbl-gal-${b.id}`,
-                  name: b.id === 'milky-way' ? 'Via Láctea (Milky Way)' : b.name,
-                  x: proj.x,
-                  y: proj.y,
-                  visible: true,
-                  color: b.primaryColorHex,
-                  kind: 'galaxy',
-                  payloadId: b.id,
-                });
-              }
-            });
+            const spanLy = fovSpanUnits * 59.8;
+            if (spanLy >= 1_000_000) {
+              formattedScale = `${(spanLy / 1_000_000).toLocaleString('pt-BR', {
+                maximumFractionDigits: 2,
+              })} Mly`;
+            } else if (spanLy >= 100) {
+              formattedScale = `${Math.round(spanLy).toLocaleString('pt-BR')} ly`;
+            } else {
+              formattedScale = `${spanLy.toLocaleString('pt-BR', {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })} ly`;
+            }
+          } else if (st.zoomLevel === 'SOLAR_SYSTEM') {
+            const spanAU = Math.max(0.01, fovSpanUnits / 149.59787);
+            formattedScale = `${spanAU.toLocaleString('pt-BR', {
+              minimumFractionDigits: spanAU < 1 ? 2 : 1,
+              maximumFractionDigits: spanAU < 1 ? 2 : 1,
+            })} UA`;
+          } else {
+            const spanKm = Math.max(1, Math.round(fovSpanUnits * 1_000_000));
+            formattedScale = `${spanKm.toLocaleString('pt-BR')} km`;
+          }
+          if (formattedScale !== lastScaleReadout) {
+            lastScaleReadout = formattedScale;
+            setScaleReadout(formattedScale);
+          }
 
-            if (!isExternalGalaxy && distFromOrigin < 9500) {
-              const mwPos = bodyWorldPositions['milky-way'] || _originVec;
-              const mwRadius = getScaledRadius(getCelestialBody('milky-way'), st.scaleMode);
+          const projectPoint = (worldVec: THREE.Vector3) => {
+            _projVec.copy(worldVec).project(camera);
+            const visible = _projVec.z >= -1 && _projVec.z <= 1;
+            return {
+              x: (_projVec.x * 0.5 + 0.5) * width,
+              y: (-(_projVec.y * 0.5) + 0.5) * height,
+              visible,
+            };
+          };
 
-              MILKY_WAY_LANDMARKS.forEach((lm) => {
-                _tmpV2.set(lm.position3D[0], lm.position3D[1], lm.position3D[2]).multiplyScalar(mwRadius);
-                _tmpV1.copy(mwPos).add(_tmpV2);
+          if (st.showLabels) {
+            if (isGalacticScaleView) {
+              // AT GALACTIC SCALE: Show Clean Cosmoscope-Style Galaxy Titles & 3D Milky Way Landmarks!
+              ALL_CELESTIAL_BODIES.forEach((b) => {
+                if (b.category !== 'galaxy') return;
+                const wPos = bodyWorldPositions[b.id];
+                if (!wPos) return;
+                _tmpV1
+                  .copy(wPos)
+                  .add(
+                    _tmpV2.set(0, b.id === 'milky-way' ? 65 : getScaledRadius(b, st.scaleMode) * 0.55, 0)
+                  );
                 const proj = projectPoint(_tmpV1);
                 if (
                   proj.visible &&
-                  proj.x > 20 &&
-                  proj.x < width - 20 &&
-                  proj.y > 20 &&
-                  proj.y < height - 20
+                  proj.x > 24 &&
+                  proj.x < width - 24 &&
+                  proj.y > 24 &&
+                  proj.y < height - 24
                 ) {
                   nextLabels.push({
-                    id: `lbl-mw-${lm.id}`,
-                    name: lm.name,
-                    subLabel: lm.distanceLy,
+                    id: `lbl-gal-${b.id}`,
+                    name: b.id === 'milky-way' ? 'Via Láctea (Milky Way)' : b.name,
                     x: proj.x,
                     y: proj.y,
                     visible: true,
-                    color: lm.colorHex,
-                    kind: 'galactic_landmark',
-                    payloadId: lm.id,
+                    color: b.primaryColorHex,
+                    kind: 'galaxy',
+                    payloadId: b.id,
+                  });
+                }
+              });
+
+              if (!isExternalGalaxy && distFromOrigin < 9500) {
+                const mwPos = bodyWorldPositions['milky-way'] || _originVec;
+                const mwRadius = getScaledRadius(getCelestialBody('milky-way'), st.scaleMode);
+
+                MILKY_WAY_LANDMARKS.forEach((lm) => {
+                  _tmpV2.set(lm.position3D[0], lm.position3D[1], lm.position3D[2]).multiplyScalar(mwRadius);
+                  _tmpV1.copy(mwPos).add(_tmpV2);
+                  const proj = projectPoint(_tmpV1);
+                  if (
+                    proj.visible &&
+                    proj.x > 20 &&
+                    proj.x < width - 20 &&
+                    proj.y > 20 &&
+                    proj.y < height - 20
+                  ) {
+                    nextLabels.push({
+                      id: `lbl-mw-${lm.id}`,
+                      name: lm.name,
+                      subLabel: lm.distanceLy,
+                      x: proj.x,
+                      y: proj.y,
+                      visible: true,
+                      color: lm.colorHex,
+                      kind: 'galactic_landmark',
+                      payloadId: lm.id,
+                    });
+                  }
+                });
+              }
+            } else {
+              // INSIDE SOLAR SYSTEM SCALE: Show Planets, Dwarf Planets, Moons, Asteroids & Comets.
+              ALL_CELESTIAL_BODIES.forEach((b) => {
+                if (b.category === 'galaxy') return;
+                const wPos = bodyWorldPositions[b.id];
+                if (!wPos) return;
+                if (
+                  (st.zoomLevel === 'ORBITAL_EXPLORATION' ||
+                    st.zoomLevel === 'SURFACE_EXPLORATION') &&
+                  b.id !== st.selectedBodyId &&
+                  b.parentId !== st.selectedBodyId
+                ) {
+                  return;
+                }
+                if (
+                  b.category === 'moon' &&
+                  st.selectedBodyId !== b.parentId &&
+                  st.selectedBodyId !== b.id
+                ) {
+                  return;
+                }
+                if (b.id === st.selectedBodyId && st.zoomLevel !== 'SOLAR_SYSTEM') {
+                  return;
+                }
+
+                const bRadius = getScaledRadius(b, st.scaleMode);
+                _tmpV1.copy(wPos).add(_tmpV2.set(0, bRadius * 1.28, 0));
+                const proj = projectPoint(_tmpV1);
+                if (
+                  proj.visible &&
+                  proj.x > 24 &&
+                  proj.x < width - 24 &&
+                  proj.y > 24 &&
+                  proj.y < height - 24
+                ) {
+                  nextLabels.push({
+                    id: `lbl-body-${b.id}`,
+                    name: b.name,
+                    x: proj.x,
+                    y: proj.y,
+                    visible: true,
+                    color: b.orbitColorHex,
+                    kind: b.category === 'moon' ? 'moon' : 'body',
+                    payloadId: b.id,
                   });
                 }
               });
             }
-          } else {
-            // INSIDE SOLAR SYSTEM SCALE: Show Planets, Dwarf Planets, Moons, Asteroids & Comets.
-            ALL_CELESTIAL_BODIES.forEach((b) => {
-              if (b.category === 'galaxy') return;
-              const wPos = bodyWorldPositions[b.id];
-              if (!wPos) return;
-              if (
-                (st.zoomLevel === 'ORBITAL_EXPLORATION' ||
-                  st.zoomLevel === 'SURFACE_EXPLORATION') &&
-                b.id !== st.selectedBodyId &&
-                b.parentId !== st.selectedBodyId
-              ) {
-                return;
-              }
-              if (
-                b.category === 'moon' &&
-                st.selectedBodyId !== b.parentId &&
-                st.selectedBodyId !== b.id
-              ) {
-                return;
-              }
-              if (b.id === st.selectedBodyId && st.zoomLevel !== 'SOLAR_SYSTEM') {
-                return;
-              }
+          }
 
-              const bRadius = getScaledRadius(b, st.scaleMode);
-              _tmpV1.copy(wPos).add(_tmpV2.set(0, bRadius * 1.28, 0));
+          // Show Earth Satellite pills ONLY outside the planet disk so they never cover the 4K Earth globe!
+          if (
+            st.showLabels &&
+            !isGalacticScaleView &&
+            st.selectedBodyId === 'earth' &&
+            earthPos &&
+            !st.isExploringInterior &&
+            (st.zoomLevel === 'ORBITAL_EXPLORATION' ||
+              st.zoomLevel === 'SURFACE_EXPLORATION')
+          ) {
+            const earthCenterScreen = projectPoint(earthPos);
+            _tmpV1.copy(earthPos).add(_tmpV2.set(0, targetRadius * 1.05, 0));
+            const edgeScreen = projectPoint(_tmpV1);
+            const planetScreenRadius = Math.hypot(
+              edgeScreen.x - earthCenterScreen.x,
+              edgeScreen.y - earthCenterScreen.y
+            );
+
+            let shownSatCount = 0;
+            st.propagatedSatellites.forEach((sat) => {
+              if (!st.enabledSatelliteCategories[sat.category]) return;
+              const isSelSat = sat.id === st.selectedSatelliteId;
+              if (!isSelSat && shownSatCount >= 4) return;
+
+              _tmpV1
+                .copy(earthPos)
+                .add(_tmpV2.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]));
               const proj = projectPoint(_tmpV1);
+              const distFromEarthCenter = Math.hypot(
+                proj.x - earthCenterScreen.x,
+                proj.y - earthCenterScreen.y
+              );
+
               if (
                 proj.visible &&
+                (isSelSat || distFromEarthCenter > planetScreenRadius * 1.04) &&
                 proj.x > 24 &&
                 proj.x < width - 24 &&
                 proj.y > 24 &&
                 proj.y < height - 24
               ) {
+                shownSatCount++;
                 nextLabels.push({
-                  id: `lbl-body-${b.id}`,
-                  name: b.name,
+                  id: `lbl-sat-${sat.id}`,
+                  name: sat.name.split('—')[0].trim(),
+                  subLabel: `${Math.round(sat.altitudeKm)} km`,
                   x: proj.x,
                   y: proj.y,
                   visible: true,
-                  color: b.orbitColorHex,
-                  kind: b.category === 'moon' ? 'moon' : 'body',
-                  payloadId: b.id,
+                  color: sat.colorHex,
+                  kind: 'satellite',
+                  payloadId: sat.id,
                 });
               }
             });
           }
-        }
 
-        // Show Earth Satellite pills ONLY outside the planet disk so they never cover the 4K Earth globe!
-        if (
-          st.showLabels &&
-          !isGalacticScaleView &&
-          st.selectedBodyId === 'earth' &&
-          earthPos &&
-          !st.isExploringInterior &&
-          (st.zoomLevel === 'ORBITAL_EXPLORATION' ||
-            st.zoomLevel === 'SURFACE_EXPLORATION')
-        ) {
-          const earthCenterScreen = projectPoint(earthPos);
-          _tmpV1.copy(earthPos).add(_tmpV2.set(0, targetRadius * 1.05, 0));
-          const edgeScreen = projectPoint(_tmpV1);
-          const planetScreenRadius = Math.hypot(
-            edgeScreen.x - earthCenterScreen.x,
-            edgeScreen.y - earthCenterScreen.y
-          );
-
-          let shownSatCount = 0;
-          st.propagatedSatellites.forEach((sat) => {
-            if (!st.enabledSatelliteCategories[sat.category]) return;
-            const isSelSat = sat.id === st.selectedSatelliteId;
-            if (!isSelSat && shownSatCount >= 4) return;
-
-            _tmpV1
-              .copy(earthPos)
-              .add(_tmpV2.set(sat.position3D[0], sat.position3D[1], sat.position3D[2]));
-            const proj = projectPoint(_tmpV1);
-            const distFromEarthCenter = Math.hypot(
-              proj.x - earthCenterScreen.x,
-              proj.y - earthCenterScreen.y
-            );
-
-            if (
-              proj.visible &&
-              (isSelSat || distFromEarthCenter > planetScreenRadius * 1.04) &&
-              proj.x > 24 &&
-              proj.x < width - 24 &&
-              proj.y > 24 &&
-              proj.y < height - 24
-            ) {
-              shownSatCount++;
-              nextLabels.push({
-                id: `lbl-sat-${sat.id}`,
-                name: sat.name.split('—')[0].trim(),
-                subLabel: `${Math.round(sat.altitudeKm)} km`,
-                x: proj.x,
-                y: proj.y,
-                visible: true,
-                color: sat.colorHex,
-                kind: 'satellite',
-                payloadId: sat.id,
+          // Show Surface Landmarks ONLY when zoomed all the way into Level 4 (SURFACE_EXPLORATION)
+          if (
+            st.showLabels &&
+            !isGalacticScaleView &&
+            st.zoomLevel === 'SURFACE_EXPLORATION' &&
+            !st.isExploringInterior
+          ) {
+            const activeNode = bodyNodes[selectedBody.id];
+            if (activeNode && selectedBody.landmarks.length > 0) {
+              const spinY = activeNode.spinMesh.rotation.y;
+              const tiltRad = THREE.MathUtils.degToRad(selectedBody.axialTiltDeg);
+              const toCam = _tmpV3.subVectors(camera.position, targetPos).normalize();
+              selectedBody.landmarks.forEach((lm) => {
+                const latR = THREE.MathUtils.degToRad(lm.latitudeDeg);
+                const lonR = THREE.MathUtils.degToRad(lm.longitudeDeg) + spinY;
+                _tmpV2
+                  .set(
+                    Math.cos(latR) * Math.cos(lonR),
+                    Math.sin(latR),
+                    -Math.cos(latR) * Math.sin(lonR)
+                  )
+                  .applyAxisAngle(_zAxis, tiltRad);
+                if (_tmpV2.dot(toCam) > 0.35) {
+                  _tmpV1.copy(targetPos).addScaledVector(_tmpV2, targetRadius * 1.03);
+                  const proj = projectPoint(_tmpV1);
+                  if (proj.visible) {
+                    nextLabels.push({
+                      id: `lbl-lm-${lm.id}`,
+                      name: lm.name.split('(')[0].trim(),
+                      x: proj.x,
+                      y: proj.y,
+                      visible: true,
+                      color: '#fbbf24',
+                      kind: 'landmark',
+                      payloadId: lm.id,
+                    });
+                  }
+                }
               });
             }
-          });
-        }
-
-        // Show Surface Landmarks ONLY when zoomed all the way into Level 4 (SURFACE_EXPLORATION)
-        if (
-          st.showLabels &&
-          !isGalacticScaleView &&
-          st.zoomLevel === 'SURFACE_EXPLORATION' &&
-          !st.isExploringInterior
-        ) {
-          const activeNode = bodyNodes[selectedBody.id];
-          if (activeNode && selectedBody.landmarks.length > 0) {
-            const spinY = activeNode.spinMesh.rotation.y;
-            const tiltRad = THREE.MathUtils.degToRad(selectedBody.axialTiltDeg);
-            const toCam = _tmpV3.subVectors(camera.position, targetPos).normalize();
-            selectedBody.landmarks.forEach((lm) => {
-              const latR = THREE.MathUtils.degToRad(lm.latitudeDeg);
-              const lonR = THREE.MathUtils.degToRad(lm.longitudeDeg) + spinY;
-              _tmpV2
-                .set(
-                  Math.cos(latR) * Math.cos(lonR),
-                  Math.sin(latR),
-                  -Math.cos(latR) * Math.sin(lonR)
-                )
-                .applyAxisAngle(_zAxis, tiltRad);
-              if (_tmpV2.dot(toCam) > 0.35) {
-                _tmpV1.copy(targetPos).addScaledVector(_tmpV2, targetRadius * 1.03);
-                const proj = projectPoint(_tmpV1);
-                if (proj.visible) {
-                  nextLabels.push({
-                    id: `lbl-lm-${lm.id}`,
-                    name: lm.name.split('(')[0].trim(),
-                    x: proj.x,
-                    y: proj.y,
-                    visible: true,
-                    color: '#fbbf24',
-                    kind: 'landmark',
-                    payloadId: lm.id,
-                  });
-                }
-              }
-            });
           }
-        }
 
-        setScreenLabels(nextLabels);
+          setScreenLabels(nextLabels);
         }
       }
 
@@ -5797,8 +5823,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 }
               }}
               className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel !== 'SOLAR_SYSTEM' && zoomLevel !== 'COSMIC_GALAXY'
-                  ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+                ? 'bg-sky-500/30 text-sky-200 border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               title="Escala Planetária (Ver Planeta de Perto)"
             >
@@ -5816,8 +5842,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 }
               }}
               className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'SOLAR_SYSTEM'
-                  ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+                ? 'bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               title="Escala do Sistema Solar (Órbitas Planetárias)"
             >
@@ -5831,8 +5857,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 cameraCommandRef.current.activeTransition = true;
               }}
               className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${zoomLevel === 'COSMIC_GALAXY'
-                  ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+                ? 'bg-purple-500/30 text-purple-200 border border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               title="Escala Galáctica (Via Láctea 3D)"
             >
@@ -5867,8 +5893,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                   transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -120%)`,
                 }}
                 className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono transition-all border backdrop-blur-md ${isSelectedSat
-                    ? 'bg-sky-500/35 border-sky-300 text-white shadow-[0_0_18px_rgba(56,189,248,0.65)] z-30'
-                    : 'bg-slate-950/75 border-white/15 text-slate-200 hover:border-sky-400 hover:bg-slate-900/95 z-20'
+                  ? 'bg-sky-500/35 border-sky-300 text-white shadow-[0_0_18px_rgba(56,189,248,0.65)] z-30'
+                  : 'bg-slate-950/75 border-white/15 text-slate-200 hover:border-sky-400 hover:bg-slate-900/95 z-20'
                   }`}
               >
                 <span
@@ -5898,8 +5924,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               >
                 <div
                   className={`px-2 py-0.5 rounded-md text-[10px] font-medium border backdrop-blur-md whitespace-nowrap transition-colors ${isSelectedLm
-                      ? 'bg-amber-500/30 border-amber-300 text-amber-100'
-                      : 'bg-slate-950/75 border-amber-500/40 text-amber-200/90 group-hover:border-amber-300'
+                    ? 'bg-amber-500/30 border-amber-300 text-amber-100'
+                    : 'bg-slate-950/75 border-amber-500/40 text-amber-200/90 group-hover:border-amber-300'
                     }`}
                 >
                   ⌖ {lbl.name}
@@ -5960,8 +5986,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                   transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)`,
                 }}
                 className={`pointer-events-auto absolute flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs tracking-wide transition-all ${isSolarSystemMarker
-                    ? 'bg-sky-500/25 border border-sky-400/60 text-white font-semibold shadow-[0_0_16px_rgba(56,189,248,0.5)] hover:bg-sky-500/45 z-30 cursor-pointer'
-                    : 'text-slate-100/90 hover:text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)] z-20'
+                  ? 'bg-sky-500/25 border border-sky-400/60 text-white font-semibold shadow-[0_0_16px_rgba(56,189,248,0.5)] hover:bg-sky-500/45 z-30 cursor-pointer'
+                  : 'text-slate-100/90 hover:text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.98)] z-20'
                   }`}
               >
                 {isSolarSystemMarker && (
