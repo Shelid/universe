@@ -721,11 +721,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     starGroup.add(starField);
 
     // REAL 3D SOLAR POINT LIGHT & EARTHSHINE AMBIENT FILL FOR PBR SPACECRAFT MODELS
-    const sunPointLight = new THREE.PointLight('#fff8eb', 3.6, 0, 0);
+    const sunPointLight = new THREE.PointLight('#fff8eb', 2.1, 0, 0);
     sunPointLight.position.set(0, 0, 0);
     scene.add(sunPointLight);
 
-    const spaceHemisphereLight = new THREE.HemisphereLight('#7dd3fc', '#1e293b', 0.95);
+    const spaceHemisphereLight = new THREE.HemisphereLight('#7dd3fc', '#1e293b', 0.68);
     scene.add(spaceHemisphereLight);
 
     // Subtle procedural cosmic reflection environment (PMREM) so PBR metallic hull & cockpit gleam realistically
@@ -761,7 +761,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     scene.environment = envRT.texture;
     envEquirectTex.dispose();
 
-    const shipRimLight = new THREE.DirectionalLight('#bae6fd', 0.9);
+    const shipRimLight = new THREE.DirectionalLight('#bae6fd', 0.55);
     shipRimLight.visible = false;
     scene.add(shipRimLight);
     scene.add(shipRimLight.target);
@@ -2575,22 +2575,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const stageRight = _tmpV4.crossVectors(toEarth, _worldUp).normalize();
         const stageUp = _tmpV5.crossVectors(stageRight, toEarth).normalize();
 
-        // Position Hero Spacecraft banked gracefully in center-right orbital space
+        // Position Hero Spacecraft banked gracefully in center-right orbital space (showing dorsal hull, wings & canopy)
         _stationBasisMat.makeBasis(stageRight, stageUp, _tmpV6.copy(toEarth).negate());
         _tmpQuat1.setFromRotationMatrix(_stationBasisMat);
-        _tmpEuler.set(0.06, Math.PI * 0.72, 0.12, 'YXZ');
+        _tmpEuler.set(-0.34, Math.PI * 0.74, 0.24, 'YXZ');
         const _shipOffsetQ = new THREE.Quaternion().setFromEuler(_tmpEuler);
 
+        const shipLobbyScale = lobbyScale * 0.64;
         sr7.rootGroup.visible = true;
-        sr7.rootGroup.scale.setScalar(lobbyScale);
+        sr7.rootGroup.scale.setScalar(shipLobbyScale);
         manualRollAngle = 0;
         sr7.hullGroup.rotation.z = 0;
         sr7.interiorGroup.rotation.z = 0;
         sr7.rootGroup.position
           .copy(stagingCenter)
-          .addScaledVector(stageRight, lobbyScale * 1.45)
-          .addScaledVector(stageUp, lobbyScale * 0.28 + Math.sin(clockTime * 1.1) * lobbyScale * 0.04)
-          .addScaledVector(toEarth, lobbyScale * 1.1);
+          .addScaledVector(stageRight, lobbyScale * 1.65)
+          .addScaledVector(stageUp, lobbyScale * 0.22 + Math.sin(clockTime * 1.1) * lobbyScale * 0.04)
+          .addScaledVector(toEarth, lobbyScale * 1.45);
         sr7.rootGroup.quaternion.copy(_tmpQuat1).multiply(_shipOffsetQ);
 
         const activeShipPresetLobby = getSpacecraftPreset(st.selectedShipId || 'sr7-vanguard');
@@ -2616,7 +2617,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sasEnabled: true,
           autopilotActive: false,
           isCockpitView: false,
-          shipScale: lobbyScale,
+          shipScale: shipLobbyScale,
           driftAngleDeg: 0,
         });
 
@@ -2625,14 +2626,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           scene.add(astronaut.rootGroup);
           evaAttachedToShip = false;
         }
-        const astroLobbyScale = lobbyScale * 0.88;
+        const astroLobbyScale = lobbyScale * 0.85;
         astronaut.rootGroup.visible = true;
         astronaut.rootGroup.scale.setScalar(astroLobbyScale);
         astronaut.rootGroup.position
           .copy(stagingCenter)
-          .addScaledVector(stageRight, lobbyScale * 0.05)
+          .addScaledVector(stageRight, -lobbyScale * 0.75)
           .addScaledVector(stageUp, -lobbyScale * 0.48 + Math.sin(clockTime * 1.3 + 0.7) * lobbyScale * 0.03)
-          .addScaledVector(toEarth, -lobbyScale * 0.95);
+          .addScaledVector(toEarth, -lobbyScale * 1.05);
         _tmpEuler.set(0.02, Math.PI - 0.28 + Math.sin(clockTime * 0.55) * 0.08, 0, 'YXZ');
         const _astroOffsetQ = new THREE.Quaternion().setFromEuler(_tmpEuler);
         astronaut.rootGroup.quaternion.copy(_tmpQuat1).multiply(_astroOffsetQ);
