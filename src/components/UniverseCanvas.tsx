@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
+  CabinStationId,
   CelestialBodyData,
   CharacterVariantId,
   NearbySpacecraftContact,
@@ -13,6 +14,7 @@ import {
   SpacecraftTelemetry,
   SpacecraftVariantId,
   SurfaceLandmark,
+  SurvivalResourcesState,
   WarpFlightState,
   ZoomLevel,
 } from '../types/astronomy';
@@ -59,6 +61,7 @@ import { createAstronautCharacter3D, AstronautCharacterRefs } from '../utils/ast
 import { createOrbitalStation3DGroup } from '../utils/orbitalStationModel';
 import { createHangarBay3D, HangarCameraFocus } from '../utils/hangarBayModel';
 import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
+import { createInitialSurvivalState, stepSurvivalSimulation } from '../utils/survivalEngine';
 import { propagateSingleSatellite, VERIFIED_SATELLITE_CATALOG } from '../data/satellitesData';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
@@ -115,6 +118,9 @@ interface UniverseCanvasProps {
   lobbyShowcaseActive?: boolean;
   lobbyFocusTarget?: HangarCameraFocus;
   flightControlPrefs?: FlightControlPrefs;
+  survivalStateRef?: React.MutableRefObject<SurvivalResourcesState>;
+  onSyncSurvivalState?: (next: SurvivalResourcesState) => void;
+  onTriggerCabinStationAction?: (stationId: Exclude<CabinStationId, 'NONE'>) => void;
   bodySelectSeq?: number;
   hideHud?: boolean;
 }
@@ -288,6 +294,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   lobbyShowcaseActive = false,
   lobbyFocusTarget = 'OVERVIEW',
   flightControlPrefs = DEFAULT_FLIGHT_CONTROL_PREFS,
+  survivalStateRef,
+  onSyncSurvivalState,
+  onTriggerCabinStationAction,
   bodySelectSeq = 0,
   hideHud = false,
 }) => {
@@ -307,6 +316,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   }, [selectedCharacterId]);
 
   const internalSimTimeRef = useRef<number>(simulationTimeMs);
+  const fallbackSurvivalRef = useRef<SurvivalResourcesState>(createInitialSurvivalState());
+  const activeSurvivalRef = survivalStateRef || fallbackSurvivalRef;
 
   useEffect(() => {
     if (Math.abs(simulationTimeMs - internalSimTimeRef.current) > 2500) {
@@ -359,6 +370,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onUpdateWarpState,
     onUpdateSpacecraftControl,
     onSyncSpacecraftTelemetry,
+    onSyncSurvivalState,
+    onTriggerCabinStationAction,
     onResolvedQualityChange,
     onBootProgress,
   });
@@ -411,6 +424,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onUpdateWarpState,
       onUpdateSpacecraftControl,
       onSyncSpacecraftTelemetry,
+      onSyncSurvivalState,
+      onTriggerCabinStationAction,
       onResolvedQualityChange,
       onBootProgress,
     };
@@ -1556,6 +1571,36 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let cockpitSteerSmoothY = 0;
     let currentShipScale = 0.000035;
     let lastTelemetrySync = 0;
+    let lastSurvivalSync = 0;
+    const _shadowRayDir = new THREE.Vector3();
+    const _shadowToBody = new THREE.Vector3();
+    const computeInPlanetaryShadow = (
+      pos: THREE.Vector3,
+      scaleMode: ScaleMode,
+      positions: Record<string, THREE.Vector3>
+    ): boolean => {
+      const sunPos = positions['sun'];
+      if (!sunPos) return false;
+      _shadowRayDir.subVectors(sunPos, pos);
+      const distToSun = _shadowRayDir.length();
+      if (distToSun < 1e-6) return false;
+      _shadowRayDir.divideScalar(distToSun);
+      for (let i = 0; i < ALL_CELESTIAL_BODIES.length; i++) {
+        const b = ALL_CELESTIAL_BODIES[i];
+        if (b.id === 'sun' || b.category === 'galaxy' || b.category === 'star') {
+          continue;
+        }
+        const bPos = positions[b.id];
+        if (!bPos) continue;
+        const bRad = Math.max(0.00015, getScaledRadius(b, scaleMode));
+        _shadowToBody.subVectors(bPos, pos);
+        const proj = _shadowToBody.dot(_shadowRayDir);
+        if (proj <= bRad * 0.25 || proj >= distToSun) continue;
+        const perpSq = _shadowToBody.lengthSq() - proj * proj;
+        if (perpSq < bRad * bRad * 0.96) return true;
+      }
+      return false;
+    };
     let prevRecenterTrigger = stateRef.current.spacecraftControl.recenterTrigger || 0;
     let prevRadarAudioTs = 0;
     let prevBrakeAudio = false;
@@ -1664,6 +1709,35 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           ...prev,
           interiorLightsOn: !prev.interiorLightsOn,
         }));
+      } else if (e.code === 'KeyK' && !e.repeat) {
+        const nextRad = !activeSurvivalRef.current.radiatorsDeployed;
+        activeSurvivalRef.current = {
+          ...activeSurvivalRef.current,
+          radiatorsDeployed: nextRad,
+        };
+        spaceAudio.playRadiatorToggle(nextRad);
+        callbacksRef.current.onSyncSurvivalState?.(activeSurvivalRef.current);
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          radiatorsDeployed: nextRad,
+        }));
+      } else if (e.code === 'KeyY' && !e.repeat) {
+        const nextEco = !activeSurvivalRef.current.ecoCruiseMode;
+        activeSurvivalRef.current = {
+          ...activeSurvivalRef.current,
+          ecoCruiseMode: nextEco,
+        };
+        spaceAudio.playCockpitSwitch();
+        callbacksRef.current.onSyncSurvivalState?.(activeSurvivalRef.current);
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
+          ...prev,
+          ecoCruiseMode: nextEco,
+        }));
+      } else if (e.code === 'KeyE' && !e.repeat && isWalking) {
+        const stId = activeSurvivalRef.current.nearbyCabinStation;
+        if (stId && stId !== 'NONE') {
+          callbacksRef.current.onTriggerCabinStationAction?.(stId);
+        }
       } else if (e.code === 'KeyW' && !e.repeat && !isWalking) {
         continuousThrottle = Math.min(1, Number((continuousThrottle + 0.025).toFixed(3)));
         lastSyncedReactThrottle = continuousThrottle;
@@ -2839,6 +2913,32 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         prevSpaceParkedValid = false;
         spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
         applyHangarShowcaseFrame(dt, clockTime, false);
+        activeSurvivalRef.current = stepSurvivalSimulation(activeSurvivalRef.current, {
+          dt,
+          mode: 'HANGAR',
+          shipVariantId: st.selectedShipId || 'sr7-vanguard',
+          throttle: 0,
+          boostActive: false,
+          isBraking: false,
+          rcsActive: false,
+          shieldsOn: false,
+          headlightsOn: false,
+          walkingInside: false,
+          cabinLocalX: 0,
+          cabinLocalZ: 0,
+          evaSprinting: false,
+          evaMoving: false,
+          sunDistanceUnits: 149.6,
+          nearestBodyId: 'earth',
+          nearestBodyCategory: 'planet',
+          nearestSurfaceRatio: 10,
+          nearOrbitalStation: true,
+          inPlanetaryShadow: false,
+        });
+        if (now - lastSurvivalSync > 240) {
+          lastSurvivalSync = now;
+          cb.onSyncSurvivalState?.(activeSurvivalRef.current);
+        }
       } else if (st.spacecraftControl.isActive) {
         wasWarpingLastFrame = false;
         const sc = st.spacecraftControl;
@@ -3214,9 +3314,78 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
 
         const activeShipPreset = getSpacecraftPreset(st.selectedShipId || 'sr7-vanguard');
-        const agilityMult = activeShipPreset.flightMultipliers.agility;
-        const speedMult = activeShipPreset.flightMultipliers.speed;
-        const boostMult = activeShipPreset.flightMultipliers.boost;
+        const sunPosForSurv = bodyWorldPositions['sun'];
+        const shipSunDist = sunPosForSurv
+          ? sr7.rootGroup.position.distanceTo(sunPosForSurv)
+          : sr7.rootGroup.position.length();
+        const shipNearStation =
+          hasOrbitalStationPos &&
+          sr7.rootGroup.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 48;
+        const shipInShadow = computeInPlanetaryShadow(
+          sr7.rootGroup.position,
+          st.scaleMode,
+          bodyWorldPositions
+        );
+        const rawBoostingWanted =
+          !isWalkingInside &&
+          (sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight'));
+        const boosting = rawBoostingWanted && activeSurvivalRef.current.warpEnergyPercent > 0.25;
+        if (sc.boostActive && rawBoostingWanted && !boosting) {
+          cb.onUpdateSpacecraftControl((prev) =>
+            prev.boostActive ? { ...prev, boostActive: false } : prev
+          );
+        }
+
+        const isBrakingEarly =
+          isWalkingInside ||
+          (sc.brakeRequested && !wHeld && !isSteeringActively && !boosting) ||
+          pressedKeys.has('Space') ||
+          (sHeld && continuousThrottle <= 0.02 && appliedThrottle <= 0.04);
+        const rcsIsActive =
+          Math.abs(pitchInput) + Math.abs(yawInput) + Math.abs(rollInput) > 0.05;
+
+        const liveSurv = (activeSurvivalRef.current = stepSurvivalSimulation(
+          activeSurvivalRef.current,
+          {
+            dt,
+            mode: 'SPACECRAFT',
+            shipVariantId: st.selectedShipId || 'sr7-vanguard',
+            throttle: continuousThrottle,
+            boostActive: boosting,
+            isBraking: isBrakingEarly,
+            rcsActive: rcsIsActive,
+            shieldsOn: sc.shieldsOn,
+            headlightsOn: sc.headlightsOn,
+            walkingInside: isWalkingInside,
+            cabinLocalX: interiorWalkPos.x,
+            cabinLocalZ: interiorWalkPos.z,
+            evaSprinting: false,
+            evaMoving: false,
+            sunDistanceUnits: shipSunDist,
+            nearestBodyId: dominantBody.id,
+            nearestBodyCategory: dominantBody.category,
+            nearestSurfaceRatio: Number.isFinite(bestProxRatio) ? bestProxRatio : 9999,
+            nearOrbitalStation: shipNearStation,
+            inPlanetaryShadow: shipInShadow,
+          }
+        ));
+
+        const fatigueMult = liveSurv.fatiguePercent < 18 ? 0.78 : 1.0;
+        const enginePipMult = 0.74 + liveSurv.powerPips.engines * 0.12;
+        const ecoCruiseMult = liveSurv.ecoCruiseMode ? 0.85 : 1.0;
+        const fuelStarveMult =
+          liveSurv.fuelPercent <= 0.05 ? 0.16 : liveSurv.fuelPercent < 10 ? 0.55 : 1.0;
+        const thermalThrottleMult = liveSurv.hullTempC > 680 ? 0.72 : 1.0;
+
+        const agilityMult = activeShipPreset.flightMultipliers.agility * fatigueMult;
+        const speedMult =
+          activeShipPreset.flightMultipliers.speed *
+          enginePipMult *
+          ecoCruiseMult *
+          fuelStarveMult *
+          thermalThrottleMult;
+        const boostMult =
+          activeShipPreset.flightMultipliers.boost * (0.85 + liveSurv.powerPips.engines * 0.075);
 
         const targetAngPitch = pitchInput * 0.40 * agilityMult;
         const targetAngYaw = yawInput * 0.46 * agilityMult;
@@ -3270,9 +3439,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           : autoTargetId
             ? bodyWorldPositions[autoTargetId]
             : null;
-        const boosting =
-          !isWalkingInside &&
-          (sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight'));
         let autopilotStatus: SpacecraftTelemetry['autopilotStatus'] = 'OFF';
         let autoThrottleDrive = isWalkingInside
           ? 0
@@ -3903,9 +4069,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const rollDegVal = Math.round(
           THREE.MathUtils.radToDeg(manualRollAngle)
         );
-        const liveReactorTemp = Math.round(
-          320 + Math.abs(effectiveThrottle) * 240 + boostBlend * 380
-        );
+        const liveReactorTemp = Math.round(liveSurv.reactorTempC);
 
         sr7.updateAnimations({
           dt,
@@ -3932,6 +4096,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitSeat: sc.cockpitSeat || 'LEFT',
           shipScale: currentShipScale,
           driftAngleDeg,
+          radiatorsDeployed: liveSurv.radiatorsDeployed,
+          hullTempC: liveSurv.hullTempC,
+          walkingInside: isWalkingInside,
+          nearbyCabinStation: liveSurv.nearbyCabinStation,
         });
 
         // Sync Live Telemetry to HUD (throttled ~9 Hz)
@@ -3940,8 +4108,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cb.onSyncSpacecraftTelemetry({
             speedUnitsPerSec: currentSpeed,
             speedFormatted,
-            fuelPercent: Math.max(12, Number((100 - Math.min(80, currentSpeed * 0.02)).toFixed(1))),
-            hullIntegrity: 100,
+            fuelPercent: Number(liveSurv.fuelPercent.toFixed(1)),
+            hullIntegrity: Number(liveSurv.hullIntegrity.toFixed(1)),
             reactorTempC: liveReactorTemp,
             pitchDeg: pitchDegVal,
             yawDeg: yawDegVal,
@@ -3951,7 +4119,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearestDistanceFormatted: nearestContact?.distanceFormatted || '0 km',
             nearbyContacts: radarContacts,
             autopilotStatus,
+            survival: liveSurv,
           });
+        }
+        if (now - lastSurvivalSync > 190) {
+          lastSurvivalSync = now;
+          cb.onSyncSurvivalState?.(liveSurv);
         }
 
         const computedShipZoom: ZoomLevel =
@@ -4262,15 +4435,53 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           worldScale: currentShipScale,
         });
 
+        const sunPosForEva = bodyWorldPositions['sun'];
+        const evaSunDist = sunPosForEva
+          ? astronaut.rootGroup.position.distanceTo(sunPosForEva)
+          : astronaut.rootGroup.position.length();
+        const evaNearStation =
+          hasOrbitalStationPos &&
+          astronaut.rootGroup.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 48;
+        const evaInShadow = computeInPlanetaryShadow(
+          astronaut.rootGroup.position,
+          st.scaleMode,
+          bodyWorldPositions
+        );
+        const liveEvaSurv = (activeSurvivalRef.current = stepSurvivalSimulation(
+          activeSurvivalRef.current,
+          {
+            dt,
+            mode: 'EVA',
+            shipVariantId: st.selectedShipId || 'sr7-vanguard',
+            throttle: 0,
+            boostActive: false,
+            isBraking: false,
+            rcsActive: false,
+            shieldsOn: false,
+            headlightsOn: st.evaVisorLightOn,
+            walkingInside: false,
+            cabinLocalX: 0,
+            cabinLocalZ: 0,
+            evaSprinting,
+            evaMoving: moveMag > 0.05 || Math.abs(moveUpInput) > 0.05,
+            sunDistanceUnits: evaSunDist,
+            nearestBodyId: evaDominantBody.id,
+            nearestBodyCategory: evaDominantBody.category,
+            nearestSurfaceRatio: Number.isFinite(evaBestProxRatio) ? evaBestProxRatio : 9999,
+            nearOrbitalStation: evaNearStation,
+            inPlanetaryShadow: evaInShadow,
+          }
+        ));
+
         if (now - lastTelemetrySync > 110) {
           lastTelemetrySync = now;
           const spdKmS = Math.round(evaSpeedUnits * 1_000_000);
           cb.onSyncSpacecraftTelemetry({
             speedUnitsPerSec: evaSpeedUnits,
             speedFormatted: spdKmS > 0 ? `${spdKmS.toLocaleString('pt-BR')} km/s` : '0 km/s',
-            fuelPercent: 100,
-            hullIntegrity: 100,
-            reactorTempC: 37,
+            fuelPercent: Number(liveEvaSurv.fuelPercent.toFixed(1)),
+            hullIntegrity: Number(liveEvaSurv.hullIntegrity.toFixed(1)),
+            reactorTempC: Math.round(liveEvaSurv.hullTempC),
             pitchDeg: 0,
             yawDeg: 0,
             rollDeg: 0,
@@ -4279,7 +4490,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearestDistanceFormatted: 'EVA',
             nearbyContacts: [],
             autopilotStatus: 'OFF',
+            survival: liveEvaSurv,
           });
+        }
+        if (now - lastSurvivalSync > 190) {
+          lastSurvivalSync = now;
+          cb.onSyncSurvivalState?.(liveEvaSurv);
         }
       } else {
         const returningFromLobby = wasLobbyShowcaseActive;
@@ -4302,6 +4518,36 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           evaAttachedToShip = true;
         }
         spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
+        const exploreSunPos = bodyWorldPositions['sun'];
+        const exploreSunDist = exploreSunPos
+          ? camera.position.distanceTo(exploreSunPos)
+          : camera.position.length();
+        activeSurvivalRef.current = stepSurvivalSimulation(activeSurvivalRef.current, {
+          dt,
+          mode: 'EXPLORE',
+          shipVariantId: st.selectedShipId || 'sr7-vanguard',
+          throttle: 0,
+          boostActive: false,
+          isBraking: false,
+          rcsActive: false,
+          shieldsOn: false,
+          headlightsOn: false,
+          walkingInside: false,
+          cabinLocalX: 0,
+          cabinLocalZ: 0,
+          evaSprinting: false,
+          evaMoving: false,
+          sunDistanceUnits: exploreSunDist,
+          nearestBodyId: selectedBody.id,
+          nearestBodyCategory: selectedBody.category,
+          nearestSurfaceRatio: 10,
+          nearOrbitalStation: false,
+          inPlanetaryShadow: false,
+        });
+        if (now - lastSurvivalSync > 240) {
+          lastSurvivalSync = now;
+          cb.onSyncSurvivalState?.(activeSurvivalRef.current);
+        }
         controls.enabled = true;
         const isGatewayFocused =
           st.selectedBodyId === 'earth' &&

@@ -1,18 +1,23 @@
 import React, { useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Compass,
+  Droplets,
   Lightbulb,
   LogOut,
   Radar,
   Rocket,
   SlidersHorizontal,
   User,
+  Utensils,
+  Wind,
   Zap,
 } from 'lucide-react';
+import { SurvivalResourcesState } from '../types/astronomy';
 
 export interface EVAVirtualInput {
   moveX: number; // -1..1 (strafe)
@@ -34,6 +39,11 @@ interface EVACharacterHUDProps {
   nearestBodyName: string;
   activeCharacterName?: string;
   onWalkOnStation?: () => void;
+  survival?: SurvivalResourcesState;
+  onUseFood?: () => void;
+  onUseWater?: () => void;
+  onEmergencyO2Refill?: () => void;
+  survivalNotice?: string | null;
 }
 
 export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
@@ -48,6 +58,11 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
   nearestBodyName,
   activeCharacterName = 'ASTRONAUTA EVA',
   onWalkOnStation,
+  survival,
+  onUseFood,
+  onUseWater,
+  onEmergencyO2Refill,
+  survivalNotice,
 }) => {
   const [showTouchControls, setShowTouchControls] = useState(false);
   const inputRef = useRef<EVAVirtualInput>({
@@ -69,10 +84,17 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
     onPointerCancel: () => setInput(key, 0),
   });
 
+  const evaO2 = survival ? Math.round(survival.evaOxygenPercent) : 100;
+  const evaRad = survival ? Math.round(survival.radiationPercent) : 0;
+  const evaHunger = survival ? Math.round(survival.hungerPercent) : 100;
+  const evaThirst = survival ? Math.round(survival.thirstPercent) : 100;
+  const criticalO2 = evaO2 < 22;
+  const lowO2 = evaO2 < 45;
+
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4">
       {/* Top EVA Action Pill */}
-      <div className="flex flex-wrap items-center justify-start gap-2 pt-0.5 pr-28">
+      <div className="flex flex-col items-start gap-1.5 pt-0.5 pr-28">
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/78 backdrop-blur-xl border border-cyan-400/35 rounded-full px-3 py-1.5 shadow-xl">
           <div className="flex items-center gap-1.5 pr-2 border-r border-white/10">
             <User className="w-3.5 h-3.5 text-cyan-400" />
@@ -86,6 +108,36 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
             <span className="text-slate-500">·</span>
             <span className="text-amber-200">{nearestBodyName}</span>
           </div>
+
+          {survival && (
+            <div className="flex items-center gap-1.5 pr-2 border-r border-white/10 text-[10px] font-mono">
+              <span
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full border ${
+                  criticalO2
+                    ? 'bg-rose-500/30 border-rose-400 text-rose-100 animate-pulse'
+                    : lowO2
+                      ? 'bg-amber-500/25 border-amber-400/60 text-amber-100'
+                      : 'bg-cyan-500/15 border-cyan-400/30 text-cyan-200'
+                }`}
+                title="Oxigênio do Cilindro do Traje EVA (Recarrega na Nave ou Estação)"
+              >
+                <Wind className="w-3 h-3" />
+                <span>O₂ {evaO2}%</span>
+              </span>
+              {evaRad >= 10 && (
+                <span
+                  className={`px-1.5 py-0.5 rounded-full border ${
+                    evaRad >= 65
+                      ? 'bg-rose-500/25 border-rose-400/60 text-rose-100'
+                      : 'bg-amber-500/15 border-amber-400/35 text-amber-200'
+                  }`}
+                  title="Radiação Externa Acumulada no Traje"
+                >
+                  RAD {evaRad}%
+                </span>
+              )}
+            </div>
+          )}
 
           <button
             onClick={onToggleVisorLight}
@@ -117,10 +169,43 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
             <Compass className="w-3 h-3" />
           </button>
 
+          {survival && onUseFood && survival.foodRations > 0 && evaHunger < 90 && (
+            <button
+              onClick={onUseFood}
+              className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-100 text-[10px] font-mono transition-colors"
+              title={`Ração do Traje (${evaHunger}% saciedade · ${survival.foodRations} un)`}
+            >
+              <Utensils className="w-3 h-3" />
+              <span>{survival.foodRations}</span>
+            </button>
+          )}
+
+          {survival && onUseWater && survival.waterFlasks > 0 && evaThirst < 90 && (
+            <button
+              onClick={onUseWater}
+              className="flex items-center gap-1 px-2 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-100 text-[10px] font-mono transition-colors"
+              title={`Hidratação no Traje (${evaThirst}% água · ${survival.waterFlasks} un)`}
+            >
+              <Droplets className="w-3 h-3" />
+              <span>{survival.waterFlasks}</span>
+            </button>
+          )}
+
+          {survival && onEmergencyO2Refill && evaO2 < 35 && (
+            <button
+              onClick={onEmergencyO2Refill}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/30 hover:bg-rose-500/45 border border-rose-400 text-rose-100 text-[10px] font-mono font-bold transition-colors animate-pulse"
+              title="Injetar Cartucho Reserva de O₂ no Traje EVA"
+            >
+              <Wind className="w-3 h-3" />
+              <span>O₂ Emergência</span>
+            </button>
+          )}
+
           <button
             onClick={onEnterShip}
             className="flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/55 text-amber-100 text-[11px] font-semibold transition-colors"
-            title="Embarcar na Nave Caça Estelar"
+            title="Embarcar na Nave Caça Estelar (Recarrega O₂ do Traje)"
           >
             <Rocket className="w-3.5 h-3.5 text-amber-300" />
             <span>Entrar na Nave</span>
@@ -156,6 +241,13 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
             <LogOut className="w-3 h-3" />
           </button>
         </div>
+
+        {(survivalNotice || survival?.activeStatusAlert) && (
+          <div className="pointer-events-auto flex items-center gap-2 bg-slate-950/88 backdrop-blur-xl border border-amber-400/45 rounded-full px-3 py-1 text-[11px] font-mono text-amber-100 shadow-lg">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>{survivalNotice || survival?.activeStatusAlert}</span>
+          </div>
+        )}
       </div>
 
       {/* Bottom EVA Touch Pad + Clean Keyboard Key Hint Strip */}

@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
+  BatteryCharging,
   Camera,
   ChevronDown,
   ChevronLeft,
@@ -7,33 +9,45 @@ import {
   ChevronUp,
   Compass,
   Crosshair,
+  Droplets,
   Eye,
   Flame,
   Gauge,
+  Heart,
   Lightbulb,
   LogOut,
   Navigation,
   Orbit,
   Radar,
+  Radiation,
   Rocket,
   RotateCcw,
   RotateCw,
   Shield,
   SlidersHorizontal,
+  Snowflake,
   Sparkles,
+  Sun,
+  Thermometer,
   User,
+  Utensils,
   Volume2,
   VolumeX,
+  Wind,
+  Wrench,
   X,
   Zap,
 } from 'lucide-react';
 import { ALL_CELESTIAL_BODIES } from '../data/solarSystemData';
 import {
+  PowerSubsystemId,
   SpacecraftControlState,
   SpacecraftTelemetry,
+  SurvivalResourcesState,
 } from '../types/astronomy';
 import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
 import { spaceAudio } from '../utils/spaceAudioEngine';
+import { CABIN_STATIONS, POWER_PIP_TOTAL, POWER_PRESETS } from '../utils/survivalEngine';
 
 export interface VirtualSteerInput {
   pitch: number; // -1..1
@@ -55,9 +69,24 @@ interface SpacecraftCockpitHUDProps {
   activeShipAccent?: string;
   onDeployToStation?: () => void;
   flightControlPrefs?: FlightControlPrefs;
+  survival: SurvivalResourcesState;
+  survivalNotice?: string | null;
+  onConsumeFood: () => void;
+  onConsumeWater: () => void;
+  onConsumeWarpCell: () => void;
+  onUseRepairKit: () => void;
+  onRestInBunk: () => void;
+  onCalibrateReactor: () => void;
+  onToggleEcoMode: () => void;
+  onToggleRadiators: () => void;
+  onAdjustPowerPip: (subsystem: PowerSubsystemId, delta: 1 | -1) => void;
+  onApplyPowerPreset: (presetKey: keyof typeof POWER_PRESETS) => void;
+  onCallRescueDrone: () => void;
+  onStationResupply: () => void;
+  onCabinStationInteract: () => void;
 }
 
-type ShipMenuTab = 'systems' | 'navigation' | 'controls';
+type ShipMenuTab = 'systems' | 'survival' | 'navigation' | 'controls';
 
 export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   controlState,
@@ -72,6 +101,21 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   activeShipAccent = '#38bdf8',
   onDeployToStation,
   flightControlPrefs = DEFAULT_FLIGHT_CONTROL_PREFS,
+  survival,
+  survivalNotice,
+  onConsumeFood,
+  onConsumeWater,
+  onConsumeWarpCell,
+  onUseRepairKit,
+  onRestInBunk,
+  onCalibrateReactor,
+  onToggleEcoMode,
+  onToggleRadiators,
+  onAdjustPowerPip,
+  onApplyPowerPreset,
+  onCallRescueDrone,
+  onStationResupply,
+  onCabinStationInteract,
 }) => {
   const [isShipMenuOpen, setIsShipMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ShipMenuTab>('systems');
@@ -122,7 +166,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between select-none">
       {/* MINIMAL SHIP PILL BAR: ESSENTIAL CAMERA, CABIN WALK & SHIP MENU */}
-      <div className="px-3 pt-3 sm:px-4 sm:pt-3 pr-28 flex items-center justify-between gap-2">
+      <div className="px-3 pt-3 sm:px-4 sm:pt-3 pr-28 sm:pr-36 flex flex-col items-start gap-1.5">
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/72 backdrop-blur-xl border border-white/15 rounded-full px-2.5 py-1 shadow-xl">
           <span
             className="w-2 h-2 rounded-full animate-pulse ml-0.5"
@@ -226,31 +270,64 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-300" />
               <span>Menu da Nave</span>
-              {controlState.autopilotTargetId && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              {(controlState.autopilotTargetId || survival.activeStatusAlert) && (
+                <span
+                  className={`w-2 h-2 rounded-full animate-ping ${
+                    survival.activeStatusAlert ? 'bg-rose-400' : 'bg-amber-400'
+                  }`}
+                />
               )}
             </button>
           )}
         </div>
 
-        {/* Active Autopilot Micro Indicator (Only visible while navigating automatically) */}
-        {controlState.autopilotTargetId && (
-          <div className="pointer-events-auto flex items-center gap-2 bg-slate-950/80 backdrop-blur-xl border border-amber-400/40 rounded-full px-3 py-1 text-[11px] font-mono text-amber-200 shadow-lg">
-            <Navigation className="w-3 h-3 text-amber-400 animate-pulse" />
-            <span className="hidden sm:inline">{telemetry.autopilotStatus}</span>
-            <button
-              onClick={() =>
-                onUpdateControl((prev) => ({
-                  ...prev,
-                  autopilotTargetId: null,
-                }))
-              }
-              className="text-amber-300 hover:text-white underline ml-1"
-            >
-              Cancelar
-            </button>
-          </div>
-        )}
+        {/* Active Harvest / Alert / Action Toast Banner */}
+        <div className="flex flex-wrap items-center justify-start gap-1.5">
+          {survival.nearRefuelSource !== 'NONE' && (
+            <div className="pointer-events-auto flex items-center gap-1.5 bg-emerald-950/88 backdrop-blur-xl border border-emerald-400/50 rounded-full px-3 py-1 text-[10px] font-mono text-emerald-100 shadow-lg">
+              {survival.nearRefuelSource === 'SOLAR_CORONA' ? (
+                <Sun className="w-3 h-3 text-amber-300 animate-spin" />
+              ) : (
+                <BatteryCharging className="w-3 h-3 text-emerald-300 animate-pulse" />
+              )}
+              <span>
+                {survival.nearRefuelSource === 'GAS_GIANT_SCOOP'
+                  ? 'SCOOP ATMOSFÉRICO ATIVO (+Combustível)'
+                  : survival.nearRefuelSource === 'SOLAR_CORONA'
+                    ? 'COLETA COROA SOLAR ATIVA (+Energia / +Dobra)'
+                    : survival.nearRefuelSource === 'ORBITAL_STATION'
+                      ? 'DOCA ORBITAL (+Comb / +O₂ / +Provisões)'
+                      : 'SOLAR / HANGAR RECARREGANDO'}
+              </span>
+            </div>
+          )}
+
+          {(survivalNotice || survival.activeStatusAlert) && (
+            <div className="pointer-events-auto flex items-center gap-1.5 bg-slate-950/90 backdrop-blur-xl border border-amber-400/50 rounded-full px-3 py-1 text-[10px] font-mono text-amber-100 shadow-lg">
+              <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>{survivalNotice || survival.activeStatusAlert}</span>
+            </div>
+          )}
+
+          {/* Active Autopilot Micro Indicator (Only visible while navigating automatically) */}
+          {controlState.autopilotTargetId && (
+            <div className="pointer-events-auto flex items-center gap-2 bg-slate-950/80 backdrop-blur-xl border border-amber-400/40 rounded-full px-3 py-1 text-[11px] font-mono text-amber-200 shadow-lg">
+              <Navigation className="w-3 h-3 text-amber-400 animate-pulse" />
+              <span className="hidden sm:inline">{telemetry.autopilotStatus}</span>
+              <button
+                onClick={() =>
+                  onUpdateControl((prev) => ({
+                    ...prev,
+                    autopilotTargetId: null,
+                  }))
+                }
+                className="text-amber-300 hover:text-white underline ml-1"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* DEDICATED SHIP INFORMATION & SYSTEMS MENU DRAWER */}
@@ -265,7 +342,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   CENTRAL — {activeShipName}
                 </h2>
                 <p className="text-[10px] text-slate-400">
-                  Telemetria, Sistemas, Radar e Piloto Automático
+                  Sistemas, Sobrevivência, Radar e Piloto Automático
                 </p>
               </div>
             </div>
@@ -279,28 +356,336 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           </div>
 
           {/* Menu Tabs */}
-          <div className="grid grid-cols-3 border-b border-white/10 text-[11px] font-mono bg-slate-900/30">
+          <div className="grid grid-cols-4 border-b border-white/10 text-[10px] font-mono bg-slate-900/30">
             {[
               { id: 'systems' as const, label: 'Sistemas' },
+              { id: 'survival' as const, label: 'Sobrevivência' },
               { id: 'navigation' as const, label: 'Radar & Rota' },
               { id: 'controls' as const, label: 'Controles' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-2.5 text-center transition-colors border-b-2 ${
+                className={`relative py-2.5 text-center transition-colors border-b-2 ${
                   activeTab === tab.id
                     ? 'border-sky-400 text-sky-200 bg-sky-500/10 font-bold'
                     : 'border-transparent text-slate-400 hover:text-white'
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                {tab.id === 'survival' && survival.activeStatusAlert && (
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                )}
               </button>
             ))}
           </div>
 
           {/* Menu Body */}
           <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 text-xs">
+            {activeTab === 'survival' && (
+              <div className="space-y-3">
+                {/* 1. Fuel, Warp & Resupply */}
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-amber-300">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <Flame className="w-3.5 h-3.5" />
+                      PROPULSÃO, DOBRA & ENERGIA
+                    </span>
+                    <span className="text-slate-400">
+                      Solar +{survival.solarHarvestKw.toFixed(0)} kW
+                    </span>
+                  </div>
+
+                  {[
+                    {
+                      label: 'Combustível Principal',
+                      val: survival.fuelPercent,
+                      color:
+                        survival.fuelPercent < 15
+                          ? 'bg-rose-500'
+                          : survival.fuelPercent < 35
+                            ? 'bg-amber-400'
+                            : 'bg-emerald-400',
+                    },
+                    {
+                      label: 'Energia do Núcleo de Dobra',
+                      val: survival.warpEnergyPercent,
+                      color: survival.warpEnergyPercent < 15 ? 'bg-rose-500' : 'bg-cyan-400',
+                    },
+                    {
+                      label: 'Bateria Auxiliar',
+                      val: survival.batteryPercent,
+                      color: 'bg-sky-400',
+                    },
+                  ].map((bar) => (
+                    <div key={bar.label} className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-mono">
+                        <span className="text-slate-300">{bar.label}</span>
+                        <span className="text-white font-bold">{Math.round(bar.val)}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${bar.color}`}
+                          style={{ width: `${Math.max(0, Math.min(100, bar.val))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono">
+                    <button
+                      onClick={onToggleEcoMode}
+                      className={`py-1.5 px-2 rounded-lg border transition-colors ${
+                        survival.ecoCruiseMode
+                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100 font-bold'
+                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                      }`}
+                    >
+                      ECO Cruise (Y): {survival.ecoCruiseMode ? 'ON' : 'OFF'}
+                    </button>
+                    <button
+                      onClick={onConsumeWarpCell}
+                      disabled={survival.warpCells <= 0}
+                      className="py-1.5 px-2 rounded-lg border bg-cyan-500/20 hover:bg-cyan-500/35 disabled:opacity-40 border-cyan-400/45 text-cyan-100 transition-colors"
+                    >
+                      Célula Dobra ({survival.warpCells})
+                    </button>
+                    {survival.nearRefuelSource === 'ORBITAL_STATION' && (
+                      <button
+                        onClick={onStationResupply}
+                        className="col-span-2 py-1.5 px-2 rounded-lg border bg-emerald-500/25 hover:bg-emerald-500/40 border-emerald-400/60 text-emerald-100 font-bold transition-colors"
+                      >
+                        Reabastecer Completo na Doca Orbital
+                      </button>
+                    )}
+                    <button
+                      onClick={onCallRescueDrone}
+                      className={`col-span-2 py-1.5 px-2 rounded-lg border transition-colors ${
+                        survival.fuelPercent < 18 || survival.warpEnergyPercent < 12
+                          ? 'bg-amber-500/30 hover:bg-amber-500/45 border-amber-400 text-amber-100 font-bold animate-pulse'
+                          : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-300'
+                      }`}
+                    >
+                      Chamar Drone de Socorro (Combustível & Célula)
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Thermal, Shadow & Radiation */}
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-rose-300">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <Thermometer className="w-3.5 h-3.5" />
+                      TÉRMICA, SOMBRA 3D & RADIAÇÃO
+                    </span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded ${
+                        survival.inPlanetaryShadow
+                          ? 'bg-indigo-500/30 text-indigo-200'
+                          : 'bg-amber-500/20 text-amber-200'
+                      }`}
+                    >
+                      {survival.inPlanetaryShadow ? 'EM SOMBRA' : 'LUZ SOLAR'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono text-center">
+                    <div className="bg-slate-950/70 rounded-lg p-1.5 border border-white/5">
+                      <div className="text-slate-400">CASCO</div>
+                      <div
+                        className={`font-bold mt-0.5 ${
+                          survival.hullTempC > 650 ? 'text-rose-400' : 'text-sky-200'
+                        }`}
+                      >
+                        {Math.round(survival.hullTempC)}°C
+                      </div>
+                    </div>
+                    <div className="bg-slate-950/70 rounded-lg p-1.5 border border-white/5">
+                      <div className="text-slate-400">REATOR</div>
+                      <div className="font-bold text-amber-200 mt-0.5">
+                        {Math.round(survival.reactorTempC)}°C
+                      </div>
+                    </div>
+                    <div className="bg-slate-950/70 rounded-lg p-1.5 border border-white/5">
+                      <div className="text-slate-400 flex items-center justify-center gap-0.5">
+                        <Radiation className="w-2.5 h-2.5" />
+                        <span>RAD</span>
+                      </div>
+                      <div
+                        className={`font-bold mt-0.5 ${
+                          survival.radiationPercent > 65 ? 'text-rose-400' : 'text-emerald-300'
+                        }`}
+                      >
+                        {Math.round(survival.radiationPercent)}%
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+                    <button
+                      onClick={onToggleRadiators}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border transition-colors ${
+                        survival.radiatorsDeployed
+                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-100 font-bold'
+                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                      }`}
+                    >
+                      <Snowflake className="w-3 h-3" />
+                      <span>Radiadores (K): {survival.radiatorsDeployed ? 'ON' : 'OFF'}</span>
+                    </button>
+                    <button
+                      onClick={onCalibrateReactor}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border bg-indigo-500/20 hover:bg-indigo-500/35 border-indigo-400/45 text-indigo-100 transition-colors"
+                    >
+                      <Wind className="w-3 h-3" />
+                      <span>Purificar O₂ / Filtros</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Oxygen, Hull & Pilot Vitals */}
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-emerald-300">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <Heart className="w-3.5 h-3.5" />
+                      SUPORTE DE VIDA & PILOTO
+                    </span>
+                    <span className="text-slate-400">Casco {Math.round(survival.hullIntegrity)}%</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                    {[
+                      { label: 'O₂ Cabine', val: survival.shipOxygenPercent, col: 'bg-cyan-400' },
+                      { label: 'O₂ Traje EVA', val: survival.evaOxygenPercent, col: 'bg-sky-400' },
+                      { label: 'Saciedade (Fome)', val: survival.hungerPercent, col: 'bg-emerald-400' },
+                      { label: 'Hidratação (Sede)', val: survival.thirstPercent, col: 'bg-blue-400' },
+                      { label: 'Energia / Descanso', val: survival.fatiguePercent, col: 'bg-amber-400' },
+                      { label: 'Integridade Casco', val: survival.hullIntegrity, col: 'bg-teal-400' },
+                    ].map((v) => (
+                      <div key={v.label} className="space-y-0.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-300 truncate">{v.label}</span>
+                          <span className="text-white font-bold">{Math.round(v.val)}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              v.val < 20 ? 'bg-rose-500' : v.col
+                            }`}
+                            style={{ width: `${Math.max(0, Math.min(100, v.val))}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 pt-0.5 text-[10px] font-mono">
+                    <button
+                      onClick={onConsumeFood}
+                      disabled={survival.foodRations <= 0}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border bg-emerald-500/20 hover:bg-emerald-500/35 disabled:opacity-40 border-emerald-400/45 text-emerald-100 transition-colors"
+                    >
+                      <Utensils className="w-3 h-3" />
+                      <span>Ração ({survival.foodRations})</span>
+                    </button>
+                    <button
+                      onClick={onConsumeWater}
+                      disabled={survival.waterFlasks <= 0}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border bg-sky-500/20 hover:bg-sky-500/35 disabled:opacity-40 border-sky-400/45 text-sky-100 transition-colors"
+                    >
+                      <Droplets className="w-3 h-3" />
+                      <span>Água ({survival.waterFlasks})</span>
+                    </button>
+                    <button
+                      onClick={onRestInBunk}
+                      className="py-1.5 px-2 rounded-lg border bg-amber-500/20 hover:bg-amber-500/35 border-amber-400/45 text-amber-100 transition-colors"
+                    >
+                      Descansar (Beliche)
+                    </button>
+                    <button
+                      onClick={onUseRepairKit}
+                      disabled={survival.repairKits <= 0}
+                      className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border bg-white/10 hover:bg-white/20 disabled:opacity-40 border-white/20 text-white transition-colors"
+                    >
+                      <Wrench className="w-3 h-3" />
+                      <span>Reparo ({survival.repairKits})</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. 8-Pip Power Distribution */}
+                <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-sky-300">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <Zap className="w-3.5 h-3.5" />
+                      DISTRIBUIÇÃO DE ENERGIA
+                    </span>
+                    <span>
+                      {survival.powerPips.engines +
+                        survival.powerPips.shields +
+                        survival.powerPips.weapons +
+                        survival.powerPips.lifeSupport}
+                      /{POWER_PIP_TOTAL} PIPs
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1 text-[9px] font-mono">
+                    {(Object.keys(POWER_PRESETS) as Array<keyof typeof POWER_PRESETS>).map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => onApplyPowerPreset(key)}
+                        className="py-1 px-1 rounded bg-white/5 hover:bg-sky-500/25 border border-white/10 text-slate-200 truncate transition-colors"
+                      >
+                        {POWER_PRESETS[key].label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {(
+                      [
+                        { id: 'engines', label: 'Motores', color: 'bg-amber-400' },
+                        { id: 'shields', label: 'Escudos', color: 'bg-indigo-400' },
+                        { id: 'weapons', label: 'Armas / Laser', color: 'bg-rose-400' },
+                        { id: 'lifeSupport', label: 'Sup. Vida / O₂', color: 'bg-emerald-400' },
+                      ] as const
+                    ).map((sub) => {
+                      const val = survival.powerPips[sub.id];
+                      return (
+                        <div key={sub.id} className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                          <span className="text-slate-300 w-24 truncate">{sub.label}</span>
+                          <div className="flex items-center gap-1 flex-1 justify-end">
+                            <button
+                              onClick={() => onAdjustPowerPip(sub.id, -1)}
+                              className="w-5 h-5 rounded bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 flex items-center justify-center"
+                            >
+                              -
+                            </button>
+                            <div className="flex gap-1">
+                              {[1, 2, 3, 4].map((pip) => (
+                                <span
+                                  key={pip}
+                                  className={`w-3.5 h-2.5 rounded-sm ${
+                                    val >= pip ? sub.color : 'bg-slate-800 border border-white/10'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <button
+                              onClick={() => onAdjustPowerPip(sub.id, 1)}
+                              className="w-5 h-5 rounded bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 flex items-center justify-center"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'systems' && (
               <>
                 {/* Telemetry Grid */}
@@ -722,6 +1107,18 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     <span className="font-mono text-amber-300">G</span>
                   </div>
                   <div className="flex justify-between">
+                    <span className="text-slate-400">Interagir na Cabine (A Pé)</span>
+                    <span className="font-mono text-amber-300">E</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Radiadores Térmicos</span>
+                    <span className="font-mono text-cyan-300">K</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Modo ECO Combustível</span>
+                    <span className="font-mono text-emerald-300">Y</span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-slate-400">Motor de Dobra</span>
                     <span className="font-mono text-cyan-300">Shift</span>
                   </div>
@@ -748,7 +1145,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     No espaço (<strong className="text-emerald-300">Z</strong> alterna <strong className="text-white">SAS</strong> / <strong className="text-amber-300">NEWTON</strong>): ao zerar o motor (0%), a nave continua deslizando por inércia. Use <strong className="text-rose-300">Espaço</strong> para acionar os retrofoguetes e frear.
                   </p>
                   <p>
-                    Dentro da <strong className="text-sky-300">Cabine 3D</strong>, arraste com o mouse ou dedo para <strong className="text-white">olhar livremente em 360°</strong>, use o <strong className="text-white">Scroll</strong> para dar zoom nos instrumentos e <strong className="text-white">C</strong> (ou duplo clique) para centralizar a visão. Clique nos interruptores iluminados dos consoles laterais, manete ou gatilho; para manobrar com mouse dentro da cabine use o botão direito, ou pilote pelo teclado e <strong className="text-amber-300">Manche Tátil</strong>.
+                    Dentro da <strong className="text-sky-300">Cabine 3D</strong>, arraste com o mouse ou dedo para <strong className="text-white">olhar livremente em 360°</strong>, use o <strong className="text-white">Scroll</strong> para dar zoom nos instrumentos e <strong className="text-white">C</strong> (ou duplo clique) para centralizar a visão. Em modo andar (<strong className="text-amber-300">G</strong>), aproxime-se da Copa, Beliche, Reator ou Airlock e pressione <strong className="text-amber-300">E</strong> para interagir.
                   </p>
                 </div>
               </div>
@@ -759,7 +1156,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
       {/* OPTIONAL COMPACT TOUCH D-PAD (Hidden on screen unless user enables for mobile touch flight) */}
       {showTouchPad && !controlState.walkingInside && (
-        <div className="pointer-events-auto fixed left-3 bottom-16 z-30 bg-slate-950/85 backdrop-blur-xl border border-sky-500/35 rounded-2xl p-2 shadow-xl">
+        <div className="pointer-events-auto fixed left-3 bottom-20 z-30 bg-slate-950/85 backdrop-blur-xl border border-sky-500/35 rounded-2xl p-2 shadow-xl">
           <div className="grid grid-cols-3 gap-1">
             <button
               {...holdButtonProps('roll', 1)}
@@ -813,15 +1210,136 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
         </div>
       )}
 
-      {/* CLEAN SLIM BOTTOM FLIGHT PILL (Leaves ~95% of Viewport Unobstructed!) */}
-      <div className="pb-3 px-3 flex justify-center">
+      {/* CLEAN SLIM BOTTOM FLIGHT PILL + SURVIVAL MINI-BAR (Leaves ~93% of Viewport Unobstructed!) */}
+      <div className="pb-3 px-3 flex flex-col items-center gap-1.5">
+        {controlState.walkingInside &&
+          (() => {
+            const stationMeta = CABIN_STATIONS.find((s) => s.id === survival.nearbyCabinStation);
+            if (!stationMeta) return null;
+            return (
+              <div className="pointer-events-auto flex items-center gap-2.5 bg-slate-950/90 backdrop-blur-xl border border-amber-400/55 rounded-2xl px-3.5 py-2 shadow-2xl">
+                <span
+                  className="w-2.5 h-2.5 rounded-full animate-ping shrink-0"
+                  style={{ backgroundColor: stationMeta.accentHex }}
+                />
+                <div className="text-[11px] font-mono">
+                  <div className="text-white font-bold">{stationMeta.title}</div>
+                  <div className="text-[10px] text-slate-300">{stationMeta.actionHint}</div>
+                </div>
+                <button
+                  onClick={onCabinStationInteract}
+                  className="px-2.5 py-1 rounded-xl bg-amber-500/30 hover:bg-amber-500/45 border border-amber-400 text-amber-100 text-[10px] font-mono font-bold transition-colors shrink-0"
+                >
+                  [E] Interagir
+                </button>
+              </div>
+            );
+          })()}
+
+        {!controlState.walkingInside && (
+          <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 bg-slate-950/75 backdrop-blur-xl border border-white/10 rounded-full px-3 py-1 shadow-lg text-[10px] font-mono">
+            <button
+              onClick={() => {
+                setActiveTab('survival');
+                setIsShipMenuOpen(true);
+              }}
+              className="flex items-center gap-2 text-slate-200 hover:text-white transition-colors"
+              title="Abrir Painel de Sobrevivência e Recursos da Nave"
+            >
+              <span
+                className={
+                  survival.fuelPercent < 18
+                    ? 'text-rose-400 font-bold animate-pulse'
+                    : 'text-emerald-300'
+                }
+              >
+                COMB {Math.round(survival.fuelPercent)}%
+              </span>
+              <span className="text-white/20">·</span>
+              <span
+                className={
+                  survival.warpEnergyPercent < 15 ? 'text-amber-300 font-bold' : 'text-cyan-300'
+                }
+              >
+                DOBRA {Math.round(survival.warpEnergyPercent)}%
+              </span>
+              <span className="text-white/20">·</span>
+              <span
+                className={
+                  survival.shipOxygenPercent < 30
+                    ? 'text-rose-400 font-bold animate-pulse'
+                    : 'text-sky-300'
+                }
+              >
+                O₂ {Math.round(survival.shipOxygenPercent)}%
+              </span>
+              <span className="text-white/20">·</span>
+              <span
+                className={survival.hullTempC > 520 ? 'text-rose-400 font-bold' : 'text-slate-300'}
+              >
+                {Math.round(survival.hullTempC)}°C
+              </span>
+              <span className="hidden sm:inline text-white/20">·</span>
+              <span
+                className={`hidden sm:inline ${
+                  survival.hungerPercent < 25 ||
+                  survival.thirstPercent < 25 ||
+                  survival.fatiguePercent < 20
+                    ? 'text-amber-300 font-bold'
+                    : 'text-slate-300'
+                }`}
+              >
+                PILOTO{' '}
+                {Math.round(
+                  (survival.hungerPercent + survival.thirstPercent + survival.fatiguePercent) / 3
+                )}
+                %
+              </span>
+            </button>
+
+            <div className="h-3 w-px bg-white/15 mx-0.5" />
+
+            <button
+              onClick={onToggleEcoMode}
+              className={`px-1.5 py-0.5 rounded border transition-colors ${
+                survival.ecoCruiseMode
+                  ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-200 font-bold'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
+              }`}
+              title="Alternar Modo ECO de Economia de Combustível (Y)"
+            >
+              ECO
+            </button>
+            <button
+              onClick={onToggleRadiators}
+              className={`px-1.5 py-0.5 rounded border transition-colors ${
+                survival.radiatorsDeployed
+                  ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200 font-bold'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
+              }`}
+              title="Estender / Retrair Radiadores Térmicos (K)"
+            >
+              RAD
+            </button>
+            {survival.fuelPercent < 18 && (
+              <button
+                onClick={onCallRescueDrone}
+                className="px-2 py-0.5 rounded bg-amber-500/30 hover:bg-amber-500/45 border border-amber-400 text-amber-100 font-bold animate-pulse"
+                title="Chamar Drone de Socorro de Emergência"
+              >
+                SOCORRO
+              </button>
+            )}
+          </div>
+        )}
+
         {controlState.walkingInside ? (
           <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-slate-950/82 backdrop-blur-xl border border-emerald-400/35 rounded-full px-4 py-1.5 shadow-xl text-[11px] font-mono text-slate-200">
             <span className="text-emerald-300 font-bold">CABINE (A PÉ)</span>
             <span className="text-white/25">·</span>
             <span>W/A/S/D Mover</span>
             <span className="hidden sm:inline text-white/25">·</span>
-            <span className="hidden sm:inline">Shift Correr · Espaço Pulo</span>
+            <span className="hidden sm:inline">E Interagir · Shift Correr · Espaço Pulo</span>
             <span className="text-white/25">·</span>
             <span>V 1ª/3ª Pessoa</span>
             <span className="text-white/25">·</span>

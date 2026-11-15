@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Disc,
@@ -19,6 +19,8 @@ import {
   saveQualityPreference,
 } from './utils/performanceProfile';
 import {
+  CabinStationId,
+  PowerSubsystemId,
   PropagatedSatellite,
   SatelliteCategory,
   SatelliteRecord,
@@ -30,9 +32,23 @@ import {
   CharacterVariantId,
   SpaceMission,
   SurfaceLandmark,
+  SurvivalResourcesState,
   WarpFlightState,
   ZoomLevel,
 } from './types/astronomy';
+import {
+  adjustPowerPips,
+  calibrateReactorO2Action,
+  consumeFoodRation,
+  consumeWarpCell,
+  consumeWaterFlask,
+  createInitialSurvivalState,
+  emergencyRescueDroneAction,
+  fullStationResupplyAction,
+  POWER_PRESETS,
+  restInCabinBunkAction,
+  useRepairKitAction,
+} from './utils/survivalEngine';
 import {
   getCharacterPreset,
   getSpacecraftPreset,
@@ -207,7 +223,31 @@ export function App() {
     interiorLightsOn: true,
     recenterTrigger: 0,
     walkingInside: false,
+    ecoCruiseMode: false,
+    radiatorsDeployed: false,
   });
+
+  // Survival & Ship Resources Engine State (Ref as 60fps authority + React mirror for HUD)
+  const survivalRef = useRef<SurvivalResourcesState>(createInitialSurvivalState());
+  const [survivalState, setSurvivalState] = useState<SurvivalResourcesState>(survivalRef.current);
+  const [survivalNotice, setSurvivalNotice] = useState<string | null>(null);
+  const survivalNoticeTimerRef = useRef<number | null>(null);
+
+  const showSurvivalNotice = useCallback((msg: string) => {
+    setSurvivalNotice(msg);
+    if (survivalNoticeTimerRef.current !== null) {
+      window.clearTimeout(survivalNoticeTimerRef.current);
+    }
+    survivalNoticeTimerRef.current = window.setTimeout(() => {
+      setSurvivalNotice(null);
+      survivalNoticeTimerRef.current = null;
+    }, 3400);
+  }, []);
+
+  const handleSyncSurvivalState = useCallback((next: SurvivalResourcesState) => {
+    survivalRef.current = next;
+    setSurvivalState(next);
+  }, []);
 
   const [spacecraftTelemetry, setSpacecraftTelemetry] = useState<SpacecraftTelemetry>({
     speedUnitsPerSec: 0,
@@ -360,6 +400,200 @@ export function App() {
       }));
     },
     [launchSpacecraftSR7, spacecraftControl.isActive]
+  );
+
+  const handleConsumeFood = useCallback(() => {
+    const cur = survivalRef.current;
+    if (cur.foodRations <= 0) {
+      showSurvivalNotice('Sem rações disponíveis — reabasteça na Estação Orbital ou chame Drone.');
+      return;
+    }
+    const next = consumeFoodRation(cur);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('food');
+    showSurvivalNotice(`Ração consumida · Saciedade ${Math.round(next.hungerPercent)}% (${next.foodRations} un restantes)`);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleConsumeWater = useCallback(() => {
+    const cur = survivalRef.current;
+    if (cur.waterFlasks <= 0) {
+      showSurvivalNotice('Sem cantis de água disponíveis — reabasteça na Estação Orbital.');
+      return;
+    }
+    const next = consumeWaterFlask(cur);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('water');
+    showSurvivalNotice(`Água ingerida · Hidratação ${Math.round(next.thirstPercent)}% (${next.waterFlasks} un restantes)`);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleConsumeWarpCell = useCallback(() => {
+    const cur = survivalRef.current;
+    if (cur.warpCells <= 0) {
+      showSurvivalNotice('Sem Células de Dobra reserva — recarregue na Coroa Solar ou Doca Orbital.');
+      return;
+    }
+    const next = consumeWarpCell(cur);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('cell');
+    showSurvivalNotice(`Célula de Dobra injetada · Núcleo em 100% (${next.warpCells} un restantes)`);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleUseRepairKit = useCallback(() => {
+    const cur = survivalRef.current;
+    if (cur.repairKits <= 0) {
+      showSurvivalNotice('Sem Kits de Reparo — reabasteça na Doca Orbital.');
+      return;
+    }
+    const next = useRepairKitAction(cur);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('repair');
+    showSurvivalNotice(`Casco selado (${Math.round(next.hullIntegrity)}%) · ${next.repairKits} kits restantes`);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleRestInBunk = useCallback(() => {
+    const next = restInCabinBunkAction(survivalRef.current);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playRestChime();
+    showSurvivalNotice('Descanso concluído na beliche · Energia do piloto 100% e reator resfriado');
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleCalibrateReactor = useCallback(() => {
+    const next = calibrateReactorO2Action(survivalRef.current);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('repair');
+    showSurvivalNotice(`Filtros & Reator calibrados · O₂ Cabine ${Math.round(next.shipOxygenPercent)}%`);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleCallRescueDrone = useCallback(() => {
+    const next = emergencyRescueDroneAction(survivalRef.current);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('cell');
+    showSurvivalNotice('Drone de Socorro entregou combustível, O₂ e provisões de emergência!');
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleStationResupply = useCallback(() => {
+    const next = fullStationResupplyAction(survivalRef.current);
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('cell');
+    showSurvivalNotice('Reabastecimento completo concluído pela Doca Orbital!');
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleEmergencyEvaO2Refill = useCallback(() => {
+    const cur = survivalRef.current;
+    const next: SurvivalResourcesState = {
+      ...cur,
+      evaOxygenPercent: Math.min(100, Number((cur.evaOxygenPercent + 45).toFixed(1))),
+    };
+    handleSyncSurvivalState(next);
+    spaceAudio.unlock();
+    spaceAudio.playProvisionUse('water');
+    showSurvivalNotice(`Cartucho reserva injetado no traje · O₂ ${Math.round(next.evaOxygenPercent)}%`);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleToggleEcoMode = useCallback(() => {
+    const cur = survivalRef.current;
+    const nextEco = !cur.ecoCruiseMode;
+    handleSyncSurvivalState({ ...cur, ecoCruiseMode: nextEco });
+    setSpacecraftControl((prev) => ({ ...prev, ecoCruiseMode: nextEco }));
+    spaceAudio.unlock();
+    spaceAudio.playCockpitSwitch(nextEco);
+    showSurvivalNotice(
+      nextEco ? 'Modo ECO Cruise ativado (-42% gasto de combustível)' : 'Modo ECO Cruise desativado'
+    );
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleToggleRadiators = useCallback(() => {
+    const cur = survivalRef.current;
+    const nextRad = !cur.radiatorsDeployed;
+    handleSyncSurvivalState({ ...cur, radiatorsDeployed: nextRad });
+    setSpacecraftControl((prev) => ({ ...prev, radiatorsDeployed: nextRad }));
+    spaceAudio.unlock();
+    spaceAudio.playRadiatorToggle(nextRad);
+    showSurvivalNotice(
+      nextRad ? 'Aletas Radiadoras Térmicas estendidas!' : 'Aletas Radiadoras Térmicas retraídas'
+    );
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleAdjustPowerPip = useCallback(
+    (subsystem: PowerSubsystemId, delta: 1 | -1) => {
+      const cur = survivalRef.current;
+      const nextPips = adjustPowerPips(cur.powerPips, subsystem, delta);
+      handleSyncSurvivalState({ ...cur, powerPips: nextPips });
+      setSpacecraftControl((prev) => ({ ...prev, powerPips: nextPips }));
+      spaceAudio.unlock();
+      spaceAudio.playCockpitSwitch(delta > 0);
+    },
+    [handleSyncSurvivalState]
+  );
+
+  const handleApplyPowerPreset = useCallback(
+    (presetKey: keyof typeof POWER_PRESETS) => {
+      const preset = POWER_PRESETS[presetKey];
+      const nextPips = { ...preset.pips };
+      handleSyncSurvivalState({ ...survivalRef.current, powerPips: nextPips });
+      setSpacecraftControl((prev) => ({ ...prev, powerPips: nextPips }));
+      spaceAudio.unlock();
+      spaceAudio.playCockpitSwitch(true);
+      showSurvivalNotice(`Energia distribuída: ${preset.label}`);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleCabinStationAction = useCallback(
+    (stationId: CabinStationId) => {
+      const cur = survivalRef.current;
+      if (stationId === 'GALLEY') {
+        let updated = cur;
+        let didFood = false;
+        let didWater = false;
+        if (updated.foodRations > 0 && updated.hungerPercent < 95) {
+          updated = consumeFoodRation(updated);
+          didFood = true;
+        }
+        if (updated.waterFlasks > 0 && updated.thirstPercent < 95) {
+          updated = consumeWaterFlask(updated);
+          didWater = true;
+        }
+        if (!didFood && !didWater) {
+          if (updated.foodRations <= 0 && updated.waterFlasks <= 0) {
+            showSurvivalNotice('Copa vazia — reabasteça na Doca Orbital ou chame Drone.');
+          } else {
+            showSurvivalNotice('Copa: piloto já está bem alimentado e hidratado!');
+          }
+          return;
+        }
+        handleSyncSurvivalState(updated);
+        spaceAudio.unlock();
+        spaceAudio.playProvisionUse(didFood ? 'food' : 'water');
+        showSurvivalNotice(
+          `Copa da Nave: Saciedade ${Math.round(updated.hungerPercent)}% · Hidratação ${Math.round(updated.thirstPercent)}%`
+        );
+      } else if (stationId === 'BUNK') {
+        handleRestInBunk();
+      } else if (stationId === 'REACTOR') {
+        let updated = calibrateReactorO2Action(cur);
+        if (updated.hullIntegrity < 90 && updated.repairKits > 0) {
+          updated = useRepairKitAction(updated);
+        }
+        handleSyncSurvivalState(updated);
+        spaceAudio.unlock();
+        spaceAudio.playProvisionUse('repair');
+        showSurvivalNotice(
+          `Painel do Reator: O₂ ${Math.round(updated.shipOxygenPercent)}% · Bateria ${Math.round(updated.batteryPercent)}% · Casco ${Math.round(updated.hullIntegrity)}%`
+        );
+      } else if (stationId === 'AIRLOCK') {
+        switchPlayerMode('EVA');
+      }
+    },
+    [handleRestInBunk, handleSyncSurvivalState, showSurvivalNotice, switchPlayerMode]
   );
 
   // Global Menu & EVA Hotkeys
@@ -702,6 +936,9 @@ export function App() {
         onResolvedQualityChange={setResolvedQualityTier}
         onBootProgress={setBootProgress}
         hideHud={isHudHidden}
+        survivalStateRef={survivalRef}
+        onSyncSurvivalState={handleSyncSurvivalState}
+        onTriggerCabinStationAction={handleCabinStationAction}
       />
 
       {/* 1B. CINEMATIC PRELOAD SPLASH SCREEN WITH LOGO */}
@@ -764,8 +1001,8 @@ export function App() {
           <button
             onClick={() => setIsHudHidden((v) => !v)}
             className={`p-2 rounded-full border backdrop-blur-xl transition-all ${isHudHidden
-                ? 'bg-slate-950/40 hover:bg-slate-950/85 border-white/10 text-slate-400 hover:text-white opacity-45 hover:opacity-100'
-                : 'bg-slate-950/70 hover:bg-slate-900 border-white/15 text-slate-300 hover:text-white shadow-lg'
+              ? 'bg-slate-950/40 hover:bg-slate-950/85 border-white/10 text-slate-400 hover:text-white opacity-45 hover:opacity-100'
+              : 'bg-slate-950/70 hover:bg-slate-900 border-white/15 text-slate-300 hover:text-white shadow-lg'
               }`}
             title={isHudHidden ? 'Mostrar Interface (H)' : 'Ocultar HUD — Tela 100% Limpa (H)'}
           >
@@ -922,8 +1159,8 @@ export function App() {
                 <button
                   onClick={() => setIsExploringInterior((v) => !v)}
                   className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${isExploringInterior
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
-                      : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-200'
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                    : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-200'
                     }`}
                 >
                   <Layers className="w-3.5 h-3.5 text-amber-400" />
@@ -945,8 +1182,8 @@ export function App() {
                 <button
                   onClick={() => setSaturnRingDiveMode((v) => !v)}
                   className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl border text-xs font-medium transition-all ${saturnRingDiveMode
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
-                      : 'bg-white/5 hover:bg-white/10 border-white/15 text-amber-200'
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                    : 'bg-white/5 hover:bg-white/10 border-white/15 text-amber-200'
                     }`}
                 >
                   <Disc className="w-3.5 h-3.5 text-amber-300" />
@@ -1029,6 +1266,23 @@ export function App() {
           activeShipAccent={activeShipPreset.accentHex}
           onDeployToStation={() => handleDeployToStation('SHIP_DOCK')}
           flightControlPrefs={flightControlPrefs}
+          survival={survivalState}
+          survivalNotice={survivalNotice}
+          onConsumeFood={handleConsumeFood}
+          onConsumeWater={handleConsumeWater}
+          onConsumeWarpCell={handleConsumeWarpCell}
+          onUseRepairKit={handleUseRepairKit}
+          onRestInBunk={handleRestInBunk}
+          onCalibrateReactor={handleCalibrateReactor}
+          onToggleEcoMode={handleToggleEcoMode}
+          onToggleRadiators={handleToggleRadiators}
+          onAdjustPowerPip={handleAdjustPowerPip}
+          onApplyPowerPreset={handleApplyPowerPreset}
+          onCallRescueDrone={handleCallRescueDrone}
+          onStationResupply={handleStationResupply}
+          onCabinStationInteract={() =>
+            handleCabinStationAction(survivalRef.current.nearbyCabinStation)
+          }
         />
       )}
 
@@ -1053,6 +1307,11 @@ export function App() {
           nearestBodyName={spacecraftTelemetry.nearestBodyName}
           activeCharacterName={activeCharacterPreset.name}
           onWalkOnStation={() => handleDeployToStation('EVA_WALK')}
+          survival={survivalState}
+          survivalNotice={survivalNotice}
+          onUseFood={handleConsumeFood}
+          onUseWater={handleConsumeWater}
+          onEmergencyO2Refill={handleEmergencyEvaO2Refill}
         />
       )}
 

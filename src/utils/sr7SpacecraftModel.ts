@@ -11,6 +11,7 @@ import {
   buildShipInteriorCollider,
   ShipInteriorCollider,
 } from './shipInteriorCollider';
+import { CABIN_STATIONS } from './survivalEngine';
 
 export interface SR7SpacecraftRefs {
   rootGroup: THREE.Group;
@@ -81,6 +82,10 @@ export interface SR7SpacecraftRefs {
     cockpitSeat?: CockpitSeatPosition;
     shipScale?: number;
     driftAngleDeg?: number;
+    radiatorsDeployed?: boolean;
+    hullTempC?: number;
+    walkingInside?: boolean;
+    nearbyCabinStation?: string;
   }) => void;
 }
 
@@ -969,6 +974,54 @@ export function createSR7Spacecraft3DGroup(options?: {
   const strobeLightMesh = new THREE.Mesh();
   strobeLightMesh.visible = false;
 
+  // Deployable Thermal Radiator Wings on Dorsal Aft Hull (extend smoothly when radiatorsDeployed = true)
+  const radiatorMat = new THREE.MeshStandardMaterial({
+    color: '#0f172a',
+    emissive: '#fb923c',
+    emissiveIntensity: 0.25,
+    roughness: 0.28,
+    metalness: 0.85,
+  });
+  const radiatorGroup = new THREE.Group();
+  radiatorGroup.name = 'spaceship-thermal-radiators';
+  radiatorGroup.visible = false;
+  const radGeo = new THREE.BoxGeometry(0.95, 0.025, 0.42);
+  const leftRadiator = new THREE.Mesh(radGeo, radiatorMat);
+  leftRadiator.position.set(-0.85, 0.22, -1.75);
+  leftRadiator.rotation.set(0.12, 0.08, -0.22);
+  const rightRadiator = new THREE.Mesh(radGeo, radiatorMat);
+  rightRadiator.position.set(0.85, 0.22, -1.75);
+  rightRadiator.rotation.set(0.12, -0.08, 0.22);
+  radiatorGroup.add(leftRadiator, rightRadiator);
+  hullGroup.add(radiatorGroup);
+
+  // Subtle Holographic Station Markers inside Walkable Bridge (Galley, Bunk, Reactor/O2, Airlock)
+  const cabinStationGroup = new THREE.Group();
+  cabinStationGroup.name = 'spaceship-cabin-stations';
+  cabinStationGroup.visible = false;
+  const cabinStationMeshes: Array<{ id: string; ring: THREE.Mesh; mat: THREE.MeshBasicMaterial }> = [];
+  const stationRingGeo = new THREE.RingGeometry(0.036, 0.048, 24);
+  stationRingGeo.rotateX(-Math.PI / 2);
+  const stationBeaconGeo = new THREE.CylinderGeometry(0.008, 0.012, 0.075, 12);
+  CABIN_STATIONS.forEach((st) => {
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: st.accentHex,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const ring = new THREE.Mesh(stationRingGeo, ringMat);
+    ring.position.set(st.localPos[0], -0.078, st.localPos[2]);
+    const beacon = new THREE.Mesh(stationBeaconGeo, ringMat);
+    beacon.position.set(0, 0.055, 0);
+    ring.add(beacon);
+    cabinStationGroup.add(ring);
+    cabinStationMeshes.push({ id: st.id, ring, mat: ringMat });
+  });
+  interiorGroup.add(cabinStationGroup);
+
   const dummyCanvas = isNodeEnv
     ? ({ width: 1, height: 1, getContext: () => null } as unknown as HTMLCanvasElement)
     : document.createElement('canvas');
@@ -976,9 +1029,11 @@ export function createSR7Spacecraft3DGroup(options?: {
 
   const _yokeAnimEuler = new THREE.Euler();
   const _yokeAnimQuat = new THREE.Quaternion();
+  let radiatorDeployBlend = 0;
 
   const updateAnimations: SR7SpacecraftRefs['updateAnimations'] = ({
     dt,
+    clockTime,
     throttle,
     boostActive,
     headlightsOn,
@@ -989,6 +1044,10 @@ export function createSR7Spacecraft3DGroup(options?: {
     isCockpitView = false,
     cockpitSeat = 'LEFT',
     shipScale = 1,
+    radiatorsDeployed = false,
+    hullTempC = 24,
+    walkingInside = false,
+    nearbyCabinStation = 'NONE',
   }) => {
     // Smoothly move cockpit eye anchor between Commander (LEFT), Panoramic (CENTER), and Co-Pilot (RIGHT)
     const targetSeatPos = SEAT_LOCAL_POSITIONS[cockpitSeat] || SEAT_LOCAL_POSITIONS.LEFT;
@@ -1032,6 +1091,37 @@ export function createSR7Spacecraft3DGroup(options?: {
     muzzleFlashMat.opacity = muzzleFlashAlpha;
     leftMuzzleFlash.visible = muzzleFlashAlpha > 0.02;
     rightMuzzleFlash.visible = muzzleFlashAlpha > 0.02;
+
+    // Deployable Thermal Radiator Fins Animation + Glow
+    radiatorDeployBlend = THREE.MathUtils.lerp(
+      radiatorDeployBlend,
+      radiatorsDeployed ? 1 : 0,
+      Math.min(1, dt * 6.5)
+    );
+    if (radiatorDeployBlend > 0.02) {
+      radiatorGroup.visible = true;
+      leftRadiator.scale.set(radiatorDeployBlend, 1, 1);
+      rightRadiator.scale.set(radiatorDeployBlend, 1, 1);
+      leftRadiator.position.x = -0.38 - radiatorDeployBlend * 0.48;
+      rightRadiator.position.x = 0.38 + radiatorDeployBlend * 0.48;
+      const heatGlow = THREE.MathUtils.clamp((hullTempC - 40) / 480, 0.12, 1.8);
+      radiatorMat.emissive.set(hullTempC > 220 ? '#fb923c' : '#38bdf8');
+      radiatorMat.emissiveIntensity = heatGlow * radiatorDeployBlend;
+    } else {
+      radiatorGroup.visible = false;
+    }
+
+    // Holographic Walkable Cabin Station Markers (Galley, Bunk, Reactor, Airlock)
+    cabinStationGroup.visible = walkingInside;
+    if (walkingInside) {
+      const pulse = 0.55 + Math.sin(clockTime * 3.8) * 0.25;
+      cabinStationMeshes.forEach(({ id, ring, mat }) => {
+        const isActive = id === nearbyCabinStation;
+        mat.opacity = isActive ? 0.95 : pulse * 0.52;
+        const sc = isActive ? 1.24 : 0.92;
+        ring.scale.set(sc, 1, sc);
+      });
+    }
 
     // 3D Radar Scan Wave
     if (radarPulseAgeSec >= 0 && radarPulseAgeSec < 2.2) {

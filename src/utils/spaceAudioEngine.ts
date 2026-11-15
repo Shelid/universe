@@ -820,6 +820,78 @@ class SpaceAudioEngine {
     nSrc.start(now, 0.1, 0.7);
   }
 
+  public playProvisionUse(kind: 'food' | 'water' | 'cell' | 'repair'): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || this.muted) return;
+    const now = this.ctx.currentTime;
+    const notes =
+      kind === 'food'
+        ? [523.25, 659.25]
+        : kind === 'water'
+          ? [587.33, 783.99]
+          : kind === 'cell'
+            ? [440, 660, 880]
+            : [392, 523.25];
+    notes.forEach((freq, i) => {
+      if (!this.ctx || !this.compressor) return;
+      const t = now + i * 0.065;
+      const osc = this.ctx.createOscillator();
+      osc.type = kind === 'cell' ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(0.075, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.18);
+      osc.connect(g);
+      g.connect(this.compressor);
+      osc.start(t);
+      osc.stop(t + 0.19);
+    });
+  }
+
+  public playRestChime(): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || this.muted) return;
+    const now = this.ctx.currentTime;
+    [349.23, 440, 523.25].forEach((freq, i) => {
+      if (!this.ctx || !this.compressor) return;
+      const t = now + i * 0.09;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(0.065, t + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0004, t + 0.42);
+      osc.connect(g);
+      g.connect(this.compressor);
+      if (this.echoBus) g.connect(this.echoBus);
+      osc.start(t);
+      osc.stop(t + 0.44);
+    });
+  }
+
+  public playRadiatorToggle(deployed: boolean): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || !this.noiseBuffer || this.muted) return;
+    const now = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(deployed ? 420 : 920, now);
+    bp.frequency.exponentialRampToValueAtTime(deployed ? 980 : 340, now + 0.22);
+    bp.Q.value = 1.8;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.001, now);
+    g.gain.linearRampToValueAtTime(0.09, now + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(this.compressor);
+    src.start(now, 0.05, 0.28);
+  }
+
   public dispose(): void {
     try {
       this.droneOscA?.stop();

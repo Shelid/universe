@@ -317,6 +317,52 @@ export interface WarpFlightState {
 
 export type SpacecraftCameraView = 'COCKPIT' | 'EXTERNAL';
 export type CockpitSeatPosition = 'LEFT' | 'CENTER' | 'RIGHT';
+export type PowerSubsystemId = 'engines' | 'shields' | 'weapons' | 'lifeSupport';
+export type CabinStationId = 'NONE' | 'GALLEY' | 'BUNK' | 'REACTOR' | 'AIRLOCK';
+export type RefuelSourceKind =
+  | 'NONE'
+  | 'HANGAR'
+  | 'ORBITAL_STATION'
+  | 'GAS_GIANT_SCOOP'
+  | 'SOLAR_CORONA';
+
+export interface PowerPips {
+  engines: number;     // 0..4 (total across 4 systems = 8)
+  shields: number;     // 0..4
+  weapons: number;     // 0..4
+  lifeSupport: number; // 0..4
+}
+
+export interface SurvivalResourcesState {
+  fuelPercent: number;
+  warpEnergyPercent: number;
+  warpCells: number;
+  maxWarpCells: number;
+  batteryPercent: number;
+  ecoCruiseMode: boolean;
+
+  shipOxygenPercent: number;
+  evaOxygenPercent: number;
+  hullIntegrity: number;
+  hullTempC: number;
+  reactorTempC: number;
+  radiatorsDeployed: boolean;
+  radiationPercent: number;
+  inPlanetaryShadow: boolean;
+  solarHarvestKw: number;
+
+  hungerPercent: number;
+  thirstPercent: number;
+  fatiguePercent: number;
+  foodRations: number;
+  waterFlasks: number;
+  repairKits: number;
+
+  powerPips: PowerPips;
+  nearRefuelSource: RefuelSourceKind;
+  nearbyCabinStation: CabinStationId;
+  activeStatusAlert: string | null;
+}
 
 export interface SpacecraftControlState {
   isActive: boolean;
@@ -334,6 +380,9 @@ export interface SpacecraftControlState {
   interiorLightsOn: boolean;
   recenterTrigger?: number;
   walkingInside?: boolean;
+  ecoCruiseMode?: boolean;
+  radiatorsDeployed?: boolean;
+  powerPips?: PowerPips;
 }
 
 export interface NearbySpacecraftContact {
@@ -360,6 +409,7 @@ export interface SpacecraftTelemetry {
   nearestDistanceFormatted: string;
   nearbyContacts: NearbySpacecraftContact[];
   autopilotStatus: 'OFF' | 'ALIGNING' | 'CRUISING' | 'ARRIVED';
+  survival?: SurvivalResourcesState;
 }
 
 export type SpacecraftVariantId = 'sr7-vanguard' | 'xr9-phantom' | 'aegis-titan';
