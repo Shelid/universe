@@ -2152,7 +2152,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                   true
                 )
               : undefined);
-          if (selectedSat && selectedSat.orbitTrack3D.length > 1) {
+          if (st.showOrbits && selectedSat && selectedSat.orbitTrack3D.length > 1) {
             if (
               lastDrawnSatTrackId !== selectedSat.id ||
               lastDrawnSatArrayRef !== st.propagatedSatellites

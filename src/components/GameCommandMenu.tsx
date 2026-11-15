@@ -717,20 +717,45 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
-                {BODY_CATEGORIES.map((c) => (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {BODY_CATEGORIES.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setCategoryFilter(c.id)}
+                      className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                        categoryFilter === c.id
+                          ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1.5">
                   <button
-                    key={c.id}
-                    onClick={() => setCategoryFilter(c.id)}
-                    className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                      categoryFilter === c.id
+                    onClick={() => onToggleOrbits(!showOrbits)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                      showOrbits
                         ? 'bg-sky-500/25 border-sky-400 text-sky-100'
                         : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
                     }`}
                   >
-                    {c.label}
+                    {showOrbits ? '✓ Órbitas 3D' : 'Órbitas 3D'}
                   </button>
-                ))}
+                  <button
+                    onClick={() => onToggleLabels(!showLabels)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                      showLabels
+                        ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {showLabels ? '✓ Nomes dos Planetas' : 'Nomes dos Planetas'}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
@@ -921,7 +946,7 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                   <div className="grid grid-cols-2 gap-1.5 text-xs pt-1">
                     {[
                       { label: 'Órbitas 3D', val: showOrbits, toggle: () => onToggleOrbits(!showOrbits) },
-                      { label: 'Rótulos HUD', val: showLabels, toggle: () => onToggleLabels(!showLabels) },
+                      { label: 'Nomes dos Planetas', val: showLabels, toggle: () => onToggleLabels(!showLabels) },
                       { label: 'Asteroides', val: showAsteroidBelt, toggle: () => onToggleAsteroidBelt(!showAsteroidBelt) },
                       { label: 'Dobra Espacial', val: cinematicTravelEnabled, toggle: () => onToggleCinematicTravel(!cinematicTravelEnabled) },
                     ].map((item) => (

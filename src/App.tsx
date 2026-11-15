@@ -125,9 +125,9 @@ export function App() {
   const [timeSpeedDaysPerSec, setTimeSpeedDaysPerSec] = useState<number>(0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
 
-  // Visual Layer Toggles
-  const [showOrbits, setShowOrbits] = useState<boolean>(true);
-  const [showLabels, setShowLabels] = useState<boolean>(true);
+  // Visual Layer Toggles (Disabled by default for a clean 3D view; player can enable in Menu)
+  const [showOrbits, setShowOrbits] = useState<boolean>(false);
+  const [showLabels, setShowLabels] = useState<boolean>(false);
   const [showAsteroidBelt, setShowAsteroidBelt] = useState<boolean>(true);
   const [showMissionTrajectories, setShowMissionTrajectories] = useState<boolean>(false);
   const [activeMissionId, setActiveMissionId] = useState<string | null>(null);
