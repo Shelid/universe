@@ -14,8 +14,16 @@ export interface OrbitalStationRefs {
   modelReadyPromise: Promise<void>;
   update: (clockTime: number, isCloseInspection?: boolean, worldScale?: number) => void;
   /**
-   * Resolves the highest walkable/solid hull surface directly beneath an EVA astronaut
-   * in world coordinates, returning null if the astronaut is outside the station envelope.
+   * Keeps any world position (camera, EVA astronaut, or spacecraft) strictly outside
+   * the Orbital Station's 3D exterior hull envelope so nothing enters or clips inside modules.
+   */
+  enforceExteriorKeepOutWorld: (
+    worldPos: THREE.Vector3,
+    stationWorldScale: number,
+    marginLocal?: number
+  ) => boolean;
+  /**
+   * Legacy surface hook — returns false since the Orbital Station is exterior-only.
    */
   resolveSurfaceGroundWorld: (
     astronautWorldPos: THREE.Vector3,
@@ -26,11 +34,8 @@ export interface OrbitalStationRefs {
   dispose: () => void;
 }
 
-const _raycaster = new THREE.Raycaster();
 const _invMat = new THREE.Matrix4();
 const _localCheck = new THREE.Vector3();
-const _rayOrigin = new THREE.Vector3();
-const _rayDir = new THREE.Vector3();
 
 /**
  * Loads the CC0 1.0 "Assembled Orbital Station (Space Station and Docking Bays)" GLB
@@ -48,9 +53,9 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
   const raycastMeshes: THREE.Mesh[] = [];
   const beaconMeshes: THREE.Mesh[] = [];
 
-  // Measured exact center offset & flat Laboratory dorsal walkway height (`hitY = 0.080`)
-  const walkSpawnLocal = new THREE.Vector3(0, 0.08, 10.5);
-  const shipApproachLocal = new THREE.Vector3(-15.5, 4.2, 14.5);
+  // Exterior EVA & Ship staging coordinates in open space outside the station hull (41.5 x 12.34 x 49.49 m)
+  const walkSpawnLocal = new THREE.Vector3(-14.5, 6.8, 26.5);
+  const shipApproachLocal = new THREE.Vector3(-21.5, 5.2, 29.5);
 
   // Subtle floodlighting so dorsal decks, modules, and solar arrays read cleanly in Earth eclipse too
   const floodLight = new THREE.PointLight('#e0f2fe', 0.0, 0.1, 0.0);
@@ -218,41 +223,46 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
     }
   };
 
-  const resolveSurfaceGroundWorld: OrbitalStationRefs['resolveSurfaceGroundWorld'] = (
-    astronautWorldPos,
-    upDirWorld,
-    stationWorldScale,
-    outHitWorldPos
+  const enforceExteriorKeepOutWorld: OrbitalStationRefs['enforceExteriorKeepOutWorld'] = (
+    worldPos,
+    _stationWorldScale,
+    marginLocal = 1.6
   ) => {
-    if (raycastMeshes.length === 0) return false;
     rootGroup.updateMatrixWorld(true);
     _invMat.copy(rootGroup.matrixWorld).invert();
-    _localCheck.copy(astronautWorldPos).applyMatrix4(_invMat);
+    _localCheck.copy(worldPos).applyMatrix4(_invMat);
 
-    // Quick bounding-box guard in unscaled station GLB coordinates (41.5 x 12.34 x 49.49 m)
-    if (
-      Math.abs(_localCheck.x) > 22.0 ||
-      Math.abs(_localCheck.z) > 26.5 ||
-      _localCheck.y < -8.0 ||
-      _localCheck.y > 14.0
-    ) {
-      return false;
+    let pushed = false;
+    const pushOutOfBox = (hx: number, hy: number, hz: number) => {
+      const dx = hx - Math.abs(_localCheck.x);
+      const dy = hy - Math.abs(_localCheck.y);
+      const dz = hz - Math.abs(_localCheck.z);
+      if (dx > 0 && dy > 0 && dz > 0) {
+        if (dx <= dy && dx <= dz) {
+          _localCheck.x = (_localCheck.x >= 0 ? 1 : -1) * hx;
+        } else if (dy <= dx && dy <= dz) {
+          _localCheck.y = (_localCheck.y >= 0 ? 1 : -1) * hy;
+        } else {
+          _localCheck.z = (_localCheck.z >= 0 ? 1 : -1) * hz;
+        }
+        pushed = true;
+      }
+    };
+
+    // 1. Main pressurized modules spine & radial airlock/nodes (exterior-only keep-out)
+    pushOutOfBox(9.8 + marginLocal, 7.0 + marginLocal, 25.8 + marginLocal);
+    // 2. Port & Starboard solar array truss wings
+    pushOutOfBox(21.6 + marginLocal, 4.6 + marginLocal, 7.2 + marginLocal);
+
+    if (pushed) {
+      worldPos.copy(_localCheck).applyMatrix4(rootGroup.matrixWorld);
     }
+    return pushed;
+  };
 
-    const castHeight = Math.max(1e-7, stationWorldScale * 3.8);
-    const maxRayDist = Math.max(1e-6, stationWorldScale * 7.5);
-    _rayOrigin.copy(astronautWorldPos).addScaledVector(upDirWorld, castHeight);
-    _rayDir.copy(upDirWorld).negate().normalize();
-
-    _raycaster.set(_rayOrigin, _rayDir);
-    _raycaster.near = 0;
-    _raycaster.far = maxRayDist;
-
-    const hits = _raycaster.intersectObjects(raycastMeshes, false);
-    if (hits.length === 0) return false;
-
-    outHitWorldPos.copy(hits[0].point);
-    return true;
+  const resolveSurfaceGroundWorld: OrbitalStationRefs['resolveSurfaceGroundWorld'] = () => {
+    // Exterior-only station: never snap astronaut onto internal/deck mesh faces
+    return false;
   };
 
   const dispose = () => {
@@ -267,12 +277,13 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
     raycastMeshes,
     walkSpawnLocal,
     shipApproachLocal,
-    stationFocusDistanceLocal: 34,
+    stationFocusDistanceLocal: 58,
     beaconMeshes,
     floodLight,
     cupolaLight,
     modelReadyPromise,
     update,
+    enforceExteriorKeepOutWorld,
     resolveSurfaceGroundWorld,
     dispose,
   };

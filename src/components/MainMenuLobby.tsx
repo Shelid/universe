@@ -54,7 +54,7 @@ const DESTINATION_OPTIONS: Array<{
   {
     id: 'STATION_ORBIT',
     title: 'Estação Orbital',
-    subtitle: 'Complexo 3D em Órbita da Terra',
+    subtitle: 'Vista Externa 3D em Órbita da Terra',
     icon: Satellite,
     accentClass: 'border-cyan-400 bg-cyan-500/20 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.24)]',
   },
@@ -68,7 +68,7 @@ const DESTINATION_OPTIONS: Array<{
   {
     id: 'EVA_STATION',
     title: 'Astronauta (EVA)',
-    subtitle: 'Caminhar sobre a Estação',
+    subtitle: 'Flutuar no Exterior da Estação',
     icon: User,
     accentClass: 'border-emerald-400 bg-emerald-500/20 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.22)]',
   },
@@ -131,11 +131,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
 
           <button
             onClick={onToggleAudioMuted}
-            className={`p-2 rounded-xl border transition-all shrink-0 ${
-              isAudioMuted
-                ? 'bg-slate-900/90 border-white/10 text-slate-400 hover:text-white'
-                : 'bg-emerald-500/18 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
-            }`}
+            className={`p-2 rounded-xl border transition-all shrink-0 ${isAudioMuted
+              ? 'bg-slate-900/90 border-white/10 text-slate-400 hover:text-white'
+              : 'bg-emerald-500/18 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
+              }`}
             title={isAudioMuted ? 'Ativar Áudio Espacial' : 'Silenciar Áudio'}
           >
             {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
@@ -158,11 +157,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                   <button
                     key={opt.id}
                     onClick={() => onChangeStartDestination(opt.id)}
-                    className={`text-left p-2.5 rounded-2xl border transition-all flex flex-col gap-1 ${
-                      active
-                        ? opt.accentClass
-                        : 'bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/25 hover:bg-slate-900'
-                    }`}
+                    className={`text-left p-2.5 rounded-2xl border transition-all flex flex-col gap-1 ${active
+                      ? opt.accentClass
+                      : 'bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/25 hover:bg-slate-900'
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <Icon className="w-4 h-4" />
@@ -191,11 +189,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                   <button
                     key={ship.id}
                     onClick={() => onSelectShip(ship.id)}
-                    className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-1 ${
-                      active
-                        ? 'bg-slate-900 border-sky-400 shadow-[0_0_16px_rgba(56,189,248,0.22)]'
-                        : 'bg-slate-950/75 border-white/10 hover:border-white/25'
-                    }`}
+                    className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-1 ${active
+                      ? 'bg-slate-900 border-sky-400 shadow-[0_0_16px_rgba(56,189,248,0.22)]'
+                      : 'bg-slate-950/75 border-white/10 hover:border-white/25'
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span
@@ -234,11 +231,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                   <button
                     key={char.id}
                     onClick={() => onSelectCharacter(char.id)}
-                    className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-1 ${
-                      active
-                        ? 'bg-slate-900 border-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.22)]'
-                        : 'bg-slate-950/75 border-white/10 hover:border-white/25'
-                    }`}
+                    className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-1 ${active
+                      ? 'bg-slate-900 border-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.22)]'
+                      : 'bg-slate-950/75 border-white/10 hover:border-white/25'
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span
@@ -279,21 +275,20 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {[
-                { id: 'AUTO' as const, label: 'Auto' },
-                { id: 'HIGH' as const, label: 'Alta 4K' },
-                { id: 'MEDIUM' as const, label: 'Média' },
-                { id: 'LOW' as const, label: 'Leve' },
+                { id: 'auto' as const, label: 'Auto' },
+                { id: 'high' as const, label: 'Alta 4K' },
+                { id: 'medium' as const, label: 'Média' },
+                { id: 'low' as const, label: 'Leve' },
               ].map((q) => {
                 const active = qualityPreference === q.id;
                 return (
                   <button
                     key={q.id}
                     onClick={() => onChangeQuality(q.id)}
-                    className={`py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${
-                      active
-                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100'
-                        : 'bg-slate-950/75 border-white/10 text-slate-300 hover:border-white/25'
-                    }`}
+                    className={`py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${active
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100'
+                      : 'bg-slate-950/75 border-white/10 text-slate-300 hover:border-white/25'
+                      }`}
                   >
                     {q.label}
                   </button>

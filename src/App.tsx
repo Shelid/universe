@@ -117,6 +117,7 @@ export function App() {
     seq: 0,
     mode: 'ORBIT_INSPECT',
   });
+  const [bodySelectSeq, setBodySelectSeq] = useState<number>(0);
   const [cinematicTravelEnabled, setCinematicTravelEnabled] = useState<boolean>(true);
 
   // Time & Ephemeris Simulation State — Defaults to REAL-TIME (0 = 1s per 1s) so Earth & Satellites move calmly!
@@ -540,7 +541,16 @@ export function App() {
       setSelectedSatellite(null);
       setSaturnRingDiveMode(false);
       setIsExploringInterior(false);
+      setEvaActive(false);
+      setSpacecraftControl((prev) => ({
+        ...prev,
+        isActive: false,
+        throttle: 0,
+        boostActive: false,
+        autopilotTargetId: null,
+      }));
       setSelectedInteriorLayerId(targetBody.interiorLayers[0]?.id || null);
+      setBodySelectSeq((s) => s + 1);
 
       const isDifferentMajorBody =
         targetId !== selectedBodyId &&
@@ -665,6 +675,7 @@ export function App() {
         selectedCharacterId={selectedCharacterId}
         stationDeployCommand={stationDeployCommand}
         lobbyShowcaseActive={isMainMenuOpen && !warpState.isActive}
+        bodySelectSeq={bodySelectSeq}
         qualityPreference={qualityPreference}
         onResolvedQualityChange={setResolvedQualityTier}
         onBootProgress={setBootProgress}
@@ -875,12 +886,14 @@ export function App() {
                   <button
                     onClick={() => handleDeployToStation('EVA_WALK')}
                     className="py-1.5 px-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-[11px] transition-colors"
+                    title="Flutuar com o Astronauta no exterior da Estação Orbital (EVA)"
                   >
-                    Caminhar (EVA)
+                    EVA Externo
                   </button>
                   <button
                     onClick={() => handleDeployToStation('SHIP_DOCK')}
                     className="py-1.5 px-2.5 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 font-semibold text-[11px] transition-colors"
+                    title="Posicionar a Nave no exterior da Estação Orbital"
                   >
                     Aproximar Nave
                   </button>

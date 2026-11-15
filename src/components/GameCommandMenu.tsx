@@ -480,7 +480,7 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                     Seleção de Astronauta & Traje EVA
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Escolha seu astronauta com animação completa para pilotar ou caminhar na Estação Espacial.
+                    Escolha seu astronauta com animação completa para pilotar ou voar em EVA no exterior da Estação Espacial.
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -492,7 +492,7 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs shadow-[0_0_20px_rgba(34,211,238,0.35)] transition-all"
                   >
                     <User className="w-3.5 h-3.5" />
-                    <span>Caminhar na Estação (EVA)</span>
+                    <span>EVA Externo na Estação</span>
                   </button>
                   <button
                     onClick={() => {
@@ -623,10 +623,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                   >
                     <div className="flex items-center gap-2 font-bold text-xs">
                       <User className="w-4 h-4" />
-                      <span>Caminhar na Estação (EVA)</span>
+                      <span>EVA Externo na Estação</span>
                     </div>
                     <span className="text-[11px] text-slate-900/80 text-left">
-                      Pousar sobre o casco e andar pelos módulos com botas magnéticas e jetpack.
+                      Flutuar pelo exterior da estação com o astronauta e propulsores EVA (vista externa).
                     </span>
                   </button>
 

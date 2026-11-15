@@ -112,6 +112,7 @@ interface UniverseCanvasProps {
   selectedCharacterId?: CharacterVariantId;
   stationDeployCommand?: StationDeployCommand;
   lobbyShowcaseActive?: boolean;
+  bodySelectSeq?: number;
 }
 
 interface ScreenLabel {
@@ -281,6 +282,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   selectedCharacterId = 'cmd-artemis',
   stationDeployCommand,
   lobbyShowcaseActive = false,
+  bodySelectSeq = 0,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [screenLabels, setScreenLabels] = useState<ScreenLabel[]>([]);
@@ -443,7 +445,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
       }
     }
-  }, [selectedBodyId, saturnRingDiveMode, warpState.isActive]);
+  }, [selectedBodyId, saturnRingDiveMode, warpState.isActive, bodySelectSeq]);
 
   useEffect(() => {
     if (isExploringInterior) {
@@ -452,6 +454,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     }
   }, [isExploringInterior]);
 
+  const prevSelectedSatIdRef = useRef<string | null>(selectedSatelliteId);
   useEffect(() => {
     if (
       selectedSatelliteId &&
@@ -460,8 +463,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     ) {
       cameraCommandRef.current.activeTransition = true;
       cameraCommandRef.current.desiredDistanceMultiplier = 1.95;
+    } else if (
+      !selectedSatelliteId &&
+      prevSelectedSatIdRef.current !== null &&
+      selectedBodyId === 'earth' &&
+      !warpState.isActive
+    ) {
+      cameraCommandRef.current.activeTransition = true;
+      cameraCommandRef.current.desiredDistanceMultiplier = 3.4;
     }
-  }, [selectedSatelliteId, selectedBodyId]);
+    prevSelectedSatIdRef.current = selectedSatelliteId;
+  }, [selectedSatelliteId, selectedBodyId, warpState.isActive]);
 
   useEffect(() => {
     if (selectedLandmark) {
@@ -1395,7 +1407,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const _stationYAxis = new THREE.Vector3();
     const _stationZAxis = new THREE.Vector3();
     const _stationBasisMat = new THREE.Matrix4();
-    const _evaGroundHit = new THREE.Vector3();
     const _evaRelVec = new THREE.Vector3();
     let activeNearPlane = 0.00005;
     const gatewayRecordFallback = VERIFIED_SATELLITE_CATALOG[0];
@@ -2211,6 +2222,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
           sr7.chaseCameraAnchor.getWorldPosition(_tmpV2);
           camera.position.copy(_tmpV2);
+          controls.minDistance = Math.max(1e-7, currentShipScale * 2.85);
+          controls.maxDistance = 200000;
           resetControlsDamping(sr7.rootGroup.position);
         } else if (stationCmd.mode === 'EVA_WALK') {
           _tmpV1
@@ -2227,7 +2240,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             evaAttachedToShip = false;
           }
 
-          // Spawn Astronaut directly upright on the flat Laboratory dorsal deck facing -Z across Central Hub & Airlock
+          // Spawn Astronaut in open space outside the Orbital Station facing the exterior modules
           _tmpV2
             .copy(orbitalStation.walkSpawnLocal)
             .multiplyScalar(orbitalStationWorldScale)
@@ -2249,9 +2262,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           _tmpV6
             .copy(astronaut.rootGroup.position)
             .addScaledVector(_tmpV3, currentShipScale * 0.55);
+          controls.minDistance = Math.max(1e-7, currentShipScale * 0.95);
+          controls.maxDistance = 200000;
           resetControlsDamping(_tmpV6);
         } else {
-          // ORBIT_INSPECT: immediately frame the 12-module Orbital Station with Earth behind it
+          // ORBIT_INSPECT: frame the 12-module Orbital Station from the exterior with Earth behind it
           wasLobbyShowcaseActive = false;
           cameraCommandRef.current.activeTransition = false;
           if (earthPos) {
@@ -2266,7 +2281,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.position
             .copy(orbitalStationWorldPos)
             .addScaledVector(localViewDir, gatewayDist);
-          controls.minDistance = Math.max(1e-6, orbitalStationWorldScale * 4.5);
+          controls.minDistance = Math.max(1e-6, orbitalStationWorldScale * 34.0);
+          controls.maxDistance = 200000;
           resetControlsDamping(orbitalStationWorldPos);
         }
       }
@@ -2282,8 +2298,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         shipRimLight.visible = false;
         wasSpacecraftActive = false;
         wasEvaActive = false;
+        wasLobbyShowcaseActive = false;
         prevSpaceParkedValid = false;
         controls.enabled = true;
+        controls.minDistance = 0.0000004;
+        controls.maxDistance = 200000;
         if (!wasWarpingLastFrame) {
           warpStartCameraPos.copy(camera.position);
           wasWarpingLastFrame = true;
@@ -2349,7 +2368,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.fov = 46;
           camera.updateProjectionMatrix();
           previousTargetWorldPos.copy(destPos);
+          const prevDamp = controls.enableDamping;
+          controls.enableDamping = false;
           controls.target.copy(destPos);
+          controls.update();
+          controls.enableDamping = prevDamp;
           hasInitializedTargetPos = true;
           cameraCommandRef.current.activeTransition = false;
           cb.onUpdateWarpState((prev) => ({
@@ -2856,6 +2879,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         const shipDisplacement = _tmpV3.copy(shipVelocity).multiplyScalar(dt);
         sr7.rootGroup.position.add(shipDisplacement);
+        if (
+          hasOrbitalStationPos &&
+          orbitalStation.enforceExteriorKeepOutWorld(
+            sr7.rootGroup.position,
+            orbitalStationWorldScale,
+            3.8
+          )
+        ) {
+          shipVelocity.multiplyScalar(0.15);
+        }
 
         // Compute prograde drift slip angle for Cockpit HUD combiner indicator
         const currentSpeed = shipVelocity.length();
@@ -3023,6 +3056,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               currentDir.lerp(_tmpV5, followLerp).normalize();
               camera.position.copy(sr7.rootGroup.position).addScaledVector(currentDir, currentDist);
             }
+          }
+          if (hasOrbitalStationPos) {
+            orbitalStation.enforceExteriorKeepOutWorld(
+              camera.position,
+              orbitalStationWorldScale,
+              1.6
+            );
           }
           controls.update();
         }
@@ -3403,45 +3443,36 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         evaDisplacement.copy(evaVelocity).multiplyScalar(dt);
         astronaut.rootGroup.position.add(evaDisplacement);
 
-        // Orbital Station Hull Deck Surface Snapping (Magnet-Boots EVA Walking)
-        let isGroundedOnStation = false;
-        if (
-          isNearOrbitalStation &&
-          moveUpInput <= 0.02 &&
-          orbitalStation.resolveSurfaceGroundWorld(
-            astronaut.rootGroup.position,
-            evaUp,
-            orbitalStationWorldScale,
-            _evaGroundHit
-          )
-        ) {
-          const signedOffset = _evaRelVec
-            .subVectors(astronaut.rootGroup.position, _evaGroundHit)
-            .dot(evaUp);
+        // Orbital Station Exterior Hull Keep-Out (Station is exterior-only; prevent entering modules)
+        const isGroundedOnStation = false;
+        if (hasOrbitalStationPos) {
           if (
-            signedOffset > -orbitalStationWorldScale * 2.4 &&
-            signedOffset < orbitalStationWorldScale * 1.4
+            orbitalStation.enforceExteriorKeepOutWorld(
+              astronaut.rootGroup.position,
+              orbitalStationWorldScale,
+              2.2
+            )
           ) {
-            isGroundedOnStation = true;
-            _tmpV1.subVectors(_evaGroundHit, astronaut.rootGroup.position);
-            astronaut.rootGroup.position.copy(_evaGroundHit);
-            camera.position.add(_tmpV1);
-            const vertVel = evaVelocity.dot(evaUp);
-            if (vertVel < 0) {
-              evaVelocity.addScaledVector(evaUp, -vertVel);
-            }
+            evaVelocity.multiplyScalar(0.15);
           }
         }
 
         // Follow camera seamlessly with OrbitControls around Astronaut's visor height
         camera.position.add(evaDisplacement);
+        if (hasOrbitalStationPos) {
+          orbitalStation.enforceExteriorKeepOutWorld(
+            camera.position,
+            orbitalStationWorldScale,
+            1.6
+          );
+        }
         evaTargetPos
           .copy(astronaut.rootGroup.position)
           .addScaledVector(evaUp, astronautScale * 1.15);
         controls.enabled = true;
         controls.target.copy(evaTargetPos);
         controls.minDistance = Math.max(1e-7, currentShipScale * 0.95);
-        controls.maxDistance = 190000;
+        controls.maxDistance = 200000;
         controls.update();
 
         // Rim-light both Astronaut & parked Light Fighter in deep space
@@ -3510,9 +3541,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         prevSpaceParkedValid = false;
         prevBrakeAudio = false;
         prevAutopilotIdAudio = null;
-        if (returningFromLobby && st.selectedSatelliteId !== 'sat-orbital-gateway') {
-          cameraCommandRef.current.activeTransition = true;
-        }
         if (!evaAttachedToShip) {
           sr7.pilotSeatAnchor.add(astronaut.rootGroup);
           astronaut.rootGroup.scale.setScalar(0.43);
@@ -3538,10 +3566,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           shipRimLight.visible = false;
         }
         controls.minDistance = isGatewayFocused
-          ? Math.max(1e-6, orbitalStationWorldScale * 4.5)
+          ? Math.max(1e-6, orbitalStationWorldScale * 34.0)
           : selectedBody.id === 'milky-way'
             ? 2.2
             : Math.max(0.0000004, targetRadius * 1.18);
+        controls.maxDistance = 200000;
         wasWarpingLastFrame = false;
         warpTunnelGroup.visible = false;
         if (Math.abs(camera.fov - 46) > 0.1) {
@@ -3553,7 +3582,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const isExternalGalaxy =
           selectedBody.category === 'galaxy' && selectedBody.id !== 'milky-way';
 
-        if (hasInitializedTargetPos) {
+        if (returningFromLobby && !isGatewayFocused) {
+          const initDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
+          const startMult = cameraCommandRef.current.desiredDistanceMultiplier || 3.4;
+          const prevDamp = controls.enableDamping;
+          controls.enableDamping = false;
+          controls.target.copy(targetPos);
+          camera.position
+            .copy(targetPos)
+            .addScaledVector(initDir, Math.max(0.0000008, targetRadius * startMult));
+          controls.update();
+          controls.enableDamping = prevDamp;
+          previousTargetWorldPos.copy(targetPos);
+          hasInitializedTargetPos = true;
+          cameraCommandRef.current.activeTransition = false;
+        } else if (hasInitializedTargetPos) {
           if (selectedBody.category !== 'galaxy') {
             _tmpV1.subVectors(targetPos, previousTargetWorldPos);
             const followWeight =
@@ -3584,7 +3627,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const offset = _tmpV1.subVectors(camera.position, zoomAnchor);
           const factor = step > 0 ? 0.72 : 1.38;
           const minAllowed = isGatewayFocused
-            ? Math.max(1e-6, orbitalStationWorldScale * 3.8)
+            ? Math.max(1e-6, orbitalStationWorldScale * 34.0)
             : selectedBody.id === 'milky-way'
               ? 2.2
               : Math.max(0.0000004, targetRadius * 1.24);
@@ -3599,7 +3642,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         if (cameraCommandRef.current.activeTransition) {
           if (isGatewayFocused) {
-            const gatewayDist = orbitalStationWorldScale * 44;
+            const gatewayDist = orbitalStationWorldScale * orbitalStation.stationFocusDistanceLocal;
             const localViewDir = _tmpV3
               .set(-0.65, 0.34, 0.68)
               .normalize()
@@ -3607,9 +3650,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             const goalCamPos = _tmpV2
               .copy(orbitalStationWorldPos)
               .addScaledVector(localViewDir, gatewayDist);
-            camera.position.lerp(goalCamPos, 0.1);
-            controls.target.lerp(orbitalStationWorldPos, 0.16);
+            camera.position.lerp(goalCamPos, 0.12);
+            controls.target.lerp(orbitalStationWorldPos, 0.18);
             if (camera.position.distanceTo(goalCamPos) < gatewayDist * 0.03) {
+              controls.target.copy(orbitalStationWorldPos);
               cameraCommandRef.current.activeTransition = false;
             }
           } else {
@@ -3657,9 +3701,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             }
 
             const goalCamPos = _tmpV2.copy(targetPos).addScaledVector(offsetDir, desiredDist);
-            camera.position.lerp(goalCamPos, 0.085);
-            controls.target.lerp(targetPos, 0.14);
-            if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.025) {
+            camera.position.lerp(goalCamPos, 0.11);
+            controls.target.lerp(targetPos, 0.18);
+            if (camera.position.distanceTo(goalCamPos) < desiredDist * 0.03) {
+              controls.target.copy(targetPos);
               cameraCommandRef.current.activeTransition = false;
             }
           }
@@ -3700,7 +3745,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        controls.update();
+        if (hasOrbitalStationPos && isGatewayFocused) {
+          orbitalStation.enforceExteriorKeepOutWorld(
+            camera.position,
+            orbitalStationWorldScale,
+            2.4
+          );
+        }
+
+        if (cameraCommandRef.current.activeTransition) {
+          const prevDamp = controls.enableDamping;
+          controls.enableDamping = false;
+          controls.update();
+          controls.enableDamping = prevDamp;
+        } else {
+          controls.update();
+        }
 
         const camDist = camera.position.distanceTo(controls.target);
         const distInRadii = camDist / Math.max(0.0000002, targetRadius);

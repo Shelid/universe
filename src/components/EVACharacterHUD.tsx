@@ -131,7 +131,7 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
             <button
               onClick={onWalkOnStation}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400/55 text-sky-100 text-[11px] font-semibold transition-colors"
-              title="Pousar sobre o deck da Estação Espacial em Órbita da Terra"
+              title="Ir para o exterior da Estação Espacial em Órbita da Terra (EVA)"
             >
               <span>Estação Orbital</span>
             </button>
