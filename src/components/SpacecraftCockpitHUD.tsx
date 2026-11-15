@@ -847,6 +847,40 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             Freio
           </button>
 
+          <div className="h-4 w-px bg-white/15" />
+
+          {/* Manual 360° Ship Inclination / Roll Controls (Q / E + 0° Level) */}
+          <div className="flex items-center gap-1" title="Inclinar Nave 360° / Ponta Cabeça (Teclas Q e E)">
+            <button
+              {...holdButtonProps('roll', 1)}
+              className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
+              title="Inclinar para a Esquerda (Segure Q)"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span className="hidden sm:inline">Q</span>
+            </button>
+            <button
+              onClick={() =>
+                onUpdateControl((prev) => ({
+                  ...prev,
+                  recenterTrigger: (prev.recenterTrigger || 0) + 1,
+                }))
+              }
+              className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-[10px] font-mono text-slate-300 min-w-[36px] text-center transition-colors"
+              title="Ângulo de Inclinação Atual (Clique ou pressione C para nivelar em 0°)"
+            >
+              {telemetry.rollDeg}°
+            </button>
+            <button
+              {...holdButtonProps('roll', -1)}
+              className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
+              title="Inclinar para a Direita (Segure E)"
+            >
+              <span className="hidden sm:inline">E</span>
+              <RotateCw className="w-3 h-3" />
+            </button>
+          </div>
+
           <button
             onClick={() => setShowTouchPad((v) => !v)}
             className={`p-1.5 rounded-full border transition-colors ${

@@ -34,7 +34,8 @@ export interface OrbitalStationRefs {
   dispose: () => void;
 }
 
-const _invMat = new THREE.Matrix4();
+const _invQuat = new THREE.Quaternion();
+const _stationWorldOrigin = new THREE.Vector3();
 const _localCheck = new THREE.Vector3();
 
 /**
@@ -225,12 +226,24 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
 
   const enforceExteriorKeepOutWorld: OrbitalStationRefs['enforceExteriorKeepOutWorld'] = (
     worldPos,
-    _stationWorldScale,
+    stationWorldScale,
     marginLocal = 1.6
   ) => {
-    rootGroup.updateMatrixWorld(true);
-    _invMat.copy(rootGroup.matrixWorld).invert();
-    _localCheck.copy(worldPos).applyMatrix4(_invMat);
+    const scale = Math.max(1e-9, stationWorldScale || rootGroup.scale.x);
+    _stationWorldOrigin.copy(rootGroup.position);
+    if (rootGroup.parent) {
+      _stationWorldOrigin.add(rootGroup.parent.position);
+    }
+    _invQuat.copy(rootGroup.quaternion).invert();
+    _localCheck
+      .subVectors(worldPos, _stationWorldOrigin)
+      .applyQuaternion(_invQuat)
+      .divideScalar(scale);
+
+    // Quick bounding-radius reject so objects far from the station are never touched
+    if (_localCheck.lengthSq() > 64 * 64) {
+      return false;
+    }
 
     let pushed = false;
     const pushOutOfBox = (hx: number, hy: number, hz: number) => {
@@ -255,7 +268,11 @@ export function createOrbitalStation3DGroup(): OrbitalStationRefs {
     pushOutOfBox(21.6 + marginLocal, 4.6 + marginLocal, 7.2 + marginLocal);
 
     if (pushed) {
-      worldPos.copy(_localCheck).applyMatrix4(rootGroup.matrixWorld);
+      worldPos
+        .copy(_localCheck)
+        .multiplyScalar(scale)
+        .applyQuaternion(rootGroup.quaternion)
+        .add(_stationWorldOrigin);
     }
     return pushed;
   };

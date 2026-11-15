@@ -1824,17 +1824,17 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
   headlightLeftSpot.position.set(-0.28, -0.09, -1.18);
   const leftTarget = new THREE.Object3D();
   leftTarget.position.set(-0.28, -0.12, -32);
-  rootGroup.add(leftTarget);
+  hullGroup.add(leftTarget);
   headlightLeftSpot.target = leftTarget;
-  rootGroup.add(headlightLeftSpot);
+  hullGroup.add(headlightLeftSpot);
 
   const headlightRightSpot = new THREE.SpotLight('#fef9c3', 0, 85, Math.PI * 0.16, 0.45, 1.0);
   headlightRightSpot.position.set(0.28, -0.09, -1.18);
   const rightTarget = new THREE.Object3D();
   rightTarget.position.set(0.28, -0.12, -32);
-  rootGroup.add(rightTarget);
+  hullGroup.add(rightTarget);
   headlightRightSpot.target = rightTarget;
-  rootGroup.add(headlightRightSpot);
+  hullGroup.add(headlightRightSpot);
 
   const headlightBeamGroup = new THREE.Group();
   const beamGeo = new THREE.ConeGeometry(1.25, 10, 16, 1, true);

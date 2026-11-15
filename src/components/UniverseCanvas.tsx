@@ -1459,7 +1459,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let angVelPitch = 0;
     let angVelYaw = 0;
     let angVelRoll = 0;
-    let visualBankAngle = 0;
+    let manualRollAngle = 0;
     let boostBlend = 0;
     let continuousThrottle = 0;
     let lastSyncedReactThrottle = 0;
@@ -2264,7 +2264,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         if (
           hasOrbitalStationPos &&
-          sr7.rootGroup.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 260
+          (sr7.rootGroup.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 380 ||
+            (st.evaActive &&
+              !evaAttachedToShip &&
+              astronaut.rootGroup.position.distanceTo(orbitalStationWorldPos) <
+                orbitalStationWorldScale * 380))
         ) {
           shipAnchorMode = 'STATION';
           prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
@@ -2322,9 +2326,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           angVelPitch = 0;
           angVelYaw = 0;
           angVelRoll = 0;
-          visualBankAngle = 0;
+          manualRollAngle = 0;
           sr7.hullGroup.rotation.z = 0;
           sr7.interiorGroup.rotation.z = 0;
+          sr7.interiorGroup.position.set(0, 0.078, 0.15);
           continuousThrottle = 0;
           lastSyncedReactThrottle = 0;
           prevSpaceParkedValid = true;
@@ -2565,8 +2570,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         sr7.rootGroup.visible = true;
         sr7.rootGroup.scale.setScalar(lobbyScale);
+        manualRollAngle = 0;
         sr7.hullGroup.rotation.z = 0;
         sr7.interiorGroup.rotation.z = 0;
+        sr7.interiorGroup.position.set(0, 0.078, 0.15);
         sr7.rootGroup.position
           .copy(stagingCenter)
           .addScaledVector(stageRight, lobbyScale * 1.45)
@@ -2704,15 +2711,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               shipAnchorBodyId = selectedBody.id;
               prevShipAnchorWorldPos.copy(targetPos);
             }
+            manualRollAngle = 0;
             prevSpaceParkedValid = true;
           }
           shipVelocity.set(0, 0, 0);
           angVelPitch = 0;
           angVelYaw = 0;
           angVelRoll = 0;
-          visualBankAngle = 0;
-          sr7.hullGroup.rotation.z = 0;
-          sr7.interiorGroup.rotation.z = 0;
+          sr7.hullGroup.rotation.z = manualRollAngle;
+          sr7.interiorGroup.rotation.z = manualRollAngle;
+          sr7.interiorGroup.position.set(
+            -0.078 * Math.sin(manualRollAngle),
+            0.078 * Math.cos(manualRollAngle),
+            0.15
+          );
           continuousThrottle = sc.throttle;
           lastSyncedReactThrottle = sc.throttle;
           lastManualOrbitTimestamp = 0;
@@ -2801,7 +2813,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           moveSpeed01: 0,
           boostActive: false,
           pitchTilt: angVelPitch / 1.25,
-          rollTilt: (angVelRoll + visualBankAngle) / 1.45,
+          rollTilt: angVelRoll / 1.45,
           visorLightOn: false,
           worldScale: currentShipScale,
         });
@@ -2849,35 +2861,35 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const sHeld = pressedKeys.has('KeyS') || (vSteer?.forward || 0) < -0.1;
         const isSteeringActively = Math.abs(pitchInput) > 0.05 || Math.abs(yawInput) > 0.05;
 
-        // Synchronize keyboard W/S & steering impulse with HUD throttle slider seamlessly
+        // Synchronize keyboard W/S & HUD throttle slider seamlessly (no auto-throttle on turning)
+        const isManualAttitudeInput = isSteeringActively || Math.abs(rollInput) > 0.05;
         if (Math.abs(sc.throttle - lastSyncedReactThrottle) > 0.002 && !wHeld && !sHeld) {
           continuousThrottle = Math.max(0, sc.throttle);
           lastSyncedReactThrottle = continuousThrottle;
         } else {
           if (wHeld) {
             continuousThrottle = THREE.MathUtils.clamp(
-              Math.max(0.32, continuousThrottle) + dt * 0.85,
+              Math.max(0.28, continuousThrottle) + dt * 0.85,
               0,
               1.0
             );
           } else if (sHeld) {
             continuousThrottle = THREE.MathUtils.clamp(continuousThrottle - dt * 1.15, 0, 1.0);
-          } else if (isSteeringActively && !pressedKeys.has('Space') && continuousThrottle < 0.30) {
-            // Auto-engage smooth forward impulse when steering so the ship curves forward like a real starfighter instead of pivoting in place
-            continuousThrottle = THREE.MathUtils.lerp(continuousThrottle, 0.32, Math.min(1, dt * 4.5));
           }
           throttleSyncTimer += dt;
           if (
             throttleSyncTimer > 0.075 &&
             (Math.abs(continuousThrottle - lastSyncedReactThrottle) > 0.015 ||
-              (sc.brakeRequested && (wHeld || isSteeringActively)))
+              (sc.brakeRequested && wHeld) ||
+              (sc.autopilotTargetId && isManualAttitudeInput))
           ) {
             throttleSyncTimer = 0;
             const nextSync = Number(continuousThrottle.toFixed(2));
             lastSyncedReactThrottle = nextSync;
             cb.onUpdateSpacecraftControl((prev) => ({
               ...prev,
-              brakeRequested: prev.brakeRequested && !wHeld && !isSteeringActively,
+              autopilotTargetId: isManualAttitudeInput ? null : prev.autopilotTargetId,
+              brakeRequested: prev.brakeRequested && !wHeld,
               throttle: nextSync,
             }));
           }
@@ -2890,7 +2902,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         const targetAngPitch = pitchInput * 1.28 * agilityMult;
         const targetAngYaw = yawInput * 1.28 * agilityMult;
-        const targetAngRoll = rollInput * 1.65 * agilityMult;
+        const targetAngRoll = -rollInput * 1.95 * agilityMult;
 
         const rotAccel = Math.min(1, dt * 8.2);
         const rotDamp = Math.min(1, dt * (sc.sasEnabled ? 7.2 : 0.45));
@@ -2912,21 +2924,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         if (Math.abs(angVelPitch) > 0.0005) sr7.rootGroup.rotateX(angVelPitch * dt);
         if (Math.abs(angVelYaw) > 0.0005) sr7.rootGroup.rotateY(angVelYaw * dt);
-        if (Math.abs(angVelRoll) > 0.0005) sr7.rootGroup.rotateZ(angVelRoll * dt);
 
-        // Starfighter Coordinated Wing Bank into Left/Right Turns (auto-levels when flying straight!)
-        const targetVisualBank = THREE.MathUtils.clamp(
-          angVelYaw * 0.42 - rollInput * 0.16,
-          -0.64,
-          0.64
+        // 100% Player-Chosen 360° Ship Inclination / Roll (Never auto-banks on turns, never auto-levels!)
+        // Player can incline to any angle or fly upside-down ("de ponta cabeça", 180°) with Q / E or HUD Roll buttons.
+        if (Math.abs(angVelRoll) > 0.0005) {
+          manualRollAngle = Math.atan2(
+            Math.sin(manualRollAngle + angVelRoll * dt),
+            Math.cos(manualRollAngle + angVelRoll * dt)
+          );
+        }
+        sr7.hullGroup.rotation.z = manualRollAngle;
+        sr7.interiorGroup.rotation.z = manualRollAngle;
+        sr7.interiorGroup.position.set(
+          -0.078 * Math.sin(manualRollAngle),
+          0.078 * Math.cos(manualRollAngle),
+          0.15
         );
-        visualBankAngle = THREE.MathUtils.lerp(
-          visualBankAngle,
-          targetVisualBank,
-          Math.min(1, dt * 7.8)
-        );
-        sr7.hullGroup.rotation.z = visualBankAngle;
-        sr7.interiorGroup.rotation.z = visualBankAngle * 0.45;
 
         // 2. Autopilot Alignment & Smooth Automated Approach (Never ejects camera out of ship!)
         const autoTargetId = sc.autopilotTargetId;
@@ -3126,13 +3139,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             currentSpeed * 1.8 + currentShipScale * 90
           );
           _tmpV4.copy(shipForward).multiplyScalar(boltSpeed);
+          sr7.hullGroup.updateWorldMatrix(true, false);
           sr7.muzzlePositionsLocal.forEach((muzzleLocal) => {
             const boltMesh = new THREE.Mesh(pulseBoltGeo, pulseBoltMat);
             boltMesh.scale.setScalar(currentShipScale);
             _tmpV5.copy(muzzleLocal);
-            sr7.rootGroup.localToWorld(_tmpV5);
+            sr7.hullGroup.localToWorld(_tmpV5);
             boltMesh.position.copy(_tmpV5);
-            boltMesh.quaternion.copy(sr7.rootGroup.quaternion);
+            sr7.hullGroup.getWorldQuaternion(boltMesh.quaternion);
             projectileGroup.add(boltMesh);
             activePulseBolts.push({ mesh: boltMesh, velocity: _tmpV4.clone(), age: 0 });
           });
@@ -3161,6 +3175,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           externalLookTargetYaw = 0;
           externalLookTargetPitch = 0;
           externalZoomTargetMult = 1.0;
+          manualRollAngle = 0;
+          sr7.hullGroup.rotation.z = 0;
+          sr7.interiorGroup.rotation.z = 0;
+          sr7.interiorGroup.position.set(0, 0.078, 0.15);
         }
 
         if (sc.cameraView === 'COCKPIT') {
@@ -3183,8 +3201,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             Math.min(1, dt * 15)
           );
 
+          sr7.interiorGroup.updateWorldMatrix(true, false);
           sr7.cockpitSeatAnchor.updateWorldMatrix(true, false);
           sr7.cockpitSeatAnchor.getWorldPosition(_tmpV4);
+          sr7.interiorGroup.getWorldQuaternion(camera.quaternion);
 
           // Ergonomic pilot neck pivot & shoulder-check lean so turning ±169° views seat & avionics without clipping
           const lookBackFactor = Math.max(0, (Math.abs(cockpitLookYaw) - 1.1) / 1.85);
@@ -3195,18 +3215,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               -0.026 * (1 - Math.cos(cockpitLookYaw)) - lookBackFactor * 0.032
             )
             .multiplyScalar(currentShipScale)
-            .applyQuaternion(sr7.rootGroup.quaternion);
+            .applyQuaternion(camera.quaternion);
           camera.position.copy(_tmpV4).add(_tmpV5);
 
-          // Smooth Free-Look ('YXZ') + subtle inertial G-lean & coordinated wing bank
+          // Smooth Free-Look ('YXZ') inside the 360°-rolled cockpit frame
           _tmpEuler.set(
             cockpitLookPitch + angVelPitch * -0.024,
             cockpitLookYaw + angVelYaw * -0.024,
-            angVelRoll * -0.036 + visualBankAngle * 0.38,
+            angVelRoll * -0.036,
             'YXZ'
           );
           _tmpQuat1.setFromEuler(_tmpEuler);
-          camera.quaternion.copy(sr7.rootGroup.quaternion).multiply(_tmpQuat1);
+          camera.quaternion.multiply(_tmpQuat1);
           const camForward = _tmpV6.set(0, 0, -1).applyQuaternion(camera.quaternion);
           controls.target
             .copy(camera.position)
@@ -3400,7 +3420,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const pitchDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.x));
         const yawDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.y));
         const rollDegVal = Math.round(
-          THREE.MathUtils.radToDeg(_tmpEuler.z + visualBankAngle)
+          THREE.MathUtils.radToDeg(manualRollAngle)
         );
         const liveReactorTemp = Math.round(
           320 + Math.abs(effectiveThrottle) * 240 + boostBlend * 380
@@ -3415,7 +3435,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           interiorLightsOn: sc.interiorLightsOn,
           shieldsOn: sc.shieldsOn,
           pitchInput: angVelPitch / 1.25,
-          rollInput: (angVelRoll + visualBankAngle) / 1.45,
+          rollInput: angVelRoll / 1.45,
           yawInput: angVelYaw / 1.25,
           pitchDeg: pitchDegVal,
           rollDeg: rollDegVal,
@@ -3474,23 +3494,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
         spaceAudio.updateFrame({ dt, clockTime, mode: 'OBSERVATORY' });
 
-        // Compute scale consistent with active celestial environment
-        const effectiveEvaRefRadius =
-          selectedBody.category === 'galaxy'
-            ? Math.min(0.45, Math.max(0.015, targetRadius * 0.05))
-            : Math.max(0.00015, targetRadius);
-        const desiredEvaShipScale = THREE.MathUtils.clamp(
-          effectiveEvaRefRadius * 0.0038,
-          0.0000028,
-          0.00175
-        );
-        currentShipScale = desiredEvaShipScale;
-        const astronautScale = currentShipScale * 0.44;
-
         // Park Light Fighter visibly beside Astronaut!
-        sr7.rootGroup.scale.setScalar(currentShipScale);
-        sr7.hullGroup.rotation.z = 0;
-        sr7.interiorGroup.rotation.z = 0;
         if (!prevSpaceParkedValid) {
           if (hasOrbitalStationPos && st.selectedSatelliteId === 'sat-orbital-gateway') {
             _tmpV1
@@ -3499,6 +3503,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               .applyQuaternion(orbitalStation.rootGroup.quaternion);
             sr7.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV1);
             sr7.rootGroup.lookAt(orbitalStationWorldPos);
+            shipAnchorMode = 'STATION';
+            prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
           } else {
             const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
             const spawnDist =
@@ -3507,9 +3513,52 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 : targetRadius * 2.55 + currentShipScale * 7.5;
             sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
             sr7.rootGroup.lookAt(targetPos);
+            shipAnchorMode = 'BODY';
+            shipAnchorBodyId = selectedBody.id;
+            prevShipAnchorWorldPos.copy(targetPos);
           }
+          manualRollAngle = 0;
           prevSpaceParkedValid = true;
         }
+
+        // Compute scale & planetary keep-out from the actual nearest celestial body around the ship/astronaut
+        let evaDominantBody = selectedBody;
+        let evaDominantRadius = Math.max(0.00015, targetRadius);
+        let evaBestProxRatio = Infinity;
+        for (let i = 0; i < ALL_CELESTIAL_BODIES.length; i++) {
+          const b = ALL_CELESTIAL_BODIES[i];
+          if (b.category === 'galaxy') continue;
+          const bPos = bodyWorldPositions[b.id];
+          if (!bPos) continue;
+          const bRad = Math.max(0.00015, getScaledRadius(b, st.scaleMode));
+          const bDist = sr7.rootGroup.position.distanceTo(bPos);
+          const ratio = bDist / bRad;
+          if (ratio < evaBestProxRatio) {
+            evaBestProxRatio = ratio;
+            evaDominantBody = b;
+            evaDominantRadius = bRad;
+          }
+        }
+        const effectiveEvaRefRadius =
+          evaDominantBody.category === 'galaxy' || evaBestProxRatio > 1800
+            ? Math.min(0.45, Math.max(0.015, evaDominantRadius * 0.05))
+            : evaDominantRadius;
+        const desiredEvaShipScale = THREE.MathUtils.clamp(
+          effectiveEvaRefRadius * 0.0038,
+          0.0000028,
+          0.00175
+        );
+        currentShipScale = desiredEvaShipScale;
+        const astronautScale = currentShipScale * 0.44;
+
+        sr7.rootGroup.scale.setScalar(currentShipScale);
+        sr7.hullGroup.rotation.z = manualRollAngle;
+        sr7.interiorGroup.rotation.z = manualRollAngle;
+        sr7.interiorGroup.position.set(
+          -0.078 * Math.sin(manualRollAngle),
+          0.078 * Math.cos(manualRollAngle),
+          0.15
+        );
         sr7.rootGroup.visible = true;
         sr7.updateAnimations({
           dt,
@@ -3523,11 +3572,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           rollInput: 0,
           yawInput: 0,
           pitchDeg: 0,
-          rollDeg: 0,
+          rollDeg: Math.round(THREE.MathUtils.radToDeg(manualRollAngle)),
           radarPulseAgeSec: evaRadarAgeSec < 2.2 ? evaRadarAgeSec : 99,
           muzzleFlashAlpha: 0,
           speedFormatted: 'PARKED',
-          nearestName: selectedBody.name,
+          nearestName: evaDominantBody.name,
           nearestDist: 'EVA',
           reactorTempC: 315,
           sasEnabled: true,
@@ -3545,13 +3594,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         astronaut.rootGroup.visible = true;
         astronaut.rootGroup.scale.setScalar(astronautScale);
 
-        const isNearOrbitalStation =
-          hasOrbitalStationPos &&
-          (st.selectedSatelliteId === 'sat-orbital-gateway' ||
-            sr7.rootGroup.position.distanceTo(orbitalStationWorldPos) <
-              orbitalStationWorldScale * 180 ||
-            astronaut.rootGroup.position.distanceTo(orbitalStationWorldPos) <
-              orbitalStationWorldScale * 95);
+        evaUp.set(0, 1, 0);
 
         if (!wasEvaActive) {
           // Always spawn Astronaut right beside the parked ship (keeping the ship in its exact spot!)
@@ -3560,11 +3603,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             .copy(sr7.rootGroup.position)
             .addScaledVector(_tmpV1, currentShipScale * 2.55);
           astronaut.rootGroup.quaternion.copy(sr7.rootGroup.quaternion);
-          if (isNearOrbitalStation) {
-            evaUp.set(0, 1, 0).applyQuaternion(orbitalStation.rootGroup.quaternion).normalize();
-          } else {
-            evaUp.set(0, 1, 0);
-          }
           _tmpV2
             .set(0, 1.35, 3.6)
             .multiplyScalar(currentShipScale)
@@ -3576,13 +3614,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           controls.target
             .copy(astronaut.rootGroup.position)
             .addScaledVector(evaUp, astronautScale * 1.15);
-        }
-
-        // Determine local vertical reference (station dorsal zenith when walking on Orbital Station)
-        if (isNearOrbitalStation) {
-          evaUp.set(0, 1, 0).applyQuaternion(orbitalStation.rootGroup.quaternion).normalize();
-        } else {
-          evaUp.set(0, 1, 0);
         }
 
         // Handle EVA Recenter & Radar triggers
@@ -3660,8 +3691,27 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           evaVelocity.multiplyScalar(Math.exp(-dt * 5.2));
         }
 
+        _tmpV5.copy(astronaut.rootGroup.position);
         evaDisplacement.copy(evaVelocity).multiplyScalar(dt);
         astronaut.rootGroup.position.add(evaDisplacement);
+
+        // Planetary Upper-Atmosphere Keep-Out (prevents astronaut from ever falling inside Earth or any planet!)
+        const evaDominantWorldPos = bodyWorldPositions[evaDominantBody.id];
+        if (evaDominantWorldPos && evaDominantBody.category !== 'galaxy') {
+          const minEvaPlanetSurfaceDist = evaDominantRadius * 1.038 + currentShipScale * 2.2;
+          _tmpV4.subVectors(astronaut.rootGroup.position, evaDominantWorldPos);
+          const curEvaPlanetDist = _tmpV4.length();
+          if (curEvaPlanetDist < minEvaPlanetSurfaceDist && curEvaPlanetDist > 1e-9) {
+            _tmpV4.divideScalar(curEvaPlanetDist);
+            astronaut.rootGroup.position
+              .copy(evaDominantWorldPos)
+              .addScaledVector(_tmpV4, minEvaPlanetSurfaceDist);
+            const inwardEvaVel = evaVelocity.dot(_tmpV4);
+            if (inwardEvaVel < 0) {
+              evaVelocity.addScaledVector(_tmpV4, -inwardEvaVel);
+            }
+          }
+        }
 
         // Orbital Station Exterior Hull Keep-Out (Station is exterior-only; prevent entering modules)
         const isGroundedOnStation = false;
@@ -3677,7 +3727,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        // Follow camera seamlessly with OrbitControls around Astronaut's visor height
+        // Follow camera seamlessly with OrbitControls around Astronaut's actual post-collision displacement
+        evaDisplacement.subVectors(astronaut.rootGroup.position, _tmpV5);
         camera.position.add(evaDisplacement);
         if (hasOrbitalStationPos) {
           orbitalStation.enforceExteriorKeepOutWorld(
