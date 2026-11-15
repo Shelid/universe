@@ -1553,6 +1553,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           ...prev,
           cameraView: prev.cameraView === 'COCKPIT' ? 'EXTERNAL' : 'COCKPIT',
         }));
+      } else if (e.code === 'KeyB') {
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => {
+          const cur = prev.cockpitSeat || 'LEFT';
+          const next = cur === 'LEFT' ? 'CENTER' : cur === 'CENTER' ? 'RIGHT' : 'LEFT';
+          return { ...prev, cameraView: 'COCKPIT', cockpitSeat: next };
+        });
       } else if (e.code === 'KeyC') {
         lastManualOrbitTimestamp = 0;
         cockpitLookTargetYaw = 0;
@@ -1561,6 +1567,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         externalLookTargetYaw = 0;
         externalLookTargetPitch = 0;
         externalZoomTargetMult = 1.0;
+        manualRollAngle = 0;
+        sr7.hullGroup.rotation.z = 0;
+        sr7.interiorGroup.rotation.z = 0;
       } else if (e.code === 'KeyF') {
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -2229,13 +2238,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       }
 
-      // Dynamic logarithmic near plane adjustment for sub-meter EVA / Station hull close-ups
+      // Dynamic logarithmic near plane adjustment for sub-meter Cockpit / EVA / Station hull close-ups
       const wantUltraCloseNear =
+        st.spacecraftControl.isActive ||
         st.evaActive ||
         st.lobbyShowcaseActive ||
         (st.selectedBodyId === 'earth' && st.selectedSatelliteId === 'sat-orbital-gateway');
-      const desiredNear = wantUltraCloseNear ? 0.0000018 : 0.00005;
-      if (Math.abs(desiredNear - activeNearPlane) > 1e-7) {
+      const desiredNear = st.spacecraftControl.isActive
+        ? Math.max(0.00000025, currentShipScale * 0.012)
+        : wantUltraCloseNear
+          ? 0.0000018
+          : 0.00005;
+      if (Math.abs(desiredNear - activeNearPlane) > 1e-8) {
         activeNearPlane = desiredNear;
         camera.near = desiredNear;
         camera.updateProjectionMatrix();
@@ -2329,7 +2343,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           manualRollAngle = 0;
           sr7.hullGroup.rotation.z = 0;
           sr7.interiorGroup.rotation.z = 0;
-          sr7.interiorGroup.position.set(0, 0.078, 0.15);
           continuousThrottle = 0;
           lastSyncedReactThrottle = 0;
           prevSpaceParkedValid = true;
@@ -2573,7 +2586,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         manualRollAngle = 0;
         sr7.hullGroup.rotation.z = 0;
         sr7.interiorGroup.rotation.z = 0;
-        sr7.interiorGroup.position.set(0, 0.078, 0.15);
         sr7.rootGroup.position
           .copy(stagingCenter)
           .addScaledVector(stageRight, lobbyScale * 1.45)
@@ -2720,11 +2732,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           angVelRoll = 0;
           sr7.hullGroup.rotation.z = manualRollAngle;
           sr7.interiorGroup.rotation.z = manualRollAngle;
-          sr7.interiorGroup.position.set(
-            -0.078 * Math.sin(manualRollAngle),
-            0.078 * Math.cos(manualRollAngle),
-            0.15
-          );
           continuousThrottle = sc.throttle;
           lastSyncedReactThrottle = sc.throttle;
           lastManualOrbitTimestamp = 0;
@@ -2797,15 +2804,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         shipRimLight.target.position.copy(sr7.rootGroup.position);
         shipRimLight.target.updateMatrixWorld();
 
-        // Attach shared Astronaut character to Fighter pilot seat (visible looking through clear exterior glass)
+        // Attach shared Astronaut character to Commander pilot seat (visible in 3rd-person or when seated in Co-Pilot/Center)
         if (!evaAttachedToShip) {
           sr7.pilotSeatAnchor.add(astronaut.rootGroup);
-          astronaut.rootGroup.scale.setScalar(0.43);
+          astronaut.rootGroup.scale.setScalar(0.165);
           astronaut.rootGroup.position.set(0, 0, 0);
           astronaut.rootGroup.rotation.set(0, 0, 0);
           evaAttachedToShip = true;
         }
-        astronaut.rootGroup.visible = sc.cameraView === 'EXTERNAL';
+        astronaut.rootGroup.visible =
+          sc.cameraView === 'EXTERNAL' ||
+          (sc.cameraView === 'COCKPIT' && Boolean(sc.cockpitSeat) && sc.cockpitSeat !== 'LEFT');
         astronaut.update({
           dt,
           clockTime,
@@ -2935,11 +2944,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
         sr7.hullGroup.rotation.z = manualRollAngle;
         sr7.interiorGroup.rotation.z = manualRollAngle;
-        sr7.interiorGroup.position.set(
-          -0.078 * Math.sin(manualRollAngle),
-          0.078 * Math.cos(manualRollAngle),
-          0.15
-        );
 
         // 2. Autopilot Alignment & Smooth Automated Approach (Never ejects camera out of ship!)
         const autoTargetId = sc.autopilotTargetId;
@@ -3178,7 +3182,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           manualRollAngle = 0;
           sr7.hullGroup.rotation.z = 0;
           sr7.interiorGroup.rotation.z = 0;
-          sr7.interiorGroup.position.set(0, 0.078, 0.15);
         }
 
         if (sc.cameraView === 'COCKPIT') {
@@ -3206,13 +3209,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sr7.cockpitSeatAnchor.getWorldPosition(_tmpV4);
           sr7.interiorGroup.getWorldQuaternion(camera.quaternion);
 
-          // Ergonomic pilot neck pivot & shoulder-check lean so turning ±169° views seat & avionics without clipping
+          // Ergonomic pilot neck pivot & shoulder-check lean so turning 360° views cabin & screens without clipping headrest
           const lookBackFactor = Math.max(0, (Math.abs(cockpitLookYaw) - 1.1) / 1.85);
           _tmpV5
             .set(
-              Math.sin(-cockpitLookYaw) * 0.03,
-              lookBackFactor * 0.022,
-              -0.026 * (1 - Math.cos(cockpitLookYaw)) - lookBackFactor * 0.032
+              Math.sin(-cockpitLookYaw) * 0.008,
+              lookBackFactor * 0.006,
+              -0.008 * (1 - Math.cos(cockpitLookYaw)) - lookBackFactor * 0.010
             )
             .multiplyScalar(currentShipScale)
             .applyQuaternion(camera.quaternion);
@@ -3448,6 +3451,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sasEnabled: sc.sasEnabled,
           autopilotActive: Boolean(autoTargetId),
           isCockpitView: sc.cameraView === 'COCKPIT',
+          cockpitSeat: sc.cockpitSeat || 'LEFT',
           shipScale: currentShipScale,
           driftAngleDeg,
         });
@@ -3554,11 +3558,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         sr7.rootGroup.scale.setScalar(currentShipScale);
         sr7.hullGroup.rotation.z = manualRollAngle;
         sr7.interiorGroup.rotation.z = manualRollAngle;
-        sr7.interiorGroup.position.set(
-          -0.078 * Math.sin(manualRollAngle),
-          0.078 * Math.cos(manualRollAngle),
-          0.15
-        );
         sr7.rootGroup.visible = true;
         sr7.updateAnimations({
           dt,

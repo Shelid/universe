@@ -316,10 +316,12 @@ export interface WarpFlightState {
 }
 
 export type SpacecraftCameraView = 'COCKPIT' | 'EXTERNAL';
+export type CockpitSeatPosition = 'LEFT' | 'CENTER' | 'RIGHT';
 
 export interface SpacecraftControlState {
   isActive: boolean;
   cameraView: SpacecraftCameraView;
+  cockpitSeat?: CockpitSeatPosition;
   throttle: number; // -0.5 (reverse) to 1.0 (full forward)
   boostActive: boolean; // High-speed interplanetary / galactic warp cruise
   headlightsOn: boolean;

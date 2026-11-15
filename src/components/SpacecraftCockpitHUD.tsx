@@ -154,6 +154,28 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             )}
           </button>
 
+          {controlState.cameraView === 'COCKPIT' && (
+            <button
+              onClick={() =>
+                onUpdateControl((prev) => {
+                  const cur = prev.cockpitSeat || 'LEFT';
+                  const next = cur === 'LEFT' ? 'CENTER' : cur === 'CENTER' ? 'RIGHT' : 'LEFT';
+                  return { ...prev, cockpitSeat: next };
+                })
+              }
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-100 text-[11px] font-medium transition-colors"
+              title="Alternar Assento dentro da Cabine: Comandante (Esq) / Visão Central / Co-Piloto (Dir) (Tecla B)"
+            >
+              <span>
+                {(controlState.cockpitSeat || 'LEFT') === 'LEFT'
+                  ? 'Assento: Comandante'
+                  : controlState.cockpitSeat === 'CENTER'
+                    ? 'Assento: Centro'
+                    : 'Assento: Co-Piloto'}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={() =>
               onUpdateControl((prev) => ({

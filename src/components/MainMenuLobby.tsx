@@ -174,27 +174,27 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
             </div>
           </section>
 
-          {/* 2. ESCOLHER NAVE (LIVE 3D PREVIEW) */}
+          {/* 2. NAVE ESTELAR (LIVE 3D PREVIEW) */}
           <section className="space-y-2">
             <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-slate-400">
-              <span>2. Escolher Nave (Ao Vivo 3D)</span>
+              <span>2. Nave Estelar (Ao Vivo 3D)</span>
               <span className="font-semibold" style={{ color: activeShip.accentHex }}>
                 {activeShip.codename}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5">
               {SPACECRAFT_HANGAR_CATALOG.map((ship) => {
-                const active = ship.id === selectedShipId;
+                const active = ship.id === selectedShipId || SPACECRAFT_HANGAR_CATALOG.length === 1;
                 return (
                   <button
                     key={ship.id}
                     onClick={() => onSelectShip(ship.id)}
-                    className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-1 ${active
+                    className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${active
                       ? 'bg-slate-900 border-sky-400 shadow-[0_0_16px_rgba(56,189,248,0.22)]'
                       : 'bg-slate-950/75 border-white/10 hover:border-white/25'
                       }`}
                   >
-                    <div className="flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <span
                         className="w-2.5 h-2.5 rounded-full shrink-0"
                         style={{
@@ -202,14 +202,17 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                           boxShadow: `0 0 8px ${ship.accentHex}`,
                         }}
                       />
-                      <span className="text-[9px] font-mono text-slate-400 uppercase">
-                        VEL {ship.stats.speed}
-                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white leading-tight truncate">
+                          {ship.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">{ship.role}</div>
+                      </div>
                     </div>
-                    <div className="text-[11px] font-bold text-white leading-tight truncate">
-                      {ship.name}
+                    <div className="flex items-center gap-2 shrink-0 text-[10px] font-mono text-sky-300">
+                      <span>CABINE DUPLA HD</span>
+                      <Check className="w-3.5 h-3.5 text-sky-400" />
                     </div>
-                    <div className="text-[9px] text-slate-400 truncate">{ship.role}</div>
                   </button>
                 );
               })}
