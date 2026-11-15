@@ -1464,6 +1464,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let manualRollAngle = 0;
     let boostBlend = 0;
     let continuousThrottle = 0;
+    let appliedThrottle = 0;
+    let brakeBlend = 0;
     let wasWalkingInside = false;
     const interiorWalkPos = new THREE.Vector3(0, -0.081, -3.18);
     const interiorWalkVel = new THREE.Vector3();
@@ -1608,7 +1610,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           interiorLightsOn: !prev.interiorLightsOn,
         }));
       } else if (e.code === 'KeyW' && !e.repeat && !isWalking) {
-        continuousThrottle = Math.min(1, Number((continuousThrottle + 0.05).toFixed(2)));
+        continuousThrottle = Math.min(1, Number((continuousThrottle + 0.025).toFixed(3)));
         lastSyncedReactThrottle = continuousThrottle;
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -1616,7 +1618,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           throttle: continuousThrottle,
         }));
       } else if (e.code === 'KeyS' && !e.repeat && !isWalking) {
-        continuousThrottle = Math.max(0, Number((continuousThrottle - 0.06).toFixed(2)));
+        continuousThrottle = Math.max(0, Number((continuousThrottle - 0.025).toFixed(3)));
         lastSyncedReactThrottle = continuousThrottle;
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -2767,6 +2769,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sr7.hullGroup.rotation.z = manualRollAngle;
           sr7.interiorGroup.rotation.z = manualRollAngle;
           continuousThrottle = sc.throttle;
+          appliedThrottle = sc.throttle;
+          brakeBlend = 0;
           lastSyncedReactThrottle = sc.throttle;
           lastManualOrbitTimestamp = 0;
           cockpitLookTargetYaw = 0;
@@ -3043,14 +3047,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             cockpitSteerSmoothY;
         let yawInput = isWalkingInside
           ? 0
-          : (pressedKeys.has('KeyA') || pressedKeys.has('ArrowLeft') ? 1 : 0) -
-            (pressedKeys.has('KeyD') || pressedKeys.has('ArrowRight') ? 1 : 0) +
+          : (pressedKeys.has('KeyA') ? 1 : 0) -
+            (pressedKeys.has('KeyD') ? 1 : 0) +
             (vSteer?.yaw || 0) +
             cockpitSteerSmoothX;
         let rollInput = isWalkingInside
           ? 0
-          : (pressedKeys.has('KeyQ') ? 1 : 0) -
-            (pressedKeys.has('KeyE') ? 1 : 0) +
+          : (pressedKeys.has('ArrowLeft') ? 1 : 0) -
+            (pressedKeys.has('ArrowRight') ? 1 : 0) +
             (vSteer?.roll || 0);
 
         pitchInput = THREE.MathUtils.clamp(pitchInput, -1.1, 1.1);
@@ -3071,9 +3075,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           lastSyncedReactThrottle = continuousThrottle;
         } else {
           if (wHeld) {
-            continuousThrottle = THREE.MathUtils.clamp(continuousThrottle + dt * 0.34, 0, 1.0);
+            continuousThrottle = THREE.MathUtils.clamp(continuousThrottle + dt * 0.28, 0, 1.0);
           } else if (sHeld) {
-            continuousThrottle = THREE.MathUtils.clamp(continuousThrottle - dt * 0.45, 0, 1.0);
+            continuousThrottle = THREE.MathUtils.clamp(continuousThrottle - dt * 0.34, 0, 1.0);
           }
           throttleSyncTimer += dt;
           if (
@@ -3133,7 +3137,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
 
         // 100% Player-Chosen 360° Ship Inclination / Roll (Never auto-banks on turns, never auto-levels!)
-        // Player can incline to any angle or fly upside-down ("de ponta cabeça", 180°) with Q / E or HUD Roll buttons.
+        // Player can incline to any angle or fly upside-down ("de ponta cabeça", 180°) with ArrowLeft / ArrowRight or HUD Roll buttons.
         if (Math.abs(angVelRoll) > 0.0005) {
           manualRollAngle = Math.atan2(
             Math.sin(manualRollAngle + angVelRoll * dt),
@@ -3151,11 +3155,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           : autoTargetId
             ? bodyWorldPositions[autoTargetId]
             : null;
+        const boosting =
+          !isWalkingInside &&
+          (sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight'));
         let autopilotStatus: SpacecraftTelemetry['autopilotStatus'] = 'OFF';
         let autoThrottleDrive = isWalkingInside
           ? 0
-          : wHeld
-            ? Math.max(continuousThrottle, 0.28)
+          : boosting
+            ? Math.max(continuousThrottle, 0.68)
             : continuousThrottle;
 
         if (autoPos && autoTargetId) {
@@ -3201,79 +3208,114 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        // 3. Responsive Starfighter Propulsion & Adaptive Scale Cruise Across Real 1:1 Space
-        const boosting =
-          !isWalkingInside &&
-          (sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight'));
-        boostBlend = THREE.MathUtils.lerp(boostBlend, boosting ? 1 : 0, Math.min(1, dt * 3.2));
+        // 3. Fluid Realistic Sub-Warp Spacecraft Propulsion + Relativistic Dobra Espacial
+        boostBlend = THREE.MathUtils.lerp(
+          boostBlend,
+          boosting ? 1 : 0,
+          Math.min(1, dt * (boosting ? 2.4 : 2.1))
+        );
         const isBrakingNow =
           isWalkingInside ||
-          (sc.brakeRequested && !wHeld && !isSteeringActively) ||
+          (sc.brakeRequested && !wHeld && !isSteeringActively && !boosting) ||
           pressedKeys.has('Space') ||
-          (sHeld && continuousThrottle <= 0.04);
-        const effectiveThrottle = isBrakingNow
+          (sHeld && continuousThrottle <= 0.02 && appliedThrottle <= 0.04);
+
+        const targetThrottle = isBrakingNow
           ? 0
           : THREE.MathUtils.clamp(autoThrottleDrive + Math.max(0, vSteer?.forward || 0), 0, 1.2);
+        appliedThrottle = THREE.MathUtils.lerp(
+          appliedThrottle,
+          targetThrottle,
+          Math.min(1, dt * (targetThrottle >= appliedThrottle ? 2.8 : isBrakingNow ? 3.8 : 3.2))
+        );
+        brakeBlend = THREE.MathUtils.lerp(
+          brakeBlend,
+          isBrakingNow ? 1 : 0,
+          Math.min(1, dt * (isBrakingNow ? 3.0 : 5.5))
+        );
+        const effectiveThrottle = appliedThrottle;
+
         const nearestClearance = Math.max(
           currentShipScale * 14,
           nearestPlanetDist - nearestPlanetRadius * 1.02
         );
+        const subWarpSpeedCap =
+          THREE.MathUtils.clamp(
+            Math.max(currentShipScale * 2.4, nearestClearance * 0.042),
+            currentShipScale * 2.4,
+            Math.max(currentShipScale * 26.0, 22.0)
+          ) * speedMult;
+        const warpSpeedCap =
+          THREE.MathUtils.clamp(
+            Math.max(currentShipScale * 28.0, nearestClearance * 0.95),
+            currentShipScale * 28.0,
+            2400.0
+          ) *
+          3.0 *
+          boostMult *
+          speedMult;
         const adaptiveCruise = autoPos
           ? THREE.MathUtils.clamp(
-            sr7.rootGroup.position.distanceTo(autoPos) * 0.35,
-            currentShipScale * 3.5,
-            1800.0
-          ) * speedMult
-          : (!boosting
-            ? THREE.MathUtils.clamp(
-              Math.max(currentShipScale * 4.2, nearestClearance * 0.16),
-              currentShipScale * 4.2,
-              320.0
-            )
-            : THREE.MathUtils.clamp(
-              Math.max(currentShipScale * 14.0, nearestClearance * 0.65),
-              currentShipScale * 14.0,
+              sr7.rootGroup.position.distanceTo(autoPos) * 0.32,
+              currentShipScale * 3.0,
               1800.0
-            )) * speedMult;
+            ) * speedMult
+          : THREE.MathUtils.lerp(
+              subWarpSpeedCap,
+              warpSpeedCap,
+              Math.pow(THREE.MathUtils.clamp(boostBlend, 0, 1), 1.35)
+            );
 
-        const maxSpeed = adaptiveCruise * THREE.MathUtils.lerp(1.0, 2.8 * boostMult, boostBlend);
+        const maxSpeed = adaptiveCruise;
         const throttleCurve =
           effectiveThrottle > 1.0
             ? 1.0 + (effectiveThrottle - 1.0) * 0.6
-            : Math.pow(Math.max(0, effectiveThrottle), 1.55);
+            : Math.pow(Math.max(0, effectiveThrottle), 1.65);
         const shipForward = _tmpV1.set(0, 0, -1).applyQuaternion(sr7.rootGroup.quaternion).normalize();
 
         if (isBrakingNow) {
-          shipVelocity.multiplyScalar(Math.exp(-dt * 4.5));
-          if (shipVelocity.length() < currentShipScale * 0.04) {
+          const brakeDrag = 0.55 + brakeBlend * 2.15;
+          shipVelocity.multiplyScalar(Math.exp(-dt * brakeDrag));
+          if (shipVelocity.length() < currentShipScale * 0.008) {
             shipVelocity.set(0, 0, 0);
           }
-        } else if (sHeld) {
-          shipVelocity.multiplyScalar(Math.exp(-dt * 3.2));
-        } else if (effectiveThrottle > 0.01) {
+        } else if (effectiveThrottle > 0.005 || boostBlend > 0.05) {
           const targetCruiseSpeed = maxSpeed * Math.min(1.0, throttleCurve);
-          const thrustAccel = maxSpeed * (boosting ? 0.95 : 0.45);
-          shipVelocity.addScaledVector(shipForward, Math.max(0.08, throttleCurve) * thrustAccel * dt);
           const spd = shipVelocity.length();
           if (spd > 1e-8) {
-            const alignRate = sc.sasEnabled ? 8.5 : 2.8;
+            const alignRate = sc.sasEnabled ? 5.8 : 1.8;
             _tmpV2.copy(shipForward).multiplyScalar(spd);
             shipVelocity.lerp(_tmpV2, Math.min(1, dt * alignRate));
           }
-          const newSpd = shipVelocity.length();
-          if (newSpd > targetCruiseSpeed) {
-            _tmpV2.copy(shipVelocity).setLength(targetCruiseSpeed);
-            shipVelocity.lerp(_tmpV2, Math.min(1, dt * 4.2));
+          const alignedSpd = shipVelocity.length();
+          const speedResponse =
+            targetCruiseSpeed >= alignedSpd
+              ? (boosting ? 1.75 : 0.92) * (0.36 + 0.64 * Math.min(1, effectiveThrottle))
+              : sHeld
+                ? 1.55
+                : 1.05;
+          const nextSpd = THREE.MathUtils.lerp(
+            alignedSpd,
+            targetCruiseSpeed,
+            Math.min(1, dt * speedResponse)
+          );
+          if (alignedSpd > 1e-8) {
+            shipVelocity.setLength(nextSpd);
+          } else {
+            shipVelocity.copy(shipForward).multiplyScalar(nextSpd);
+          }
+          if (nextSpd < currentShipScale * 0.005 && targetCruiseSpeed <= 1e-9) {
+            shipVelocity.set(0, 0, 0);
           }
         } else if (sc.sasEnabled) {
-          // Smooth fly-by-wire deceleration when throttle is set to 0%
+          // Smooth inertial coast deceleration when throttle rests at 0%
           const spd = shipVelocity.length();
           if (spd > 1e-8) {
             _tmpV2.copy(shipForward).multiplyScalar(spd);
-            shipVelocity.lerp(_tmpV2, Math.min(1, dt * 8.0));
+            shipVelocity.lerp(_tmpV2, Math.min(1, dt * 5.2));
           }
-          shipVelocity.multiplyScalar(Math.exp(-dt * 1.4));
-          if (shipVelocity.length() < currentShipScale * 0.03) {
+          shipVelocity.multiplyScalar(Math.exp(-dt * 0.65));
+          if (shipVelocity.length() < currentShipScale * 0.006) {
             shipVelocity.set(0, 0, 0);
           }
         }
@@ -3703,13 +3745,36 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const nearestContact = contactsUnsorted[0];
         const radarContacts = contactsUnsorted.slice(0, 7);
 
-        let speedFormatted = '0 km/s';
-        if (currentSpeed > currentShipScale * 0.008) {
-          const speedKmSec = currentSpeed * 1_000_000;
-          if (speedKmSec < 299_792) {
-            speedFormatted = `${Math.round(speedKmSec).toLocaleString('pt-BR')} km/s`;
-          } else if (speedKmSec < 299_792 * 180) {
-            speedFormatted = `${(speedKmSec / 299_792).toFixed(1)} c`;
+        let speedFormatted = '0 km/h';
+        if (currentSpeed > currentShipScale * 0.004) {
+          const speedRatioToSubWarp = currentSpeed / Math.max(1e-9, subWarpSpeedCap);
+          const subWarpKmSec =
+            Math.pow(THREE.MathUtils.clamp(speedRatioToSubWarp, 0, 1.08), 1.15) * 16.5;
+          const warpEngagement = Math.max(
+            boostBlend,
+            THREE.MathUtils.smoothstep(speedRatioToSubWarp, 1.08, 2.0)
+          );
+          const warpKmSec = Math.max(
+            subWarpKmSec,
+            currentSpeed * 1_000_000 * THREE.MathUtils.smoothstep(warpEngagement, 0.12, 0.65)
+          );
+          const displayKmSec = autoPos
+            ? Math.max(subWarpKmSec, currentSpeed * 1_000_000)
+            : THREE.MathUtils.lerp(
+                subWarpKmSec,
+                warpKmSec,
+                THREE.MathUtils.smoothstep(warpEngagement, 0.08, 0.5)
+              );
+
+          if (displayKmSec < 1.0) {
+            const kmPerHour = Math.max(1, Math.round(displayKmSec * 3600));
+            speedFormatted = `${kmPerHour.toLocaleString('pt-BR')} km/h`;
+          } else if (displayKmSec < 100.0) {
+            speedFormatted = `${displayKmSec.toFixed(1).replace('.', ',')} km/s`;
+          } else if (displayKmSec < 299_792) {
+            speedFormatted = `${Math.round(displayKmSec).toLocaleString('pt-BR')} km/s`;
+          } else if (displayKmSec < 299_792 * 180) {
+            speedFormatted = `${(displayKmSec / 299_792).toFixed(1).replace('.', ',')} c`;
           } else {
             speedFormatted = `${Math.round(currentSpeed * 12).toLocaleString('pt-BR')} ly/s`;
           }
@@ -3730,7 +3795,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         sr7.updateAnimations({
           dt,
           clockTime,
-          throttle: isBrakingNow ? 0 : effectiveThrottle,
+          throttle: isBrakingNow ? appliedThrottle * (1 - brakeBlend) : effectiveThrottle,
           boostActive: boosting,
           headlightsOn: sc.headlightsOn,
           interiorLightsOn: sc.interiorLightsOn,

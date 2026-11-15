@@ -741,15 +741,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Virar (Esquerda / Direita)</span>
-                    <span className="font-mono text-white">A / D ou ← / →</span>
+                    <span className="font-mono text-white">A / D</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Subir / Descer (Vertical Invertida)</span>
                     <span className="font-mono text-white">↓ Sobe / ↑ Desce</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Rolar Asas (360°)</span>
-                    <span className="font-mono text-white">Q / E</span>
+                    <span className="text-slate-400">Inclinar / Rolar Asas (360°)</span>
+                    <span className="font-mono text-white">← / →</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Andar Dentro da Nave / Sentar</span>
@@ -939,15 +939,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
           <div className="h-4 w-px bg-white/15" />
 
-          {/* Manual 360° Ship Inclination / Roll Controls (Q / E + 0° Level) */}
-          <div className="flex items-center gap-1" title="Inclinar Nave 360° / Ponta Cabeça (Teclas Q e E)">
+          {/* Manual 360° Ship Inclination / Roll Controls (← / → + 0° Level) */}
+          <div className="flex items-center gap-1" title="Inclinar Nave 360° / Ponta Cabeça (Setas ← e →)">
             <button
               {...holdButtonProps('roll', 1)}
               className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
-              title="Inclinar para a Esquerda (Segure Q)"
+              title="Inclinar para a Esquerda (Segure ←)"
             >
               <RotateCcw className="w-3 h-3" />
-              <span className="hidden sm:inline">Q</span>
+              <span className="hidden sm:inline">←</span>
             </button>
             <button
               onClick={() =>
@@ -964,9 +964,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             <button
               {...holdButtonProps('roll', -1)}
               className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
-              title="Inclinar para a Direita (Segure E)"
+              title="Inclinar para a Direita (Segure →)"
             >
-              <span className="hidden sm:inline">E</span>
+              <span className="hidden sm:inline">→</span>
               <RotateCw className="w-3 h-3" />
             </button>
           </div>
