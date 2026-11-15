@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Backpack,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -43,6 +44,7 @@ interface EVACharacterHUDProps {
   onUseFood?: () => void;
   onUseWater?: () => void;
   onEmergencyO2Refill?: () => void;
+  onOpenBackpack?: () => void;
   survivalNotice?: string | null;
 }
 
@@ -62,6 +64,7 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
   onUseFood,
   onUseWater,
   onEmergencyO2Refill,
+  onOpenBackpack,
   survivalNotice,
 }) => {
   const [showTouchControls, setShowTouchControls] = useState(false);
@@ -168,6 +171,17 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
           >
             <Compass className="w-3 h-3" />
           </button>
+
+          {onOpenBackpack && (
+            <button
+              onClick={onOpenBackpack}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/45 text-cyan-100 text-[11px] font-medium transition-colors"
+              title="Abrir Mochila & Inventário (Tecla I)"
+            >
+              <Backpack className="w-3 h-3 text-cyan-300" />
+              <span className="hidden sm:inline">Mochila [I]</span>
+            </button>
+          )}
 
           {survival && onUseFood && survival.foodRations > 0 && evaHunger < 90 && (
             <button

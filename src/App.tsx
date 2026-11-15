@@ -101,6 +101,7 @@ import { ScientificDossierPanel } from './components/ScientificDossierPanel';
 import { EarthSurfaceExplorerModal } from './components/EarthSurfaceExplorerModal';
 import { MissionsExplorerModal } from './components/MissionsExplorerModal';
 import { WarpOverlayHUD } from './components/WarpOverlayHUD';
+import { BackpackModal } from './components/BackpackModal';
 
 const INITIAL_BOOT_PROGRESS: SceneBootProgress = {
   progress: 4,
@@ -173,6 +174,7 @@ export function App() {
   const [saturnRingDiveMode, setSaturnRingDiveMode] = useState<boolean>(false);
   const [isEarthSurfaceModalOpen, setIsEarthSurfaceModalOpen] = useState<boolean>(false);
   const [isMissionsModalOpen, setIsMissionsModalOpen] = useState<boolean>(false);
+  const [isBackpackOpen, setIsBackpackOpen] = useState<boolean>(false);
   const [selectedLandmark, setSelectedLandmark] = useState<SurfaceLandmark | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -670,18 +672,30 @@ export function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) {
-        if (e.key === 'Escape') setIsCommandMenuOpen(false);
+        if (e.key === 'Escape') {
+          setIsCommandMenuOpen(false);
+          setIsBackpackOpen(false);
+        }
         return;
       }
       if (isMainMenuOpen) return;
       const key = e.key.toLowerCase();
-      if (key === 'm' || e.key === 'Tab') {
+      if (key === 'i' && !e.repeat) {
+        e.preventDefault();
+        spaceAudio.unlock();
+        setIsBackpackOpen((o) => {
+          const next = !o;
+          spaceAudio.playCockpitSwitch(next);
+          return next;
+        });
+      } else if (key === 'm' || e.key === 'Tab') {
         e.preventDefault();
         setIsCommandMenuOpen((o) => !o);
       } else if (key === 'h') {
         setIsHudHidden((v) => !v);
       } else if (e.key === 'Escape') {
         setIsCommandMenuOpen(false);
+        setIsBackpackOpen(false);
       } else if (evaActive && !spacecraftControl.isActive) {
         if (key === 'l') {
           spaceAudio.playCockpitSwitch(!evaVisorLightOn);
@@ -1357,6 +1371,11 @@ export function App() {
           onSellCargo={handleSellCargo}
           onSellAllCargo={handleSellAllCargo}
           onDiscardCargo={handleDiscardCargo}
+          onOpenBackpack={() => {
+            spaceAudio.unlock();
+            spaceAudio.playCockpitSwitch(true);
+            setIsBackpackOpen(true);
+          }}
         />
       )}
 
@@ -1386,6 +1405,11 @@ export function App() {
           onUseFood={handleConsumeFood}
           onUseWater={handleConsumeWater}
           onEmergencyO2Refill={handleEmergencyEvaO2Refill}
+          onOpenBackpack={() => {
+            spaceAudio.unlock();
+            spaceAudio.playCockpitSwitch(true);
+            setIsBackpackOpen(true);
+          }}
         />
       )}
 
@@ -1470,6 +1494,27 @@ export function App() {
           setShowMissionTrajectories(true);
         }}
         onFlyToBody={(bId) => handleSelectBody(bId, true)}
+      />
+
+      {/* 9. FIELD BACKPACK & CARGO INVENTORY MODAL (HOTKEY [I]) */}
+      <BackpackModal
+        isOpen={!isMainMenuOpen && isBackpackOpen}
+        onClose={() => {
+          spaceAudio.unlock();
+          spaceAudio.playCockpitSwitch(false);
+          setIsBackpackOpen(false);
+        }}
+        survival={survivalState}
+        survivalNotice={survivalNotice}
+        playerMode={playerMode}
+        onConsumeFood={handleConsumeFood}
+        onConsumeWater={handleConsumeWater}
+        onUseRepairKit={handleUseRepairKit}
+        onConsumeWarpCell={handleConsumeWarpCell}
+        onSynthesizeRecipe={handleSynthesizeRecipe}
+        onSellCargo={handleSellCargo}
+        onSellAllCargo={handleSellAllCargo}
+        onDiscardCargo={handleDiscardCargo}
       />
     </div>
   );

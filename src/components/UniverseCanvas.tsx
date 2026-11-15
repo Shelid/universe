@@ -1876,7 +1876,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           ...prev,
           firePulseCount: prev.firePulseCount + 1,
         }));
-      } else if (e.code === 'KeyI') {
+      } else if (e.code === 'KeyO') {
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
           interiorLightsOn: !prev.interiorLightsOn,
