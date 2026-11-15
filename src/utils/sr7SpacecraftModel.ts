@@ -49,6 +49,7 @@ export interface SR7SpacecraftRefs {
   leftMuzzleFlash: THREE.Mesh;
   rightMuzzleFlash: THREE.Mesh;
   muzzlePositionsLocal: [THREE.Vector3, THREE.Vector3];
+  miningEmitterLocalPos: THREE.Vector3;
   clickableCockpitControls: THREE.Object3D[];
   interiorWalkerAnchor: THREE.Group;
   readonly interiorCollider: ShipInteriorCollider | null;
@@ -86,6 +87,8 @@ export interface SR7SpacecraftRefs {
     hullTempC?: number;
     walkingInside?: boolean;
     nearbyCabinStation?: string;
+    miningActive?: boolean;
+    miningColorHex?: string;
   }) => void;
 }
 
@@ -995,6 +998,53 @@ export function createSR7Spacecraft3DGroup(options?: {
   radiatorGroup.add(leftRadiator, rightRadiator);
   hullGroup.add(radiatorGroup);
 
+  // Ventral Gimballed Orbital Mining Laser Turret mounted under forward keel
+  const miningTurretGroup = new THREE.Group();
+  miningTurretGroup.name = 'spaceship-orbital-mining-turret';
+  miningTurretGroup.position.set(0, -0.34, -2.82);
+
+  const miningCollarMat = new THREE.MeshStandardMaterial({
+    color: '#1e293b',
+    metalness: 0.88,
+    roughness: 0.25,
+  });
+  const miningCollar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.145, 0.14, 16),
+    miningCollarMat
+  );
+  miningTurretGroup.add(miningCollar);
+
+  const miningLensMat = new THREE.MeshStandardMaterial({
+    color: '#38bdf8',
+    emissive: '#38bdf8',
+    emissiveIntensity: 0.45,
+    roughness: 0.15,
+    metalness: 0.35,
+  });
+  const miningLensMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.085, 16, 12),
+    miningLensMat
+  );
+  miningLensMesh.position.set(0, -0.055, 0);
+  miningLensMesh.scale.set(1, 0.65, 1);
+  miningTurretGroup.add(miningLensMesh);
+
+  const miningRingMat = new THREE.MeshBasicMaterial({
+    color: '#38bdf8',
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+  });
+  const miningRingMesh = new THREE.Mesh(
+    new THREE.TorusGeometry(0.115, 0.012, 8, 24),
+    miningRingMat
+  );
+  miningRingMesh.rotation.x = Math.PI / 2;
+  miningRingMesh.position.set(0, -0.04, 0);
+  miningTurretGroup.add(miningRingMesh);
+  hullGroup.add(miningTurretGroup);
+  const miningEmitterLocalPos = new THREE.Vector3(0, -0.40, -2.82);
+
   // Subtle Holographic Station Markers inside Walkable Bridge (Galley, Bunk, Reactor/O2, Airlock)
   const cabinStationGroup = new THREE.Group();
   cabinStationGroup.name = 'spaceship-cabin-stations';
@@ -1048,6 +1098,8 @@ export function createSR7Spacecraft3DGroup(options?: {
     hullTempC = 24,
     walkingInside = false,
     nearbyCabinStation = 'NONE',
+    miningActive = false,
+    miningColorHex = '#38bdf8',
   }) => {
     // Smoothly move cockpit eye anchor between Commander (LEFT), Panoramic (CENTER), and Co-Pilot (RIGHT)
     const targetSeatPos = SEAT_LOCAL_POSITIONS[cockpitSeat] || SEAT_LOCAL_POSITIONS.LEFT;
@@ -1132,6 +1184,25 @@ export function createSR7Spacecraft3DGroup(options?: {
     } else {
       radarPulseRing.visible = false;
     }
+
+    // Ventral Gimballed Orbital Mining Turret pulse & beam lens color
+    if (miningActive) {
+      miningLensMat.color.set(miningColorHex);
+      miningLensMat.emissive.set(miningColorHex);
+      miningLensMat.emissiveIntensity = 2.6 + Math.sin(clockTime * 16.0) * 0.7;
+      miningRingMat.color.set(miningColorHex);
+      miningRingMat.opacity = 0.72 + Math.sin(clockTime * 12.0) * 0.2;
+      miningTurretGroup.rotation.y = Math.sin(clockTime * 2.5) * 0.18;
+      miningTurretGroup.position.y = -0.37;
+    } else {
+      miningLensMat.color.set('#38bdf8');
+      miningLensMat.emissive.set('#38bdf8');
+      miningLensMat.emissiveIntensity = 0.4;
+      miningRingMat.color.set('#38bdf8');
+      miningRingMat.opacity = 0.25;
+      miningTurretGroup.rotation.y = THREE.MathUtils.lerp(miningTurretGroup.rotation.y, 0, Math.min(1, dt * 6));
+      miningTurretGroup.position.y = THREE.MathUtils.lerp(miningTurretGroup.position.y, -0.34, Math.min(1, dt * 6));
+    }
   };
 
   const setLandingGearDeployed = (deployed: boolean) => {
@@ -1214,6 +1285,7 @@ export function createSR7Spacecraft3DGroup(options?: {
     leftMuzzleFlash,
     rightMuzzleFlash,
     muzzlePositionsLocal,
+    miningEmitterLocalPos,
     clickableCockpitControls,
     interiorWalkerAnchor,
     get interiorCollider() {

@@ -326,6 +326,103 @@ export type RefuelSourceKind =
   | 'GAS_GIANT_SCOOP'
   | 'SOLAR_CORONA';
 
+export type MiningResourceId =
+  | 'water-ice'
+  | 'silicate-regolith'
+  | 'iron-nickel'
+  | 'titanium-ilmenite'
+  | 'cryo-methane'
+  | 'ammonia-hydrates'
+  | 'sulfur-compounds'
+  | 'helium-3'
+  | 'platinum-group'
+  | 'exotic-silicates';
+
+export type MiningResourceCategory =
+  | 'VOLATILE_ICE'
+  | 'RAW_MINERAL'
+  | 'METALLIC_ORE'
+  | 'ISOTOPE_GAS'
+  | 'EXOTIC_MATTER';
+
+export interface MiningResourceDefinition {
+  id: MiningResourceId;
+  name: string;
+  formula: string;
+  category: MiningResourceCategory;
+  colorHex: string;
+  unitMassKg: number;
+  baseValueCredits: number;
+  description: string;
+}
+
+export type MiningRecipeId =
+  | 'purify-water'
+  | 'synthesize-o2'
+  | 'biomass-ration'
+  | 'hydrazine-fuel'
+  | 'titanium-plates'
+  | 'cryo-coolant'
+  | 'he3-warp-cell'
+  | 'interstellar-resonator';
+
+export interface MiningRecipeIngredient {
+  resourceId: MiningResourceId;
+  amount: number;
+}
+
+export interface MiningSynthesisRecipe {
+  id: MiningRecipeId;
+  name: string;
+  formulaLabel: string;
+  category: 'SURVIVAL' | 'PROPULSION' | 'ENGINEERING' | 'HIGH_VALUE';
+  ingredients: MiningRecipeIngredient[];
+  benefitSummary: string;
+  scientificNote: string;
+}
+
+export interface CelestialMiningYield {
+  resourceId: MiningResourceId;
+  weight: number;
+  purityMinPct: number;
+  purityMaxPct: number;
+}
+
+export interface CelestialMiningProfile {
+  bodyId: string;
+  extractable: boolean;
+  blockedReason?: string;
+  spectrumColorHex: string;
+  surfaceNote: string;
+  yields: CelestialMiningYield[];
+}
+
+export interface OrbitalHotspot {
+  id: string;
+  bodyId: string;
+  localNormal: [number, number, number];
+  resourceId: MiningResourceId;
+  richnessMultiplier: number;
+  label: string;
+}
+
+export interface MiningLaserTelemetry {
+  isActive: boolean;
+  isDrilling: boolean;
+  inRange: boolean;
+  targetBodyId: string | null;
+  targetBodyName: string | null;
+  activeResourceId: MiningResourceId | null;
+  activeHotspotLabel: string | null;
+  hotspotMultiplier: number;
+  surfaceDistanceRatio: number;
+  beamPowerKw: number;
+  extractionRatePerSec: number;
+  extractionProgress01: number;
+  lastMinedResourceId: MiningResourceId | null;
+  statusMessage: string;
+}
+
 export interface PowerPips {
   engines: number;     // 0..4 (total across 4 systems = 8)
   shields: number;     // 0..4
@@ -362,6 +459,13 @@ export interface SurvivalResourcesState {
   nearRefuelSource: RefuelSourceKind;
   nearbyCabinStation: CabinStationId;
   activeStatusAlert: string | null;
+
+  miningLaserActive: boolean;
+  cargoInventory: Partial<Record<MiningResourceId, number>>;
+  cargoCapacityUnits: number;
+  spaceCredits: number;
+  totalMinedUnits: number;
+  mining: MiningLaserTelemetry;
 }
 
 export interface SpacecraftControlState {
@@ -382,6 +486,7 @@ export interface SpacecraftControlState {
   walkingInside?: boolean;
   ecoCruiseMode?: boolean;
   radiatorsDeployed?: boolean;
+  miningLaserActive?: boolean;
   powerPips?: PowerPips;
 }
 

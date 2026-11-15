@@ -1,34 +1,41 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Atom,
   BatteryCharging,
   Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Coins,
   Compass,
   Crosshair,
   Droplets,
   Eye,
   Flame,
+  FlaskConical,
   Gauge,
   Heart,
   Lightbulb,
   LogOut,
   Navigation,
   Orbit,
+  Package,
+  Pickaxe,
   Radar,
   Radiation,
   Rocket,
   RotateCcw,
   RotateCw,
+  Search,
   Shield,
   SlidersHorizontal,
   Snowflake,
   Sparkles,
   Sun,
   Thermometer,
+  Trash2,
   User,
   Utensils,
   Volume2,
@@ -40,6 +47,14 @@ import {
 } from 'lucide-react';
 import { ALL_CELESTIAL_BODIES } from '../data/solarSystemData';
 import {
+  CRAFTING_RECIPES,
+  getBodyMiningProfile,
+  MINING_RESOURCE_LIST,
+  MINING_RESOURCES,
+} from '../data/miningCatalog';
+import {
+  MiningRecipeId,
+  MiningResourceId,
   PowerSubsystemId,
   SpacecraftControlState,
   SpacecraftTelemetry,
@@ -47,7 +62,12 @@ import {
 } from '../types/astronomy';
 import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
 import { spaceAudio } from '../utils/spaceAudioEngine';
-import { CABIN_STATIONS, POWER_PIP_TOTAL, POWER_PRESETS } from '../utils/survivalEngine';
+import {
+  CABIN_STATIONS,
+  getTotalCargoUnits,
+  POWER_PIP_TOTAL,
+  POWER_PRESETS,
+} from '../utils/survivalEngine';
 
 export interface VirtualSteerInput {
   pitch: number; // -1..1
@@ -84,9 +104,14 @@ interface SpacecraftCockpitHUDProps {
   onCallRescueDrone: () => void;
   onStationResupply: () => void;
   onCabinStationInteract: () => void;
+  onToggleMiningLaser: () => void;
+  onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
+  onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
+  onSellAllCargo: () => void;
+  onDiscardCargo: (resourceId: MiningResourceId) => void;
 }
 
-type ShipMenuTab = 'systems' | 'survival' | 'navigation' | 'controls';
+type ShipMenuTab = 'systems' | 'survival' | 'mining' | 'navigation' | 'controls';
 
 export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   controlState,
@@ -116,9 +141,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   onCallRescueDrone,
   onStationResupply,
   onCabinStationInteract,
+  onToggleMiningLaser,
+  onSynthesizeRecipe,
+  onSellCargo,
+  onSellAllCargo,
+  onDiscardCargo,
 }) => {
   const [isShipMenuOpen, setIsShipMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ShipMenuTab>('systems');
+  const [miningCatalogQuery, setMiningCatalogQuery] = useState('');
   const [showTouchPad, setShowTouchPad] = useState(false);
   const [audioVol, setAudioVol] = useState(() => Math.round(spaceAudio.getMasterVolume() * 100));
 
@@ -221,11 +252,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 };
               })
             }
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${
-              controlState.walkingInside
-                ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-300 text-emerald-50 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
-                : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-400/40 text-amber-100'
-            }`}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${controlState.walkingInside
+              ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-300 text-emerald-50 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+              : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-400/40 text-amber-100'
+              }`}
             title={
               controlState.walkingInside
                 ? 'Voltar ao Assento de Comando da Nave (Tecla G)'
@@ -261,20 +291,18 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           {!controlState.walkingInside && (
             <button
               onClick={() => setIsShipMenuOpen((open) => !open)}
-              className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
-                isShipMenuOpen
-                  ? 'bg-cyan-500/30 border-cyan-300 text-white shadow-[0_0_14px_rgba(34,211,238,0.4)]'
-                  : 'bg-white/10 hover:bg-white/15 border-white/20 text-white'
-              }`}
+              className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${isShipMenuOpen
+                ? 'bg-cyan-500/30 border-cyan-300 text-white shadow-[0_0_14px_rgba(34,211,238,0.4)]'
+                : 'bg-white/10 hover:bg-white/15 border-white/20 text-white'
+                }`}
               title="Abrir Menu Completo da Nave (Telemetria, Radar, Piloto Automático e Sistemas)"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-300" />
               <span>Menu da Nave</span>
               {(controlState.autopilotTargetId || survival.activeStatusAlert) && (
                 <span
-                  className={`w-2 h-2 rounded-full animate-ping ${
-                    survival.activeStatusAlert ? 'bg-rose-400' : 'bg-amber-400'
-                  }`}
+                  className={`w-2 h-2 rounded-full animate-ping ${survival.activeStatusAlert ? 'bg-rose-400' : 'bg-amber-400'
+                    }`}
                 />
               )}
             </button>
@@ -309,6 +337,56 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             </div>
           )}
 
+          {/* Clean Live Orbital Mining Laser Micro Pill (shown only when active or in orbital mining range) */}
+          {(survival.mining.isActive || survival.mining.inRange) && (
+            <button
+              onClick={() => {
+                setActiveTab('mining');
+                setIsShipMenuOpen(true);
+              }}
+              className={`pointer-events-auto flex items-center gap-2 backdrop-blur-xl border rounded-full px-3 py-1 text-[10px] font-mono shadow-lg transition-colors ${
+                survival.mining.isDrilling
+                  ? 'bg-cyan-950/90 border-cyan-400/75 text-cyan-100'
+                  : 'bg-slate-950/85 border-sky-400/40 text-sky-100 hover:border-sky-300'
+              }`}
+              title="Abrir Painel de Mineração & Síntese Química"
+            >
+              <Pickaxe
+                className={`w-3 h-3 shrink-0 ${
+                  survival.mining.isDrilling ? 'text-cyan-300 animate-pulse' : 'text-sky-300'
+                }`}
+              />
+              {survival.mining.isDrilling && survival.mining.activeResourceId ? (
+                <>
+                  <span className="font-bold text-white">
+                    {MINING_RESOURCES[survival.mining.activeResourceId].name}
+                  </span>
+                  {survival.mining.hotspotMultiplier > 1.05 && (
+                    <span className="px-1.5 py-0.2 rounded bg-amber-500/30 border border-amber-400/60 text-amber-200 font-bold">
+                      VEIO {survival.mining.hotspotMultiplier.toFixed(1)}×
+                    </span>
+                  )}
+                  <span className="w-12 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <span
+                      className="block h-full bg-cyan-400 transition-all duration-150"
+                      style={{
+                        width: `${Math.round(survival.mining.extractionProgress01 * 100)}%`,
+                      }}
+                    />
+                  </span>
+                  <span className="text-slate-300">
+                    Porão {getTotalCargoUnits(survival.cargoInventory)}/{survival.cargoCapacityUnits}
+                  </span>
+                </>
+              ) : (
+                <span>
+                  Órbita {survival.mining.targetBodyName ?? 'Astro'} · Pressione [X] Extrator · Porão{' '}
+                  {getTotalCargoUnits(survival.cargoInventory)}/{survival.cargoCapacityUnits}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Active Autopilot Micro Indicator (Only visible while navigating automatically) */}
           {controlState.autopilotTargetId && (
             <div className="pointer-events-auto flex items-center gap-2 bg-slate-950/80 backdrop-blur-xl border border-amber-400/40 rounded-full px-3 py-1 text-[11px] font-mono text-amber-200 shadow-lg">
@@ -332,7 +410,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
       {/* DEDICATED SHIP INFORMATION & SYSTEMS MENU DRAWER */}
       {isShipMenuOpen && (
-        <div className="pointer-events-auto fixed right-3 top-14 sm:top-16 bottom-16 w-[calc(100%-1.5rem)] sm:w-[400px] z-40 bg-slate-950/92 backdrop-blur-2xl border border-sky-500/35 rounded-2xl shadow-[0_16px_50px_rgba(2,6,23,0.95)] flex flex-col overflow-hidden">
+        <div className="pointer-events-auto fixed right-3 top-14 sm:top-16 bottom-16 w-[calc(100%-1.5rem)] sm:w-[410px] z-40 bg-slate-950/92 backdrop-blur-2xl border border-sky-500/35 rounded-2xl shadow-[0_16px_50px_rgba(2,6,23,0.95)] flex flex-col overflow-hidden">
           {/* Header */}
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-slate-900/50">
             <div className="flex items-center gap-2">
@@ -342,7 +420,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   CENTRAL — {activeShipName}
                 </h2>
                 <p className="text-[10px] text-slate-400">
-                  Sistemas, Sobrevivência, Radar e Piloto Automático
+                  Sistemas, Sobrevivência, Mineração & Química, Radar
                 </p>
               </div>
             </div>
@@ -356,25 +434,28 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           </div>
 
           {/* Menu Tabs */}
-          <div className="grid grid-cols-4 border-b border-white/10 text-[10px] font-mono bg-slate-900/30">
+          <div className="grid grid-cols-5 border-b border-white/10 text-[10px] font-mono bg-slate-900/30">
             {[
               { id: 'systems' as const, label: 'Sistemas' },
-              { id: 'survival' as const, label: 'Sobrevivência' },
-              { id: 'navigation' as const, label: 'Radar & Rota' },
+              { id: 'survival' as const, label: 'Sobrev.' },
+              { id: 'mining' as const, label: 'Mineração' },
+              { id: 'navigation' as const, label: 'Radar' },
               { id: 'controls' as const, label: 'Controles' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative py-2.5 text-center transition-colors border-b-2 ${
-                  activeTab === tab.id
-                    ? 'border-sky-400 text-sky-200 bg-sky-500/10 font-bold'
-                    : 'border-transparent text-slate-400 hover:text-white'
-                }`}
+                className={`relative py-2.5 text-center transition-colors border-b-2 ${activeTab === tab.id
+                  ? 'border-sky-400 text-sky-200 bg-sky-500/10 font-bold'
+                  : 'border-transparent text-slate-400 hover:text-white'
+                  }`}
               >
                 <span>{tab.label}</span>
                 {tab.id === 'survival' && survival.activeStatusAlert && (
-                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                  <span className="absolute top-1.5 right-1 w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                )}
+                {tab.id === 'mining' && survival.mining.isDrilling && (
+                  <span className="absolute top-1.5 right-1 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                 )}
               </button>
             ))}
@@ -435,11 +516,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono">
                     <button
                       onClick={onToggleEcoMode}
-                      className={`py-1.5 px-2 rounded-lg border transition-colors ${
-                        survival.ecoCruiseMode
-                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100 font-bold'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`py-1.5 px-2 rounded-lg border transition-colors ${survival.ecoCruiseMode
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100 font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       ECO Cruise (Y): {survival.ecoCruiseMode ? 'ON' : 'OFF'}
                     </button>
@@ -460,11 +540,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     )}
                     <button
                       onClick={onCallRescueDrone}
-                      className={`col-span-2 py-1.5 px-2 rounded-lg border transition-colors ${
-                        survival.fuelPercent < 18 || survival.warpEnergyPercent < 12
-                          ? 'bg-amber-500/30 hover:bg-amber-500/45 border-amber-400 text-amber-100 font-bold animate-pulse'
-                          : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-300'
-                      }`}
+                      className={`col-span-2 py-1.5 px-2 rounded-lg border transition-colors ${survival.fuelPercent < 18 || survival.warpEnergyPercent < 12
+                        ? 'bg-amber-500/30 hover:bg-amber-500/45 border-amber-400 text-amber-100 font-bold animate-pulse'
+                        : 'bg-white/5 hover:bg-white/10 border-white/15 text-slate-300'
+                        }`}
                     >
                       Chamar Drone de Socorro (Combustível & Célula)
                     </button>
@@ -479,11 +558,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       TÉRMICA, SOMBRA 3D & RADIAÇÃO
                     </span>
                     <span
-                      className={`px-1.5 py-0.5 rounded ${
-                        survival.inPlanetaryShadow
-                          ? 'bg-indigo-500/30 text-indigo-200'
-                          : 'bg-amber-500/20 text-amber-200'
-                      }`}
+                      className={`px-1.5 py-0.5 rounded ${survival.inPlanetaryShadow
+                        ? 'bg-indigo-500/30 text-indigo-200'
+                        : 'bg-amber-500/20 text-amber-200'
+                        }`}
                     >
                       {survival.inPlanetaryShadow ? 'EM SOMBRA' : 'LUZ SOLAR'}
                     </span>
@@ -493,9 +571,8 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     <div className="bg-slate-950/70 rounded-lg p-1.5 border border-white/5">
                       <div className="text-slate-400">CASCO</div>
                       <div
-                        className={`font-bold mt-0.5 ${
-                          survival.hullTempC > 650 ? 'text-rose-400' : 'text-sky-200'
-                        }`}
+                        className={`font-bold mt-0.5 ${survival.hullTempC > 650 ? 'text-rose-400' : 'text-sky-200'
+                          }`}
                       >
                         {Math.round(survival.hullTempC)}°C
                       </div>
@@ -512,9 +589,8 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                         <span>RAD</span>
                       </div>
                       <div
-                        className={`font-bold mt-0.5 ${
-                          survival.radiationPercent > 65 ? 'text-rose-400' : 'text-emerald-300'
-                        }`}
+                        className={`font-bold mt-0.5 ${survival.radiationPercent > 65 ? 'text-rose-400' : 'text-emerald-300'
+                          }`}
                       >
                         {Math.round(survival.radiationPercent)}%
                       </div>
@@ -524,11 +600,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
                     <button
                       onClick={onToggleRadiators}
-                      className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border transition-colors ${
-                        survival.radiatorsDeployed
-                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-100 font-bold'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border transition-colors ${survival.radiatorsDeployed
+                        ? 'bg-cyan-500/25 border-cyan-400 text-cyan-100 font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       <Snowflake className="w-3 h-3" />
                       <span>Radiadores (K): {survival.radiatorsDeployed ? 'ON' : 'OFF'}</span>
@@ -569,9 +644,8 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                         </div>
                         <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
                           <div
-                            className={`h-full transition-all duration-300 ${
-                              v.val < 20 ? 'bg-rose-500' : v.col
-                            }`}
+                            className={`h-full transition-all duration-300 ${v.val < 20 ? 'bg-rose-500' : v.col
+                              }`}
                             style={{ width: `${Math.max(0, Math.min(100, v.val))}%` }}
                           />
                         </div>
@@ -665,9 +739,8 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                               {[1, 2, 3, 4].map((pip) => (
                                 <span
                                   key={pip}
-                                  className={`w-3.5 h-2.5 rounded-sm ${
-                                    val >= pip ? sub.color : 'bg-slate-800 border border-white/10'
-                                  }`}
+                                  className={`w-3.5 h-2.5 rounded-sm ${val >= pip ? sub.color : 'bg-slate-800 border border-white/10'
+                                    }`}
                                 />
                               ))}
                             </div>
@@ -685,6 +758,367 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 </div>
               </div>
             )}
+
+            {activeTab === 'mining' && (() => {
+              const usedCargo = getTotalCargoUnits(survival.cargoInventory);
+              const targetBodyId = survival.mining.targetBodyId || telemetry.nearestBodyId;
+              const targetBodyObj = ALL_CELESTIAL_BODIES.find((b) => b.id === targetBodyId);
+              const bodyProfile = getBodyMiningProfile(targetBodyId);
+              const cargoEntries = (Object.keys(survival.cargoInventory) as MiningResourceId[])
+                .map((id) => ({
+                  def: MINING_RESOURCES[id],
+                  qty: survival.cargoInventory[id] ?? 0,
+                }))
+                .filter((e) => e.qty > 0);
+              const totalCargoValue = cargoEntries.reduce(
+                (acc, e) =>
+                  acc +
+                  Math.round(
+                    e.def.creditValue *
+                      e.qty *
+                      (survival.nearRefuelSource === 'ORBITAL_STATION' ? 1.25 : 1.0)
+                  ),
+                0
+              );
+              const qNorm = miningCatalogQuery.trim().toLowerCase();
+              const filteredCatalog = MINING_RESOURCE_LIST.filter(
+                (r) =>
+                  !qNorm ||
+                  r.name.toLowerCase().includes(qNorm) ||
+                  r.formula.toLowerCase().includes(qNorm) ||
+                  r.commonSources.toLowerCase().includes(qNorm) ||
+                  r.description.toLowerCase().includes(qNorm)
+              );
+
+              return (
+                <div className="space-y-3">
+                  {/* 1. Live Orbital Extractor Telemetry & Toggle */}
+                  <div className="bg-slate-900/85 border border-cyan-500/30 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono font-bold text-cyan-300 flex items-center gap-1.5">
+                        <Pickaxe className="w-3.5 h-3.5" />
+                        EXTRATOR ORBITAL A LASER
+                      </span>
+                      <button
+                        onClick={onToggleMiningLaser}
+                        className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono font-bold transition-all ${
+                          survival.miningLaserActive || controlState.miningLaserActive
+                            ? 'bg-cyan-500/35 border-cyan-300 text-white shadow-[0_0_12px_rgba(34,211,238,0.45)]'
+                            : 'bg-white/5 hover:bg-white/15 border-white/15 text-cyan-200'
+                        }`}
+                      >
+                        {survival.miningLaserActive || controlState.miningLaserActive
+                          ? 'Desligar [X]'
+                          : 'Ativar Feixe [X]'}
+                      </button>
+                    </div>
+
+                    <div className="bg-slate-950/75 border border-white/10 rounded-lg p-2.5 space-y-1.5 text-[10px] font-mono">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">ASTRO EM MIRA</span>
+                        <span className="text-white font-bold">
+                          {survival.mining.targetBodyName ?? targetBodyObj?.name ?? telemetry.nearestBodyName}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 leading-snug font-sans">
+                        <strong className="text-slate-200">{bodyProfile.bodyTypeLabel}:</strong>{' '}
+                        {bodyProfile.extractable
+                          ? bodyProfile.extractionMethod
+                          : bodyProfile.restrictionReason}
+                      </div>
+
+                      {bodyProfile.extractable && (
+                        <>
+                          <div className="grid grid-cols-3 gap-1.5 pt-1 text-center">
+                            <div className="bg-slate-900/80 rounded p-1 border border-white/5">
+                              <div className="text-[9px] text-slate-400">DISTÂNCIA</div>
+                              <div
+                                className={`font-bold ${
+                                  survival.mining.inRange ? 'text-emerald-300' : 'text-amber-300'
+                                }`}
+                              >
+                                {survival.mining.surfaceDistanceRatio.toFixed(1)}R
+                              </div>
+                            </div>
+                            <div className="bg-slate-900/80 rounded p-1 border border-white/5">
+                              <div className="text-[9px] text-slate-400">POTÊNCIA</div>
+                              <div className="font-bold text-cyan-300">
+                                {survival.mining.beamPowerKw} kW
+                              </div>
+                            </div>
+                            <div className="bg-slate-900/80 rounded p-1 border border-white/5">
+                              <div className="text-[9px] text-slate-400">TAXA</div>
+                              <div className="font-bold text-amber-200">
+                                {survival.mining.extractionRatePerSec.toFixed(2)} u/s
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1 pt-1">
+                            <div className="flex justify-between text-[10px]">
+                              <span className="text-cyan-200 truncate">
+                                {survival.mining.activeHotspotLabel
+                                  ? `★ Veio ${survival.mining.hotspotMultiplier.toFixed(1)}×: ${survival.mining.activeHotspotLabel}`
+                                  : survival.mining.activeResourceId
+                                    ? `Alvo: ${MINING_RESOURCES[survival.mining.activeResourceId].name}`
+                                    : survival.mining.statusMessage}
+                              </span>
+                              <span className="text-white font-bold ml-1">
+                                {Math.round(survival.mining.extractionProgress01 * 100)}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-cyan-400 to-sky-300 transition-all duration-150"
+                                style={{
+                                  width: `${Math.round(survival.mining.extractionProgress01 * 100)}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Expected Yield Composition Pills */}
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {bodyProfile.yields.map((y) => {
+                              const r = MINING_RESOURCES[y.resourceId];
+                              return (
+                                <span
+                                  key={y.resourceId}
+                                  className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-slate-200 flex items-center gap-1"
+                                  title={`${r.name} — ${y.veinNote}`}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full"
+                                    style={{ backgroundColor: r.colorHex }}
+                                  />
+                                  <span>{r.formula.split(' ')[0]}</span>
+                                  <span className="text-slate-400">{Math.round(y.weight * 100)}%</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                      <div className="text-[9px] text-sky-300/90 pt-0.5">
+                        Dica: use o Radar [R] em órbita para destacar os 3 veios geológicos ricos na superfície.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Cargo Hold & Orbital Market */}
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-amber-300 font-bold flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5" />
+                        PORÃO MINERAL ({usedCargo}/{survival.cargoCapacityUnits})
+                      </span>
+                      <span className="text-emerald-300 font-bold flex items-center gap-1">
+                        <Coins className="w-3 h-3" />
+                        {survival.spaceCredits.toLocaleString('pt-BR')} CR
+                      </span>
+                    </div>
+
+                    {cargoEntries.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Porão vazio. Aproxime-se da Lua, Marte, Júpiter, Saturno ou asteroides e acione{' '}
+                        <strong className="text-cyan-300">[X]</strong> para extrair recursos.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {cargoEntries.map(({ def, qty }) => (
+                          <div
+                            key={def.id}
+                            className="flex items-center justify-between gap-2 bg-slate-950/75 border border-white/5 rounded-lg px-2 py-1.5 text-[10px] font-mono"
+                          >
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: def.colorHex }}
+                              />
+                              <div className="truncate">
+                                <div className="text-white font-bold truncate">{def.name}</div>
+                                <div className="text-[9px] text-slate-400">
+                                  {qty} un · {def.formula} · {def.creditValue} CR/un
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={() => onSellCargo(def.id, 1)}
+                                className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-100"
+                                title="Vender 1 unidade por Créditos"
+                              >
+                                +{Math.round(def.creditValue * (survival.nearRefuelSource === 'ORBITAL_STATION' ? 1.25 : 1))}
+                              </button>
+                              <button
+                                onClick={() => onDiscardCargo(def.id)}
+                                className="p-1 rounded bg-white/5 hover:bg-rose-500/30 border border-white/10 text-slate-400 hover:text-rose-200"
+                                title="Descartar 1 unidade"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <button
+                          onClick={onSellAllCargo}
+                          className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/40 border border-emerald-400/50 text-emerald-100 text-[10px] font-mono font-bold transition-colors"
+                        >
+                          Liquidar Toda a Carga (+{totalCargoValue} CR
+                          {survival.nearRefuelSource === 'ORBITAL_STATION' ? ' · Bônus Doca +25%' : ''})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Chemical Synthesis & Crafting Lab */}
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-emerald-300">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <FlaskConical className="w-3.5 h-3.5" />
+                        SÍNTESE & COMBINAÇÃO QUÍMICA
+                      </span>
+                      <span className="text-slate-400">Bat {Math.round(survival.batteryPercent)}%</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {CRAFTING_RECIPES.map((recipe) => {
+                        const hasIngs = recipe.ingredients.every(
+                          (ing) => (survival.cargoInventory[ing.resourceId] ?? 0) >= ing.amount
+                        );
+                        const hasEnergy = survival.batteryPercent >= recipe.energyCostPct;
+                        const canCraft = hasIngs && hasEnergy;
+                        return (
+                          <div
+                            key={recipe.id}
+                            className={`rounded-xl p-2.5 border transition-colors ${
+                              canCraft
+                                ? 'bg-slate-950/90 border-emerald-400/45'
+                                : 'bg-slate-950/60 border-white/10'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="text-[11px] font-bold text-white leading-tight">
+                                  {recipe.name}
+                                </div>
+                                <div className="text-[9px] font-mono text-cyan-300 mt-0.5">
+                                  {recipe.formula}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => onSynthesizeRecipe(recipe.id)}
+                                disabled={!canCraft}
+                                className={`shrink-0 px-2 py-1 rounded-lg border text-[10px] font-mono font-bold transition-colors ${
+                                  canCraft
+                                    ? 'bg-emerald-500/30 hover:bg-emerald-500/45 border-emerald-300 text-white'
+                                    : 'bg-white/5 border-white/10 text-slate-500 cursor-not-allowed'
+                                }`}
+                              >
+                                Sintetizar
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                              {recipe.scienceNote}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1 mt-1.5 text-[9px] font-mono">
+                              {recipe.ingredients.map((ing) => {
+                                const def = MINING_RESOURCES[ing.resourceId];
+                                const owned = survival.cargoInventory[ing.resourceId] ?? 0;
+                                const ok = owned >= ing.amount;
+                                return (
+                                  <span
+                                    key={ing.resourceId}
+                                    className={`px-1.5 py-0.5 rounded border ${
+                                      ok
+                                        ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+                                        : 'bg-rose-500/10 border-rose-400/25 text-slate-300'
+                                    }`}
+                                  >
+                                    {owned}/{ing.amount} {def.formula.split(' ')[0]}
+                                  </span>
+                                );
+                              })}
+                              <span
+                                className={`px-1.5 py-0.5 rounded border ${
+                                  hasEnergy
+                                    ? 'bg-sky-500/15 border-sky-400/30 text-sky-200'
+                                    : 'bg-rose-500/20 border-rose-400/40 text-rose-200'
+                                }`}
+                              >
+                                ⚡ {recipe.energyCostPct}%
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 4. Astrochemical Resource Catalog */}
+                  <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-purple-300">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <Atom className="w-3.5 h-3.5" />
+                        CATÁLOGO ASTROQUÍMICO (10)
+                      </span>
+                      <span className="text-slate-400">{survival.totalMinedUnits} extraídos</span>
+                    </div>
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                      <input
+                        type="text"
+                        value={miningCatalogQuery}
+                        onChange={(e) => setMiningCatalogQuery(e.target.value)}
+                        placeholder="Filtrar minério, fórmula ou planeta..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-white/15 text-[11px] text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-400"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      {filteredCatalog.map((res) => {
+                        const rarityLabel =
+                          res.rarity === 'EXOTIC'
+                            ? 'EXÓTICO'
+                            : res.rarity === 'RARE'
+                              ? 'RARO'
+                              : res.rarity === 'UNCOMMON'
+                                ? 'INCOMUM'
+                                : 'COMUM';
+                        return (
+                          <div
+                            key={res.id}
+                            className="bg-slate-950/75 border border-white/10 rounded-lg p-2 space-y-1"
+                          >
+                            <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                              <span className="font-bold text-white flex items-center gap-1.5 truncate">
+                                <span
+                                  className="w-2 h-2 rounded-full shrink-0"
+                                  style={{ backgroundColor: res.colorHex }}
+                                />
+                                {res.name}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/5 text-slate-300 shrink-0">
+                                {rarityLabel} · {res.creditValue} CR
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[9px] font-mono text-cyan-300">
+                              <span>{res.formula}</span>
+                              <span className="text-slate-400">{res.unitMassKg} kg/un</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 leading-snug">
+                              {res.description}
+                            </p>
+                            <div className="text-[9px] font-mono text-emerald-300/90">
+                              Fontes: {res.commonSources}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {activeTab === 'systems' && (
               <>
@@ -761,11 +1195,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                             brakeRequested: preset.val === 0,
                           }))
                         }
-                        className={`py-1.5 rounded-lg border transition-colors ${
-                          Math.abs(controlState.throttle - preset.val) < 0.04
-                            ? 'bg-amber-500/30 border-amber-400 text-amber-200 font-bold'
-                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                        }`}
+                        className={`py-1.5 rounded-lg border transition-colors ${Math.abs(controlState.throttle - preset.val) < 0.04
+                          ? 'bg-amber-500/30 border-amber-400 text-amber-200 font-bold'
+                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                          }`}
                       >
                         {preset.label}
                       </button>
@@ -784,11 +1217,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           return { ...prev, headlightsOn: !prev.headlightsOn };
                         })
                       }
-                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${
-                        controlState.headlightsOn
-                          ? 'bg-amber-400/25 border-amber-300 text-amber-100'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${controlState.headlightsOn
+                        ? 'bg-amber-400/25 border-amber-300 text-amber-100'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       <Lightbulb className="w-3.5 h-3.5" />
                       <span>Faróis (L)</span>
@@ -801,11 +1233,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           return { ...prev, sasEnabled: !prev.sasEnabled };
                         })
                       }
-                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${
-                        controlState.sasEnabled
-                          ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${controlState.sasEnabled
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-100'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       <Compass className="w-3.5 h-3.5" />
                       <span>
@@ -833,11 +1264,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           return { ...prev, shieldsOn: !prev.shieldsOn };
                         })
                       }
-                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${
-                        controlState.shieldsOn
-                          ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${controlState.shieldsOn
+                        ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       <Shield className="w-3.5 h-3.5" />
                       <span>Escudos</span>
@@ -850,11 +1280,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           return { ...prev, interiorLightsOn: !prev.interiorLightsOn };
                         })
                       }
-                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${
-                        controlState.interiorLightsOn
-                          ? 'bg-sky-500/25 border-sky-300 text-sky-100'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${controlState.interiorLightsOn
+                        ? 'bg-sky-500/25 border-sky-300 text-sky-100'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Luz Cabine (I)</span>
@@ -892,11 +1321,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                         spaceAudio.playCockpitSwitch(!showTouchPad);
                         setShowTouchPad((v) => !v);
                       }}
-                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${
-                        showTouchPad
-                          ? 'bg-amber-500/25 border-amber-400 text-amber-100'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                      }`}
+                      className={`flex items-center gap-2 py-2 px-2.5 rounded-xl border transition-all ${showTouchPad
+                        ? 'bg-amber-500/25 border-amber-400 text-amber-100'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
                     >
                       <Gauge className="w-3.5 h-3.5" />
                       <span>Manche Tátil</span>
@@ -929,7 +1357,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       setAudioVol(val);
                       spaceAudio.unlock();
                       spaceAudio.setMasterVolume(val / 100);
-                    if (val > 0 && isAudioMuted) onToggleAudioMuted();
+                      if (val > 0 && isAudioMuted) onToggleAudioMuted();
                     }}
                     className="w-full accent-emerald-400 cursor-pointer"
                   />
@@ -1033,13 +1461,12 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           }
                           style={{ transform: `translate(${px}px, ${py}px)` }}
                           title={`${c.name} (${c.distanceFormatted}) — Travar rota`}
-                          className={`absolute w-2.5 h-2.5 rounded-full transition-transform hover:scale-150 ${
-                            c.category === 'star'
-                              ? 'bg-amber-300'
-                              : c.category === 'galaxy'
-                                ? 'bg-purple-400'
-                                : 'bg-sky-400'
-                          }`}
+                          className={`absolute w-2.5 h-2.5 rounded-full transition-transform hover:scale-150 ${c.category === 'star'
+                            ? 'bg-amber-300'
+                            : c.category === 'galaxy'
+                              ? 'bg-purple-400'
+                              : 'bg-sky-400'
+                            }`}
                         />
                       );
                     })}
@@ -1060,11 +1487,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           autopilotTargetId: c.id,
                         }))
                       }
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors ${
-                        controlState.autopilotTargetId === c.id
-                          ? 'bg-amber-500/20 border border-amber-400/50 text-amber-100'
-                          : 'bg-white/5 hover:bg-white/10 text-slate-200'
-                      }`}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors ${controlState.autopilotTargetId === c.id
+                        ? 'bg-amber-500/20 border border-amber-400/50 text-amber-100'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-200'
+                        }`}
                     >
                       <span className="font-medium truncate">{c.name}</span>
                       <span className="text-[10px] font-mono text-sky-300 shrink-0 ml-2">
@@ -1113,6 +1539,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   <div className="flex justify-between">
                     <span className="text-slate-400">Radiadores Térmicos</span>
                     <span className="font-mono text-cyan-300">K</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Extrator Orbital a Laser</span>
+                    <span className="font-mono text-cyan-300">X</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Modo ECO Combustível</span>
@@ -1281,13 +1711,12 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
               </span>
               <span className="hidden sm:inline text-white/20">·</span>
               <span
-                className={`hidden sm:inline ${
-                  survival.hungerPercent < 25 ||
+                className={`hidden sm:inline ${survival.hungerPercent < 25 ||
                   survival.thirstPercent < 25 ||
                   survival.fatiguePercent < 20
-                    ? 'text-amber-300 font-bold'
-                    : 'text-slate-300'
-                }`}
+                  ? 'text-amber-300 font-bold'
+                  : 'text-slate-300'
+                  }`}
               >
                 PILOTO{' '}
                 {Math.round(
@@ -1301,25 +1730,38 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
             <button
               onClick={onToggleEcoMode}
-              className={`px-1.5 py-0.5 rounded border transition-colors ${
-                survival.ecoCruiseMode
-                  ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-200 font-bold'
-                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
-              }`}
+              className={`px-1.5 py-0.5 rounded border transition-colors ${survival.ecoCruiseMode
+                ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-200 font-bold'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
+                }`}
               title="Alternar Modo ECO de Economia de Combustível (Y)"
             >
               ECO
             </button>
             <button
               onClick={onToggleRadiators}
-              className={`px-1.5 py-0.5 rounded border transition-colors ${
-                survival.radiatorsDeployed
-                  ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200 font-bold'
-                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
-              }`}
+              className={`px-1.5 py-0.5 rounded border transition-colors ${survival.radiatorsDeployed
+                ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200 font-bold'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
+                }`}
               title="Estender / Retrair Radiadores Térmicos (K)"
             >
               RAD
+            </button>
+            <button
+              onClick={onToggleMiningLaser}
+              className={`px-1.5 py-0.5 rounded border transition-colors ${
+                survival.mining.isDrilling
+                  ? 'bg-cyan-500/35 border-cyan-300 text-white font-bold animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.55)]'
+                  : survival.miningLaserActive || controlState.miningLaserActive
+                    ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200 font-bold'
+                    : survival.mining.inRange
+                      ? 'bg-emerald-500/20 border-emerald-400/55 text-emerald-200 font-bold'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400'
+              }`}
+              title="Ativar / Desligar Laser Extrator Orbital (Tecla X)"
+            >
+              EXT
             </button>
             {survival.fuelPercent < 18 && (
               <button
@@ -1357,116 +1799,114 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           </div>
         ) : (
           <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/78 backdrop-blur-xl border border-white/15 rounded-full px-3.5 py-1.5 shadow-xl max-w-full">
-          <div className="text-[11px] font-mono text-white font-bold whitespace-nowrap">
-            {telemetry.speedFormatted}
-          </div>
+            <div className="text-[11px] font-mono text-white font-bold whitespace-nowrap">
+              {telemetry.speedFormatted}
+            </div>
 
-          <div className="h-4 w-px bg-white/15" />
+            <div className="h-4 w-px bg-white/15" />
 
-          <div className="flex items-center gap-1.5">
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={Math.max(0, controlState.throttle)}
-              onChange={(e) =>
-                onUpdateControl((prev) => ({
-                  ...prev,
-                  brakeRequested: false,
-                  throttle: parseFloat(e.target.value),
-                }))
-              }
-              className="w-16 sm:w-28 accent-amber-400 cursor-pointer"
-              title="Manete de Potência"
-            />
-            <span className="text-[10px] font-mono text-amber-300 w-8 text-right">
-              {Math.round(controlState.throttle * 100)}%
-            </span>
-          </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={Math.max(0, controlState.throttle)}
+                onChange={(e) =>
+                  onUpdateControl((prev) => ({
+                    ...prev,
+                    brakeRequested: false,
+                    throttle: parseFloat(e.target.value),
+                  }))
+                }
+                className="w-16 sm:w-28 accent-amber-400 cursor-pointer"
+                title="Manete de Potência"
+              />
+              <span className="text-[10px] font-mono text-amber-300 w-8 text-right">
+                {Math.round(controlState.throttle * 100)}%
+              </span>
+            </div>
 
-          <button
-            onClick={() =>
-              onUpdateControl((prev) => ({
-                ...prev,
-                brakeRequested: false,
-                boostActive: !prev.boostActive,
-                throttle: !prev.boostActive && prev.throttle < 0.5 ? 0.85 : prev.throttle,
-              }))
-            }
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-bold font-mono transition-all ${
-              controlState.boostActive
-                ? 'bg-cyan-500/35 border-cyan-300 text-white shadow-[0_0_12px_rgba(34,211,238,0.5)]'
-                : 'bg-white/5 hover:bg-white/15 border-white/15 text-cyan-200'
-            }`}
-            title="Motor de Dobra (Shift)"
-          >
-            <Zap className="w-3 h-3" />
-            <span className="hidden sm:inline">Dobra</span>
-          </button>
-
-          <button
-            onClick={() =>
-              onUpdateControl((prev) => ({
-                ...prev,
-                throttle: 0,
-                boostActive: false,
-                autopilotTargetId: null,
-                brakeRequested: true,
-              }))
-            }
-            className="px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/35 text-rose-100 text-[10px] font-bold font-mono transition-colors"
-            title="Freio Total (Espaço)"
-          >
-            Freio
-          </button>
-
-          <div className="h-4 w-px bg-white/15" />
-
-          {/* Manual 360° Ship Inclination / Roll Controls (← / → + 0° Level) */}
-          <div className="flex items-center gap-1" title="Inclinar Nave 360° / Ponta Cabeça (Setas ← e →)">
-            <button
-              {...holdButtonProps('roll', 1)}
-              className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
-              title="Inclinar para a Esquerda (Segure ←)"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span className="hidden sm:inline">←</span>
-            </button>
             <button
               onClick={() =>
                 onUpdateControl((prev) => ({
                   ...prev,
-                  recenterTrigger: (prev.recenterTrigger || 0) + 1,
+                  brakeRequested: false,
+                  boostActive: !prev.boostActive,
+                  throttle: !prev.boostActive && prev.throttle < 0.5 ? 0.85 : prev.throttle,
                 }))
               }
-              className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-[10px] font-mono text-slate-300 min-w-[36px] text-center transition-colors"
-              title="Ângulo de Inclinação Atual (Clique ou pressione C para nivelar em 0°)"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-bold font-mono transition-all ${controlState.boostActive
+                ? 'bg-cyan-500/35 border-cyan-300 text-white shadow-[0_0_12px_rgba(34,211,238,0.5)]'
+                : 'bg-white/5 hover:bg-white/15 border-white/15 text-cyan-200'
+                }`}
+              title="Motor de Dobra (Shift)"
             >
-              {telemetry.rollDeg}°
+              <Zap className="w-3 h-3" />
+              <span className="hidden sm:inline">Dobra</span>
             </button>
-            <button
-              {...holdButtonProps('roll', -1)}
-              className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
-              title="Inclinar para a Direita (Segure →)"
-            >
-              <span className="hidden sm:inline">→</span>
-              <RotateCw className="w-3 h-3" />
-            </button>
-          </div>
 
-          <button
-            onClick={() => setShowTouchPad((v) => !v)}
-            className={`p-1.5 rounded-full border transition-colors ${
-              showTouchPad
+            <button
+              onClick={() =>
+                onUpdateControl((prev) => ({
+                  ...prev,
+                  throttle: 0,
+                  boostActive: false,
+                  autopilotTargetId: null,
+                  brakeRequested: true,
+                }))
+              }
+              className="px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/35 text-rose-100 text-[10px] font-bold font-mono transition-colors"
+              title="Freio Total (Espaço)"
+            >
+              Freio
+            </button>
+
+            <div className="h-4 w-px bg-white/15" />
+
+            {/* Manual 360° Ship Inclination / Roll Controls (← / → + 0° Level) */}
+            <div className="flex items-center gap-1" title="Inclinar Nave 360° / Ponta Cabeça (Setas ← e →)">
+              <button
+                {...holdButtonProps('roll', 1)}
+                className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
+                title="Inclinar para a Esquerda (Segure ←)"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span className="hidden sm:inline">←</span>
+              </button>
+              <button
+                onClick={() =>
+                  onUpdateControl((prev) => ({
+                    ...prev,
+                    recenterTrigger: (prev.recenterTrigger || 0) + 1,
+                  }))
+                }
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-[10px] font-mono text-slate-300 min-w-[36px] text-center transition-colors"
+                title="Ângulo de Inclinação Atual (Clique ou pressione C para nivelar em 0°)"
+              >
+                {telemetry.rollDeg}°
+              </button>
+              <button
+                {...holdButtonProps('roll', -1)}
+                className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
+                title="Inclinar para a Direita (Segure →)"
+              >
+                <span className="hidden sm:inline">→</span>
+                <RotateCw className="w-3 h-3" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setShowTouchPad((v) => !v)}
+              className={`p-1.5 rounded-full border transition-colors ${showTouchPad
                 ? 'bg-amber-500/30 border-amber-400 text-amber-200'
                 : 'bg-white/5 hover:bg-white/15 border-white/10 text-slate-300'
-            }`}
-            title="Mostrar/Ocultar Manche na Tela"
-          >
-            <Compass className="w-3.5 h-3.5" />
-          </button>
-        </div>
+                }`}
+              title="Mostrar/Ocultar Manche na Tela"
+            >
+              <Compass className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
     </div>

@@ -1,12 +1,22 @@
 import {
   BodyCategory,
   CabinStationId,
+  MiningLaserTelemetry,
+  MiningRecipeId,
+  MiningResourceId,
   PowerPips,
   PowerSubsystemId,
   RefuelSourceKind,
   SpacecraftVariantId,
   SurvivalResourcesState,
 } from '../types/astronomy';
+import {
+  CatalogOrbitalHotspot,
+  getBodyMiningProfile,
+  MINING_RECIPES_BY_ID,
+  MINING_RESOURCES,
+  pickMinedResourceForBody,
+} from '../data/miningCatalog';
 
 export const POWER_PIP_TOTAL = 8;
 export const MAX_PIPS_PER_SUBSYSTEM = 4;
@@ -164,6 +174,27 @@ export function createInitialSurvivalState(): SurvivalResourcesState {
     nearRefuelSource: 'HANGAR',
     nearbyCabinStation: 'NONE',
     activeStatusAlert: null,
+    miningLaserActive: false,
+    cargoInventory: {},
+    cargoCapacityUnits: 120,
+    spaceCredits: 250,
+    totalMinedUnits: 0,
+    mining: {
+      isActive: false,
+      isDrilling: false,
+      inRange: false,
+      targetBodyId: null,
+      targetBodyName: null,
+      activeResourceId: null,
+      activeHotspotLabel: null,
+      hotspotMultiplier: 1,
+      surfaceDistanceRatio: 99,
+      beamPowerKw: 0,
+      extractionRatePerSec: 0,
+      extractionProgress01: 0,
+      lastMinedResourceId: null,
+      statusMessage: 'Extrator orbital em espera. Aproxime-se de um astro e pressione X.',
+    },
   };
 }
 
@@ -199,10 +230,10 @@ export function stepSurvivalSimulation(
   const dt = Math.min(0.15, Math.max(0.001, p.dt));
   if (dt <= 0) return state;
 
-  // Ship preset efficiency factors
-  const fuelEfficiency =
-    p.shipVariantId === 'aegis-titan' ? 0.78 : p.shipVariantId === 'xr9-phantom' ? 1.12 : 1.0;
-  const warpEfficiency = p.shipVariantId === 'aegis-titan' ? 0.74 : 1.0;
+  // Nave única polivalente: todas as pinturas compartilham eficiência 1.0x idêntica
+  void p.shipVariantId;
+  const fuelEfficiency = 1.0;
+  const warpEfficiency = 1.0;
 
   if (p.mode === 'HANGAR') {
     return {
@@ -556,5 +587,502 @@ export function fullStationResupplyAction(state: SurvivalResourcesState): Surviv
     foodRations: 6,
     waterFlasks: 6,
     repairKits: 3,
+  };
+}
+
+
+export interface MiningStepInput {
+  dt: number;
+  clockTime: number;
+  targetBodyId: string | null;
+  targetBodyName: string | null;
+  surfaceDistanceRatio: number;
+  hotspots: CatalogOrbitalHotspot[];
+  shipAimDirOnTargetWorld: { x: number; y: number; z: number } | null;
+  hitNormalLocal: { x: number; y: number; z: number } | null;
+}
+
+export interface MiningStepResult {
+  state: SurvivalResourcesState;
+  minedUnitsThisTick: number;
+  minedResourceId: MiningResourceId | null;
+  activeHotspot: CatalogOrbitalHotspot | null;
+  effectiveColorHex: string;
+}
+
+export function getTotalCargoUnits(
+  inventory: Partial<Record<MiningResourceId, number>>
+): number {
+  let total = 0;
+  for (const key of Object.keys(inventory) as MiningResourceId[]) {
+    total += Math.max(0, Math.floor(inventory[key] ?? 0));
+  }
+  return total;
+}
+
+export function createIdleMiningTelemetry(
+  lastMinedResourceId: MiningResourceId | null = null,
+  statusMessage = 'Extrator orbital em espera. Aproxime-se de um astro e pressione X.'
+): MiningLaserTelemetry {
+  return {
+    isActive: false,
+    isDrilling: false,
+    inRange: false,
+    targetBodyId: null,
+    targetBodyName: null,
+    activeResourceId: null,
+    activeHotspotLabel: null,
+    hotspotMultiplier: 1,
+    surfaceDistanceRatio: 99,
+    beamPowerKw: 0,
+    extractionRatePerSec: 0,
+    extractionProgress01: 0,
+    lastMinedResourceId,
+    statusMessage,
+  };
+}
+
+/**
+ * Evaluates realistic orbital laser extraction physics:
+ * - Proximity range scales fairly across 1:1 / compressed worlds via surfaceDistanceRatio (dist / radius)
+ * - Detects surface geological hotspots & increases extraction yield (up to 2.6x)
+ * - Consumes reactor battery and adds thermal load mitigated by Radiators (K) & Weapons PIPs
+ */
+export function stepMiningSimulation(
+  prev: SurvivalResourcesState,
+  input: MiningStepInput
+): MiningStepResult {
+  const dt = Math.min(0.15, Math.max(0.001, input.dt));
+  const usedCargo = getTotalCargoUnits(prev.cargoInventory);
+  const cargoFull = usedCargo >= prev.cargoCapacityUnits;
+
+  const bodyId = input.targetBodyId;
+  const bodyName = input.targetBodyName ?? bodyId ?? '—';
+  const ratio = input.surfaceDistanceRatio;
+  const maxMiningRatio = 4.8;
+  const profile = bodyId ? getBodyMiningProfile(bodyId) : null;
+  const inRange = Boolean(bodyId && profile && ratio <= maxMiningRatio);
+
+  // Detect nearest geological hotspot aligned under the laser hit point on the body
+  let matchedHotspot: CatalogOrbitalHotspot | null = null;
+  if (input.hitNormalLocal && input.hotspots.length > 0) {
+    let bestDot = -1;
+    for (const spot of input.hotspots) {
+      const dot =
+        spot.localNormal.x * input.hitNormalLocal.x +
+        spot.localNormal.y * input.hitNormalLocal.y +
+        spot.localNormal.z * input.hitNormalLocal.z;
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      if (angle <= spot.radiusRad && dot > bestDot) {
+        bestDot = dot;
+        matchedHotspot = spot;
+      }
+    }
+  }
+
+  const effectiveColorHex = matchedHotspot?.colorHex ?? profile?.laserColorHex ?? '#38bdf8';
+
+  if (!prev.miningLaserActive) {
+    let standbyMsg = 'Extrator pronto. Aproxime-se de qualquer astro ou asteroide.';
+    if (bodyId && profile) {
+      if (!profile.extractable) {
+        standbyMsg = profile.restrictionReason ?? `${bodyName}: mineração restrita.`;
+      } else if (inRange) {
+        standbyMsg = `Em órbita de ${bodyName} — pressione [X] para acionar o Laser Extrator.`;
+      } else {
+        standbyMsg = `Alvo: ${bodyName} (${ratio.toFixed(1)}R). Aproxime para ≤ ${maxMiningRatio.toFixed(1)}R.`;
+      }
+    }
+    return {
+      state: {
+        ...prev,
+        mining: {
+          ...prev.mining,
+          isActive: false,
+          isDrilling: false,
+          inRange,
+          targetBodyId: bodyId,
+          targetBodyName: bodyName,
+          activeResourceId: matchedHotspot?.resourceId ?? profile?.yields[0]?.resourceId ?? null,
+          activeHotspotLabel: matchedHotspot?.label ?? null,
+          hotspotMultiplier: matchedHotspot?.multiplier ?? 1,
+          surfaceDistanceRatio: ratio,
+          beamPowerKw: 0,
+          extractionRatePerSec: 0,
+          extractionProgress01: Math.max(0, prev.mining.extractionProgress01 - dt * 0.4),
+          statusMessage: standbyMsg,
+        },
+      },
+      minedUnitsThisTick: 0,
+      minedResourceId: null,
+      activeHotspot: matchedHotspot,
+      effectiveColorHex,
+    };
+  }
+
+  // Laser is ON
+  if (!bodyId || !profile) {
+    return {
+      state: {
+        ...prev,
+        mining: {
+          ...prev.mining,
+          isActive: true,
+          isDrilling: false,
+          inRange: false,
+          targetBodyId: null,
+          targetBodyName: null,
+          activeResourceId: null,
+          activeHotspotLabel: null,
+          hotspotMultiplier: 1,
+          surfaceDistanceRatio: ratio,
+          beamPowerKw: 18,
+          extractionRatePerSec: 0,
+          statusMessage: 'Sem astro ao alcance. Aproxime-se de uma lua, planeta ou asteroide.',
+        },
+      },
+      minedUnitsThisTick: 0,
+      minedResourceId: null,
+      activeHotspot: null,
+      effectiveColorHex,
+    };
+  }
+
+  if (!profile.extractable) {
+    return {
+      state: {
+        ...prev,
+        miningLaserActive: false,
+        mining: {
+          ...prev.mining,
+          isActive: false,
+          isDrilling: false,
+          inRange: false,
+          targetBodyId: bodyId,
+          targetBodyName: bodyName,
+          activeResourceId: null,
+          activeHotspotLabel: null,
+          hotspotMultiplier: 1,
+          surfaceDistanceRatio: ratio,
+          beamPowerKw: 0,
+          extractionRatePerSec: 0,
+          statusMessage: profile.restrictionReason ?? `${bodyName} não permite mineração.`,
+        },
+      },
+      minedUnitsThisTick: 0,
+      minedResourceId: null,
+      activeHotspot: null,
+      effectiveColorHex,
+    };
+  }
+
+  if (prev.batteryPercent <= 1.2) {
+    return {
+      state: {
+        ...prev,
+        miningLaserActive: false,
+        mining: {
+          ...prev.mining,
+          isActive: false,
+          isDrilling: false,
+          inRange,
+          targetBodyId: bodyId,
+          targetBodyName: bodyName,
+          beamPowerKw: 0,
+          extractionRatePerSec: 0,
+          statusMessage: 'Bateria esgotada! Aguarde recarga solar/reator antes de reativar [X].',
+        },
+      },
+      minedUnitsThisTick: 0,
+      minedResourceId: null,
+      activeHotspot: matchedHotspot,
+      effectiveColorHex,
+    };
+  }
+
+  if (cargoFull) {
+    return {
+      state: {
+        ...prev,
+        miningLaserActive: false,
+        mining: {
+          ...prev.mining,
+          isActive: false,
+          isDrilling: false,
+          inRange,
+          targetBodyId: bodyId,
+          targetBodyName: bodyName,
+          beamPowerKw: 0,
+          extractionRatePerSec: 0,
+          statusMessage: `Porão de carga cheio (${usedCargo}/${prev.cargoCapacityUnits} un). Sintetize ou venda na Doca.`,
+        },
+      },
+      minedUnitsThisTick: 0,
+      minedResourceId: null,
+      activeHotspot: matchedHotspot,
+      effectiveColorHex,
+    };
+  }
+
+  if (!inRange) {
+    return {
+      state: {
+        ...prev,
+        mining: {
+          ...prev.mining,
+          isActive: true,
+          isDrilling: false,
+          inRange: false,
+          targetBodyId: bodyId,
+          targetBodyName: bodyName,
+          activeResourceId: profile.yields[0]?.resourceId ?? null,
+          activeHotspotLabel: null,
+          hotspotMultiplier: 1,
+          surfaceDistanceRatio: ratio,
+          beamPowerKw: 45,
+          extractionRatePerSec: 0,
+          statusMessage: `Feixe em espera — aproxime de ${bodyName} (${ratio.toFixed(1)}R / máx ${maxMiningRatio.toFixed(1)}R).`,
+        },
+      },
+      minedUnitsThisTick: 0,
+      minedResourceId: null,
+      activeHotspot: null,
+      effectiveColorHex,
+    };
+  }
+
+  // Active orbital drilling on target body
+  const weaponsMult = 0.72 + prev.powerPips.weapons * 0.24; // 0.72..1.68x
+  const proximityFactor = Math.max(0.32, Math.min(1.45, 1.5 - (ratio - 1.04) * 0.28));
+  const hotspotMult = matchedHotspot ? matchedHotspot.multiplier : 1.0;
+  const hardness = Math.max(0.5, profile.hardnessFactor);
+
+  // Units per second
+  const extractionRatePerSec =
+    (0.46 * weaponsMult * proximityFactor * hotspotMult) / hardness;
+  const beamPowerKw = Math.round(320 * weaponsMult * proximityFactor);
+
+  // Energy & thermal load during active laser ablation
+  const batteryDrain = (1.35 + prev.powerPips.weapons * 0.22) * dt;
+  const radiatorMitigation = prev.radiatorsDeployed ? 0.42 : 1.0;
+  const heatGain = 4.6 * weaponsMult * radiatorMitigation * dt;
+
+  let nextProgress = prev.mining.extractionProgress01 + extractionRatePerSec * dt;
+  let minedUnitsThisTick = 0;
+  let minedResourceId: MiningResourceId | null = null;
+  const nextInventory = { ...prev.cargoInventory };
+  let nextTotalMined = prev.totalMinedUnits;
+
+  const activeRes =
+    matchedHotspot?.resourceId ??
+    prev.mining.activeResourceId ??
+    profile.yields[0]?.resourceId ??
+    'silicate-regolith';
+
+  if (nextProgress >= 1) {
+    const whole = Math.min(
+      prev.cargoCapacityUnits - usedCargo,
+      Math.floor(nextProgress)
+    );
+    if (whole > 0) {
+      nextProgress -= whole;
+      const seedRand = Math.abs(Math.sin(input.clockTime * 19.37 + nextTotalMined * 3.17)) % 1;
+      const picked = pickMinedResourceForBody(bodyId, matchedHotspot, seedRand);
+      nextInventory[picked] = (nextInventory[picked] ?? 0) + whole;
+      nextTotalMined += whole;
+      minedUnitsThisTick = whole;
+      minedResourceId = picked;
+    } else {
+      nextProgress = 0.99;
+    }
+  }
+
+  const resName = MINING_RESOURCES[minedResourceId ?? activeRes].name;
+  const nextReactorTemp = Math.min(138, prev.reactorTempC + heatGain);
+  const nextHullTemp = Math.min(115, prev.hullTempC + heatGain * 0.28);
+
+  return {
+    state: {
+      ...prev,
+      batteryPercent: Math.max(0, Number((prev.batteryPercent - batteryDrain).toFixed(2))),
+      reactorTempC: Number(nextReactorTemp.toFixed(1)),
+      hullTempC: Number(nextHullTemp.toFixed(1)),
+      cargoInventory: nextInventory,
+      totalMinedUnits: nextTotalMined,
+      mining: {
+        isActive: true,
+        isDrilling: true,
+        inRange: true,
+        targetBodyId: bodyId,
+        targetBodyName: bodyName,
+        activeResourceId: minedResourceId ?? activeRes,
+        activeHotspotLabel: matchedHotspot?.label ?? null,
+        hotspotMultiplier: hotspotMult,
+        surfaceDistanceRatio: Number(ratio.toFixed(2)),
+        beamPowerKw,
+        extractionRatePerSec: Number(extractionRatePerSec.toFixed(2)),
+        extractionProgress01: Number(nextProgress.toFixed(3)),
+        lastMinedResourceId: minedResourceId ?? prev.mining.lastMinedResourceId,
+        statusMessage: matchedHotspot
+          ? `VEIO RICO (${hotspotMult.toFixed(1)}x): ${matchedHotspot.label} · ${resName}`
+          : `Extraindo ${resName} de ${bodyName}...`,
+      },
+    },
+    minedUnitsThisTick,
+    minedResourceId,
+    activeHotspot: matchedHotspot,
+    effectiveColorHex,
+  };
+}
+
+export function synthesizeRecipeAction(
+  state: SurvivalResourcesState,
+  recipeId: MiningRecipeId
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const recipe = MINING_RECIPES_BY_ID[recipeId];
+  if (!recipe) {
+    return { ok: false, state, message: 'Receita química desconhecida.' };
+  }
+
+  if (state.batteryPercent < recipe.energyCostPct) {
+    return {
+      ok: false,
+      state,
+      message: `Bateria insuficiente (requer ${recipe.energyCostPct}% para sintetizar).`,
+    };
+  }
+
+  for (const ing of recipe.ingredients) {
+    const owned = state.cargoInventory[ing.resourceId] ?? 0;
+    if (owned < ing.amount) {
+      const def = MINING_RESOURCES[ing.resourceId];
+      return {
+        ok: false,
+        state,
+        message: `Falta ${ing.amount - owned}x ${def.name} (${def.formula}).`,
+      };
+    }
+  }
+
+  const nextInventory = { ...state.cargoInventory };
+  for (const ing of recipe.ingredients) {
+    const nextQty = (nextInventory[ing.resourceId] ?? 0) - ing.amount;
+    if (nextQty <= 0) {
+      delete nextInventory[ing.resourceId];
+    } else {
+      nextInventory[ing.resourceId] = nextQty;
+    }
+  }
+
+  const fx = recipe.effects;
+  const coolingDrop = fx.coolingC ?? 0;
+  const nextState: SurvivalResourcesState = {
+    ...state,
+    cargoInventory: nextInventory,
+    batteryPercent: Math.min(
+      100,
+      Math.max(0, Number((state.batteryPercent - recipe.energyCostPct + (fx.battery ?? 0)).toFixed(1)))
+    ),
+    thirstPercent: Math.min(100, Number((state.thirstPercent + (fx.water ?? 0)).toFixed(1))),
+    waterFlasks: Math.min(12, state.waterFlasks + (fx.waterFlasks ?? 0)),
+    shipOxygenPercent: Math.min(100, Number((state.shipOxygenPercent + (fx.oxygen ?? 0)).toFixed(1))),
+    evaOxygenPercent: Math.min(
+      100,
+      Number((state.evaOxygenPercent + (fx.oxygen ? fx.oxygen * 0.65 : 0)).toFixed(1))
+    ),
+    hungerPercent: Math.min(100, Number((state.hungerPercent + (fx.food ?? 0)).toFixed(1))),
+    foodRations: Math.min(12, state.foodRations + (fx.foodRations ?? 0)),
+    fuelPercent: Math.min(100, Number((state.fuelPercent + (fx.fuel ?? 0)).toFixed(1))),
+    hullIntegrity: Math.min(100, Number((state.hullIntegrity + (fx.hull ?? 0)).toFixed(1))),
+    repairKits: Math.min(10, state.repairKits + (fx.repairKits ?? 0)),
+    warpCells: Math.min(12, state.warpCells + (fx.warpCells ?? 0)),
+    warpEnergyPercent: Math.min(100, Number((state.warpEnergyPercent + (fx.warpEnergy ?? 0)).toFixed(1))),
+    reactorTempC: coolingDrop > 0 ? Math.max(24, Number((state.reactorTempC - coolingDrop).toFixed(1))) : state.reactorTempC,
+    hullTempC: coolingDrop > 0 ? Math.max(18, Number((state.hullTempC - coolingDrop * 0.7).toFixed(1))) : state.hullTempC,
+    spaceCredits: state.spaceCredits + (fx.credits ?? 0),
+  };
+
+  return {
+    ok: true,
+    state: nextState,
+    message: `Síntese concluída: ${recipe.outputSummary}`,
+  };
+}
+
+export function sellCargoResourceAction(
+  state: SurvivalResourcesState,
+  resourceId: MiningResourceId,
+  units = 1
+): { ok: boolean; state: SurvivalResourcesState; earned: number; message: string } {
+  const owned = state.cargoInventory[resourceId] ?? 0;
+  if (owned <= 0) {
+    return { ok: false, state, earned: 0, message: 'Sem unidades desse recurso no porão.' };
+  }
+  const qty = Math.min(owned, Math.max(1, units));
+  const def = MINING_RESOURCES[resourceId];
+  const bonusMult = state.nearRefuelSource === 'ORBITAL_STATION' ? 1.25 : 1.0;
+  const earned = Math.round(def.creditValue * qty * bonusMult);
+  const nextInventory = { ...state.cargoInventory };
+  const rem = owned - qty;
+  if (rem <= 0) delete nextInventory[resourceId];
+  else nextInventory[resourceId] = rem;
+
+  return {
+    ok: true,
+    earned,
+    state: {
+      ...state,
+      cargoInventory: nextInventory,
+      spaceCredits: state.spaceCredits + earned,
+    },
+    message: `Vendido ${qty}x ${def.name} por +${earned} CR${bonusMult > 1 ? ' (Bônus Doca +25%)' : ''}.`,
+  };
+}
+
+export function sellAllCargoAction(
+  state: SurvivalResourcesState
+): { ok: boolean; state: SurvivalResourcesState; earned: number; message: string } {
+  const bonusMult = state.nearRefuelSource === 'ORBITAL_STATION' ? 1.25 : 1.0;
+  let totalEarned = 0;
+  let totalSold = 0;
+
+  for (const key of Object.keys(state.cargoInventory) as MiningResourceId[]) {
+    const qty = state.cargoInventory[key] ?? 0;
+    if (qty > 0) {
+      totalSold += qty;
+      totalEarned += Math.round(MINING_RESOURCES[key].creditValue * qty * bonusMult);
+    }
+  }
+
+  if (totalSold === 0) {
+    return { ok: false, state, earned: 0, message: 'Porão de mineração está vazio.' };
+  }
+
+  return {
+    ok: true,
+    earned: totalEarned,
+    state: {
+      ...state,
+      cargoInventory: {},
+      spaceCredits: state.spaceCredits + totalEarned,
+    },
+    message: `Carga vendida (${totalSold} un): +${totalEarned} Créditos Espaciais!`,
+  };
+}
+
+export function discardCargoUnitAction(
+  state: SurvivalResourcesState,
+  resourceId: MiningResourceId,
+  units = 1
+): SurvivalResourcesState {
+  const owned = state.cargoInventory[resourceId] ?? 0;
+  if (owned <= 0) return state;
+  const nextInventory = { ...state.cargoInventory };
+  const rem = owned - units;
+  if (rem <= 0) delete nextInventory[resourceId];
+  else nextInventory[resourceId] = rem;
+  return {
+    ...state,
+    cargoInventory: nextInventory,
   };
 }

@@ -61,7 +61,17 @@ import { createAstronautCharacter3D, AstronautCharacterRefs } from '../utils/ast
 import { createOrbitalStation3DGroup } from '../utils/orbitalStationModel';
 import { createHangarBay3D, HangarCameraFocus } from '../utils/hangarBayModel';
 import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
-import { createInitialSurvivalState, stepSurvivalSimulation } from '../utils/survivalEngine';
+import {
+  createInitialSurvivalState,
+  stepMiningSimulation,
+  stepSurvivalSimulation,
+} from '../utils/survivalEngine';
+import {
+  CatalogOrbitalHotspot,
+  generateHotspotsForBody,
+  getBodyMiningProfile,
+  MINING_RESOURCES,
+} from '../data/miningCatalog';
 import { propagateSingleSatellite, VERIFIED_SATELLITE_CATALOG } from '../data/satellitesData';
 import { spaceAudio } from '../utils/spaceAudioEngine';
 import { VirtualSteerInput } from './SpacecraftCockpitHUD';
@@ -1431,6 +1441,158 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const warpLines = new THREE.LineSegments(warpGeo, warpMat);
     warpTunnelGroup.add(warpLines);
 
+    // REALISTIC 3D ORBITAL MINING LASER RIG + SURFACE CRATER + UPWARD ORE PARTICLE STREAM
+    const miningBeamGroup = new THREE.Group();
+    miningBeamGroup.visible = false;
+    scene.add(miningBeamGroup);
+
+    const miningCoreGeo = new THREE.CylinderGeometry(0.11, 0.16, 1.0, 14, 1, true);
+    miningCoreGeo.translate(0, 0.5, 0);
+    const miningCoreMat = new THREE.MeshBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0.94,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCoreMesh = new THREE.Mesh(miningCoreGeo, miningCoreMat);
+
+    const miningSheathGeo = new THREE.CylinderGeometry(0.32, 0.54, 1.0, 16, 1, true);
+    miningSheathGeo.translate(0, 0.5, 0);
+    const miningSheathMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningSheathMesh = new THREE.Mesh(miningSheathGeo, miningSheathMat);
+    miningBeamGroup.add(miningSheathMesh, miningCoreMesh);
+
+    const miningMuzzleGlowMat = new THREE.MeshBasicMaterial({
+      color: '#7dd3fc',
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const miningMuzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), miningMuzzleGlowMat);
+    miningBeamGroup.add(miningMuzzleGlow);
+
+    const miningCraterGroup = new THREE.Group();
+    miningCraterGroup.visible = false;
+    scene.add(miningCraterGroup);
+
+    const miningCraterDiscMat = new THREE.MeshBasicMaterial({
+      color: '#bae6fd',
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCraterDisc = new THREE.Mesh(new THREE.CircleGeometry(0.42, 24), miningCraterDiscMat);
+    miningCraterDisc.rotation.x = -Math.PI / 2;
+    miningCraterDisc.position.y = 0.015;
+
+    const miningCraterHaloMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.44,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCraterHalo = new THREE.Mesh(new THREE.RingGeometry(0.42, 1.05, 28), miningCraterHaloMat);
+    miningCraterHalo.rotation.x = -Math.PI / 2;
+    miningCraterHalo.position.y = 0.025;
+
+    const miningCraterShockMat = new THREE.MeshBasicMaterial({
+      color: '#bae6fd',
+      transparent: true,
+      opacity: 0.3,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCraterShock = new THREE.Mesh(new THREE.RingGeometry(0.88, 1.15, 28), miningCraterShockMat);
+    miningCraterShock.rotation.x = -Math.PI / 2;
+    miningCraterShock.position.y = 0.032;
+
+    const miningCraterLight = new THREE.PointLight('#38bdf8', 1.8, 0, 1.5);
+    miningCraterLight.position.set(0, 0.35, 0);
+    miningCraterGroup.add(miningCraterDisc, miningCraterHalo, miningCraterShock, miningCraterLight);
+
+    const MINING_STREAM_COUNT = 32;
+    const miningStreamGeo = new THREE.OctahedronGeometry(1, 0);
+    const miningStreamMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const miningStreamInstanced = new THREE.InstancedMesh(
+      miningStreamGeo,
+      miningStreamMat,
+      MINING_STREAM_COUNT
+    );
+    miningStreamInstanced.frustumCulled = false;
+    miningStreamInstanced.visible = false;
+    scene.add(miningStreamInstanced);
+
+    // 3D GEOLOGICAL VEIN HOTSPOTS GROUP (surface beacons anchored to planet spinMesh)
+    const hotspotGroup = new THREE.Group();
+    hotspotGroup.visible = false;
+    scene.add(hotspotGroup);
+    const hotspotBeacons = Array.from({ length: 3 }, () => {
+      const grp = new THREE.Group();
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: '#22d3ee',
+        transparent: true,
+        opacity: 0.56,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.76, 0.94, 28), ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.04;
+
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: '#22d3ee',
+        transparent: true,
+        opacity: 0.32,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.16, 1.35, 12, 1, true), beamMat);
+      spire.position.y = 0.7;
+      grp.add(ring, spire);
+      hotspotGroup.add(grp);
+      return { grp, ring, ringMat, beamMat };
+    });
+
+    let activeHotspotsBodyId: string | null = null;
+    let activeHotspotsList: CatalogOrbitalHotspot[] = [];
+    const _miningTmpMat4 = new THREE.Matrix4();
+    const _miningShipToTarget = new THREE.Vector3();
+    const _miningBeamStart = new THREE.Vector3();
+    const _miningBeamDir = new THREE.Vector3();
+    const _miningBeamEnd = new THREE.Vector3();
+    const _miningNormalWorld = new THREE.Vector3();
+    const _miningNormalLocal = new THREE.Vector3();
+    const _miningPerpU = new THREE.Vector3();
+    const _miningPerpV = new THREE.Vector3();
+    const _miningParticlePos = new THREE.Vector3();
+    const _miningScaleVec = new THREE.Vector3();
+    const _miningSpinInvQuat = new THREE.Quaternion();
+    const _miningDummyQuat = new THREE.Quaternion();
+    const _miningColorTmp = new THREE.Color();
+
     // SR-7 EXPLORER 3D SPACECRAFT & INTERACTIVE 4K COCKPIT + VENTRAL PULSE PROJECTILES
     const sr7 = createSR7Spacecraft3DGroup({
       maxAnisotropy,
@@ -1685,6 +1847,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const cur = prev.cockpitSeat || 'LEFT';
           const next = cur === 'LEFT' ? 'CENTER' : cur === 'CENTER' ? 'RIGHT' : 'LEFT';
           return { ...prev, cameraView: 'COCKPIT', cockpitSeat: next };
+        });
+      } else if (e.code === 'KeyX' && !e.repeat && !isWalking) {
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        callbacksRef.current.onUpdateSpacecraftControl((prev) => {
+          const nextActive = !prev.miningLaserActive;
+          spaceAudio.playCockpitSwitch(nextActive);
+          return { ...prev, miningLaserActive: nextActive };
         });
       } else if (e.code === 'KeyC') {
         lastManualOrbitTimestamp = 0;
@@ -2275,6 +2444,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       }
 
       const currentSimTimeMs = internalSimTimeRef.current;
+      if (!st.spacecraftControl.isActive) {
+        miningBeamGroup.visible = false;
+        miningCraterGroup.visible = false;
+        miningStreamInstanced.visible = false;
+        hotspotGroup.visible = false;
+      }
 
       // Multi-Scale Hierarchy Cross-Fade Factors based on distance from Solar System origin (0, 0, 0)
       const distFromOrigin = camera.position.length();
@@ -3932,6 +4107,260 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.quaternion.setFromRotationMatrix(_tmpMat4);
           controls.target.copy(sr7.rootGroup.position);
         }
+
+        // 6B. ORBITAL LASER MINING & ASTROCHEMICAL EXTRACTION PHYSICS
+        sr7.rootGroup.updateWorldMatrix(true, false);
+        sr7.hullGroup.updateWorldMatrix(true, false);
+        _miningBeamStart.copy(sr7.miningEmitterLocalPos);
+        sr7.hullGroup.localToWorld(_miningBeamStart);
+
+        let miningTargetBody: CelestialBodyData | null = null;
+        let miningTargetDistRatio = 999;
+        let miningTargetRadius = 1;
+        let bestMiningScore = Infinity;
+
+        for (let bi = 0; bi < ALL_CELESTIAL_BODIES.length; bi++) {
+          const cand = ALL_CELESTIAL_BODIES[bi];
+          if (cand.category === 'galaxy') continue;
+          const bPos = bodyWorldPositions[cand.id];
+          if (!bPos) continue;
+          const bRad = Math.max(0.00008, getScaledRadius(cand, st.scaleMode));
+          _miningShipToTarget.subVectors(bPos, _miningBeamStart);
+          const d = _miningShipToTarget.length();
+          const ratio = d / bRad;
+          if (ratio > 6.8) continue;
+          const dirToBody = _miningShipToTarget.divideScalar(Math.max(1e-9, d));
+          const aimDot = THREE.MathUtils.clamp(shipForward.dot(dirToBody), -1, 1);
+          const aimBonus = aimDot > 0.55 ? 0.58 : aimDot > 0.15 ? 0.85 : 1.15;
+          const score = ratio * aimBonus;
+          if (score < bestMiningScore) {
+            bestMiningScore = score;
+            miningTargetBody = cand;
+            miningTargetDistRatio = ratio;
+            miningTargetRadius = bRad;
+          }
+        }
+
+        const miningLaserRequested = Boolean(sc.miningLaserActive);
+        let hitNormalLocalObj: { x: number; y: number; z: number } | null = null;
+        let aimDirObj: { x: number; y: number; z: number } | null = {
+          x: shipForward.x,
+          y: shipForward.y,
+          z: shipForward.z,
+        };
+        let hasValidBeamGeom = false;
+        let miningTargetPosVec: THREE.Vector3 | null = null;
+
+        if (miningTargetBody) {
+          miningTargetPosVec = bodyWorldPositions[miningTargetBody.id] || null;
+          if (activeHotspotsBodyId !== miningTargetBody.id) {
+            activeHotspotsBodyId = miningTargetBody.id;
+            activeHotspotsList = generateHotspotsForBody(miningTargetBody.id);
+          }
+
+          if (miningTargetPosVec) {
+            // Ray-sphere test along ship nose; fall back to nadir gimbal toward planet horizon
+            _miningShipToTarget.subVectors(_miningBeamStart, miningTargetPosVec);
+            const bCoeff = _miningShipToTarget.dot(shipForward);
+            const cCoeff = _miningShipToTarget.lengthSq() - miningTargetRadius * miningTargetRadius;
+            const disc = bCoeff * bCoeff - cCoeff;
+
+            if (disc >= 0) {
+              const tHit = -bCoeff - Math.sqrt(disc);
+              if (tHit > 0 && tHit < miningTargetRadius * 6.5) {
+                _miningBeamEnd.copy(_miningBeamStart).addScaledVector(shipForward, tHit);
+                _miningNormalWorld.subVectors(_miningBeamEnd, miningTargetPosVec).normalize();
+                hasValidBeamGeom = true;
+              }
+            }
+
+            if (!hasValidBeamGeom) {
+              // Ventral gimballed laser aims forward & down onto the sub-orbital surface ahead of the nose
+              _miningNormalWorld
+                .subVectors(_miningBeamStart, miningTargetPosVec)
+                .normalize()
+                .addScaledVector(shipForward, 0.52)
+                .normalize();
+              _miningBeamEnd
+                .copy(miningTargetPosVec)
+                .addScaledVector(_miningNormalWorld, miningTargetRadius * 1.002);
+              hasValidBeamGeom = true;
+            }
+
+            const targetNode = bodyNodes[miningTargetBody.id];
+            if (targetNode) {
+              targetNode.spinMesh.updateWorldMatrix(true, false);
+              targetNode.spinMesh.getWorldQuaternion(_miningSpinInvQuat).invert();
+              _miningNormalLocal.copy(_miningNormalWorld).applyQuaternion(_miningSpinInvQuat).normalize();
+              hitNormalLocalObj = {
+                x: _miningNormalLocal.x,
+                y: _miningNormalLocal.y,
+                z: _miningNormalLocal.z,
+              };
+            } else {
+              hitNormalLocalObj = {
+                x: _miningNormalWorld.x,
+                y: _miningNormalWorld.y,
+                z: _miningNormalWorld.z,
+              };
+            }
+          }
+        } else {
+          activeHotspotsBodyId = null;
+          activeHotspotsList = [];
+        }
+
+        const miningRadarAgeSec =
+          sc.radarPulseTimestamp > 0 ? (now - sc.radarPulseTimestamp) / 1000 : 99;
+        const miningPrevState: SurvivalResourcesState = {
+          ...liveSurv,
+          miningLaserActive: miningLaserRequested,
+        };
+        const miningStep = stepMiningSimulation(miningPrevState, {
+          dt,
+          clockTime,
+          targetBodyId: miningTargetBody?.id ?? null,
+          targetBodyName: miningTargetBody?.name ?? null,
+          surfaceDistanceRatio: miningTargetDistRatio,
+          hotspots: activeHotspotsList,
+          shipAimDirOnTargetWorld: aimDirObj,
+          hitNormalLocal: hitNormalLocalObj,
+        });
+        const postMiningSurv = miningStep.state;
+        if (survivalStateRef) {
+          survivalStateRef.current = postMiningSurv;
+        }
+        if (miningLaserRequested && !postMiningSurv.miningLaserActive) {
+          cb.onUpdateSpacecraftControl((prev) =>
+            prev.miningLaserActive ? { ...prev, miningLaserActive: false } : prev
+          );
+        }
+        if (miningStep.minedUnitsThisTick > 0) {
+          spaceAudio.playMiningYieldChime();
+        }
+
+        // Render 3D Orbital Laser Beam, Surface Ablation Crater & Helical Upward Ore Stream
+        const showMiningBeam =
+          postMiningSurv.mining.isDrilling &&
+          hasValidBeamGeom &&
+          (!isWalkingInside || sc.cameraView === 'EXTERNAL');
+        miningBeamGroup.visible = showMiningBeam;
+        miningCraterGroup.visible = showMiningBeam;
+        miningStreamInstanced.visible = showMiningBeam;
+
+        if (showMiningBeam) {
+          _miningColorTmp.set(miningStep.effectiveColorHex);
+          _miningBeamDir.subVectors(_miningBeamEnd, _miningBeamStart);
+          const beamLen = _miningBeamDir.length();
+          if (beamLen > 1e-7) {
+            _miningBeamDir.divideScalar(beamLen);
+            const pulse = 0.86 + 0.14 * Math.sin(clockTime * 22.0);
+            const radiusScale = THREE.MathUtils.clamp(
+              beamLen * 0.0045,
+              currentShipScale * 0.18,
+              currentShipScale * 0.42
+            ) * pulse;
+
+            miningBeamGroup.position.copy(_miningBeamStart);
+            miningBeamGroup.quaternion.setFromUnitVectors(_worldUp, _miningBeamDir);
+            miningCoreMesh.scale.set(radiusScale, beamLen, radiusScale);
+            miningSheathMesh.scale.set(radiusScale * 1.45, beamLen, radiusScale * 1.45);
+            miningMuzzleGlow.scale.setScalar(radiusScale * 1.3);
+
+            miningSheathMat.color.copy(_miningColorTmp);
+            miningSheathMat.opacity = 0.36 + 0.12 * Math.sin(clockTime * 19.0);
+            miningMuzzleGlowMat.color.copy(_miningColorTmp);
+            miningCoreMat.opacity = 0.88 + 0.12 * Math.sin(clockTime * 31.0);
+
+            // Surface Ablation Crater Spot
+            const craterSize = THREE.MathUtils.clamp(
+              beamLen * 0.024,
+              currentShipScale * 0.65,
+              miningTargetRadius * 0.0085
+            );
+            miningCraterGroup.position.copy(_miningBeamEnd);
+            miningCraterGroup.quaternion.setFromUnitVectors(_worldUp, _miningNormalWorld);
+            miningCraterGroup.scale.setScalar(craterSize);
+            miningCraterHaloMat.color.copy(_miningColorTmp);
+            miningCraterShockMat.color.copy(_miningColorTmp);
+            miningCraterLight.color.copy(_miningColorTmp);
+            miningCraterLight.intensity = 1.15 + Math.sin(clockTime * 18.0) * 0.35;
+            miningCraterLight.distance = craterSize * 6.0;
+            const shockCycle = (clockTime * 2.2) % 1;
+            miningCraterShock.scale.setScalar(0.55 + shockCycle * 0.95);
+            miningCraterShockMat.opacity = (1 - shockCycle) * 0.55;
+
+            // Upward helical stream of vaporized ore/ice chunks moving Crater -> Ship Ventral Intake
+            _miningPerpU.set(0, 1, 0).cross(_miningBeamDir);
+            if (_miningPerpU.lengthSq() < 1e-4) _miningPerpU.set(1, 0, 0).cross(_miningBeamDir);
+            _miningPerpU.normalize();
+            _miningPerpV.crossVectors(_miningBeamDir, _miningPerpU).normalize();
+            miningStreamMat.color.copy(_miningColorTmp);
+
+            const pSizeBase = Math.max(currentShipScale * 0.045, radiusScale * 0.38);
+            for (let pi = 0; pi < MINING_STREAM_COUNT; pi++) {
+              const frac = 1.0 - ((clockTime * 0.85 + pi / MINING_STREAM_COUNT) % 1.0);
+              const theta = clockTime * 7.5 + pi * 1.7;
+              const spiralRad = Math.max(
+                currentShipScale * 0.09,
+                Math.sin(frac * Math.PI) * radiusScale * 1.45
+              );
+              _miningParticlePos
+                .copy(_miningBeamStart)
+                .addScaledVector(_miningBeamDir, beamLen * frac)
+                .addScaledVector(_miningPerpU, Math.cos(theta) * spiralRad)
+                .addScaledVector(_miningPerpV, Math.sin(theta) * spiralRad);
+              _miningDummyQuat.setFromAxisAngle(_miningBeamDir, theta);
+              const pScale = pSizeBase * (0.65 + (pi % 3) * 0.35);
+              _miningScaleVec.set(pScale, pScale, pScale);
+              _miningTmpMat4.compose(_miningParticlePos, _miningDummyQuat, _miningScaleVec);
+              miningStreamInstanced.setMatrixAt(pi, _miningTmpMat4);
+            }
+            miningStreamInstanced.instanceMatrix.needsUpdate = true;
+          }
+        }
+
+        // Render 3D Geological Surface Vein Hotspots (visible in close orbit or during Radar R scan)
+        const targetNodeForSpots = miningTargetBody ? bodyNodes[miningTargetBody.id] : undefined;
+        const showHotspots =
+          Boolean(miningTargetBody && targetNodeForSpots && activeHotspotsList.length > 0) &&
+          (miningTargetDistRatio <= 5.5 || miningRadarAgeSec < 16.0);
+        hotspotGroup.visible = showHotspots;
+        if (showHotspots && targetNodeForSpots && miningTargetPosVec) {
+          targetNodeForSpots.spinMesh.updateWorldMatrix(true, false);
+          const altClearance = Math.max(
+            currentShipScale * 4.0,
+            (miningTargetDistRatio - 1.0) * miningTargetRadius
+          );
+          const spotScale = THREE.MathUtils.clamp(
+            altClearance * 0.065,
+            currentShipScale * 1.15,
+            miningTargetRadius * 0.012
+          );
+          const pulseSpot = 1.0 + 0.16 * Math.sin(clockTime * 4.5);
+          hotspotBeacons.forEach((bcn, idx) => {
+            const spot = activeHotspotsList[idx];
+            if (!spot) {
+              bcn.grp.visible = false;
+              return;
+            }
+            bcn.grp.visible = true;
+            _miningParticlePos
+              .set(spot.localNormal.x * 1.007, spot.localNormal.y * 1.007, spot.localNormal.z * 1.007)
+              .applyMatrix4(targetNodeForSpots.spinMesh.matrixWorld);
+            _miningNormalWorld.subVectors(_miningParticlePos, miningTargetPosVec!).normalize();
+            bcn.grp.position.copy(_miningParticlePos);
+            bcn.grp.quaternion.setFromUnitVectors(_worldUp, _miningNormalWorld);
+            bcn.grp.scale.setScalar(spotScale * pulseSpot);
+            bcn.ring.rotation.z = clockTime * 1.4;
+            bcn.ringMat.color.set(spot.colorHex);
+            bcn.beamMat.color.set(spot.colorHex);
+            const isActiveSpot = miningStep.activeHotspot?.id === spot.id;
+            bcn.ringMat.opacity = isActiveSpot ? 0.98 : miningRadarAgeSec < 12 ? 0.85 : 0.62;
+            bcn.beamMat.opacity = isActiveSpot ? 0.68 : 0.34;
+          });
+        }
+
         if (prevCameraView !== sc.cameraView) {
           spaceAudio.playCameraSwitch(sc.cameraView);
         }
@@ -3960,6 +4389,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           boostBlend,
           isBraking: isBrakingNow,
           rcsIntensity: Math.min(1, Math.hypot(pitchInput, yawInput, rollInput)),
+          miningIntensity: postMiningSurv.mining.isDrilling ? 0.92 : postMiningSurv.mining.isActive ? 0.25 : 0,
         });
 
         // 7. Compute Nearest Contacts & Ship-Relative Radar Bearings
@@ -4069,7 +4499,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const rollDegVal = Math.round(
           THREE.MathUtils.radToDeg(manualRollAngle)
         );
-        const liveReactorTemp = Math.round(liveSurv.reactorTempC);
+        const liveReactorTemp = Math.round(postMiningSurv.reactorTempC);
 
         sr7.updateAnimations({
           dt,
@@ -4096,10 +4526,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitSeat: sc.cockpitSeat || 'LEFT',
           shipScale: currentShipScale,
           driftAngleDeg,
-          radiatorsDeployed: liveSurv.radiatorsDeployed,
-          hullTempC: liveSurv.hullTempC,
+          radiatorsDeployed: postMiningSurv.radiatorsDeployed,
+          hullTempC: postMiningSurv.hullTempC,
           walkingInside: isWalkingInside,
-          nearbyCabinStation: liveSurv.nearbyCabinStation,
+          nearbyCabinStation: postMiningSurv.nearbyCabinStation,
+          miningActive: postMiningSurv.mining.isDrilling,
+          miningColorHex: miningStep.effectiveColorHex,
         });
 
         // Sync Live Telemetry to HUD (throttled ~9 Hz)
@@ -4108,8 +4540,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cb.onSyncSpacecraftTelemetry({
             speedUnitsPerSec: currentSpeed,
             speedFormatted,
-            fuelPercent: Number(liveSurv.fuelPercent.toFixed(1)),
-            hullIntegrity: Number(liveSurv.hullIntegrity.toFixed(1)),
+            fuelPercent: Number(postMiningSurv.fuelPercent.toFixed(1)),
+            hullIntegrity: Number(postMiningSurv.hullIntegrity.toFixed(1)),
             reactorTempC: liveReactorTemp,
             pitchDeg: pitchDegVal,
             yawDeg: yawDegVal,
@@ -4119,12 +4551,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearestDistanceFormatted: nearestContact?.distanceFormatted || '0 km',
             nearbyContacts: radarContacts,
             autopilotStatus,
-            survival: liveSurv,
+            survival: postMiningSurv,
           });
         }
         if (now - lastSurvivalSync > 190) {
           lastSurvivalSync = now;
-          cb.onSyncSurvivalState?.(liveSurv);
+          cb.onSyncSurvivalState?.(postMiningSurv);
         }
 
         const computedShipZoom: ZoomLevel =
@@ -4137,6 +4569,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cb.onZoomLevelChange(computedShipZoom);
         }
       } else if (st.evaActive) {
+        miningBeamGroup.visible = false;
+        miningCraterGroup.visible = false;
+        miningStreamInstanced.visible = false;
+        hotspotGroup.visible = false;
         // ====================================================================
         // RIGGED ASTRONAUT EVA SPACEWALK / SURFACE MODE (Next to Parked Ship)
         // ====================================================================

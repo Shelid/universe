@@ -20,6 +20,8 @@ import {
 } from './utils/performanceProfile';
 import {
   CabinStationId,
+  MiningRecipeId,
+  MiningResourceId,
   PowerSubsystemId,
   PropagatedSatellite,
   SatelliteCategory,
@@ -43,10 +45,14 @@ import {
   consumeWarpCell,
   consumeWaterFlask,
   createInitialSurvivalState,
+  discardCargoUnitAction,
   emergencyRescueDroneAction,
   fullStationResupplyAction,
   POWER_PRESETS,
   restInCabinBunkAction,
+  sellAllCargoAction,
+  sellCargoResourceAction,
+  synthesizeRecipeAction,
   useRepairKitAction,
 } from './utils/survivalEngine';
 import {
@@ -225,6 +231,7 @@ export function App() {
     walkingInside: false,
     ecoCruiseMode: false,
     radiatorsDeployed: false,
+    miningLaserActive: false,
   });
 
   // Survival & Ship Resources Engine State (Ref as 60fps authority + React mirror for HUD)
@@ -359,6 +366,7 @@ export function App() {
       brakeRequested: false,
       autopilotTargetId: null,
       walkingInside: false,
+      miningLaserActive: false,
       recenterTrigger: (prev.recenterTrigger || 0) + 1,
     }));
   }, []);
@@ -383,6 +391,7 @@ export function App() {
           boostActive: false,
           autopilotTargetId: null,
           walkingInside: false,
+          miningLaserActive: false,
         }));
         setEvaActive(true);
         return;
@@ -397,6 +406,7 @@ export function App() {
         boostActive: false,
         autopilotTargetId: null,
         walkingInside: false,
+        miningLaserActive: false,
       }));
     },
     [launchSpacecraftSR7, spacecraftControl.isActive]
@@ -594,6 +604,65 @@ export function App() {
       }
     },
     [handleRestInBunk, handleSyncSurvivalState, showSurvivalNotice, switchPlayerMode]
+  );
+
+  const handleToggleMiningLaser = useCallback(() => {
+    const cur = survivalRef.current;
+    const nextActive = !cur.miningLaserActive;
+    handleSyncSurvivalState({ ...cur, miningLaserActive: nextActive });
+    setSpacecraftControl((prev) => ({ ...prev, miningLaserActive: nextActive }));
+    spaceAudio.unlock();
+    spaceAudio.playCockpitSwitch(nextActive);
+    showSurvivalNotice(
+      nextActive
+        ? 'Laser Extrator Orbital ativado [X] — aponte ou orbite um astro!'
+        : 'Laser Extrator Orbital desligado'
+    );
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleSynthesizeRecipe = useCallback(
+    (recipeId: MiningRecipeId) => {
+      const res = synthesizeRecipeAction(survivalRef.current, recipeId);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) {
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleSellCargo = useCallback(
+    (resourceId: MiningResourceId, units = 1) => {
+      const res = sellCargoResourceAction(survivalRef.current, resourceId, units);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) spaceAudio.playProvisionUse('cell');
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleSellAllCargo = useCallback(() => {
+    const res = sellAllCargoAction(survivalRef.current);
+    handleSyncSurvivalState(res.state);
+    spaceAudio.unlock();
+    if (res.ok) spaceAudio.playProvisionUse('cell');
+    showSurvivalNotice(res.message);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleDiscardCargo = useCallback(
+    (resourceId: MiningResourceId) => {
+      const next = discardCargoUnitAction(survivalRef.current, resourceId, 1);
+      handleSyncSurvivalState(next);
+      spaceAudio.unlock();
+      spaceAudio.playCockpitSwitch(false);
+      showSurvivalNotice('1 unidade mineral descartada do porão.');
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
   );
 
   // Global Menu & EVA Hotkeys
@@ -1283,6 +1352,11 @@ export function App() {
           onCabinStationInteract={() =>
             handleCabinStationAction(survivalRef.current.nearbyCabinStation)
           }
+          onToggleMiningLaser={handleToggleMiningLaser}
+          onSynthesizeRecipe={handleSynthesizeRecipe}
+          onSellCargo={handleSellCargo}
+          onSellAllCargo={handleSellAllCargo}
+          onDiscardCargo={handleDiscardCargo}
         />
       )}
 

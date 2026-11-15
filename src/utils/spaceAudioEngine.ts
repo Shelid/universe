@@ -12,13 +12,14 @@ export interface SpaceAudioFrameParams {
   rcsIntensity?: number; // 0..1
   warpProgress?: number; // 0..1
   warpStage?: string;
+  miningIntensity?: number; // 0..1
 }
 
 /**
  * Procedural Real-Time Web Audio Sound Engine for Universe Explorer & SR-7 Spacecraft.
  * Synthesizes multi-layered space ambience, dynamic turbine/ion propulsion, cold-gas RCS jets,
- * warp resonance, plasma pulse cannons, radar sonar sweeps, and tactile cockpit switches
- * with zero external audio assets or loading latency.
+ * warp resonance, plasma pulse cannons, radar sonar sweeps, orbital mining extractor laser,
+ * and tactile cockpit switches with zero external audio assets or loading latency.
  */
 class SpaceAudioEngine {
   private ctx: AudioContext | null = null;
@@ -51,6 +52,13 @@ class SpaceAudioEngine {
   private warpOscHigh: OscillatorNode | null = null;
   private warpNoiseSource: AudioBufferSourceNode | null = null;
   private warpFilter: BiquadFilterNode | null = null;
+
+  // Continuous Orbital Mining Laser Rig
+  private miningMasterGain: GainNode | null = null;
+  private miningFilter: BiquadFilterNode | null = null;
+  private miningOscLow: OscillatorNode | null = null;
+  private miningOscMid: OscillatorNode | null = null;
+  private miningNoiseSource: AudioBufferSourceNode | null = null;
 
   // Acoustic Space Delay Tail
   private echoDelay: DelayNode | null = null;
@@ -309,6 +317,54 @@ class SpaceAudioEngine {
       this.warpNoiseSource = warpNoiseSource;
       this.warpFilter = warpFilter;
 
+      // 3B. Continuous Orbital Mining Laser Rig
+      const miningMasterGain = ctx.createGain();
+      miningMasterGain.gain.value = 0;
+
+      const miningFilter = ctx.createBiquadFilter();
+      miningFilter.type = 'bandpass';
+      miningFilter.frequency.value = 680;
+      miningFilter.Q.value = 2.4;
+
+      const miningOscLow = ctx.createOscillator();
+      miningOscLow.type = 'sawtooth';
+      miningOscLow.frequency.value = 84;
+      const miningLowGain = ctx.createGain();
+      miningLowGain.gain.value = 0.28;
+
+      const miningOscMid = ctx.createOscillator();
+      miningOscMid.type = 'triangle';
+      miningOscMid.frequency.value = 252;
+      const miningMidGain = ctx.createGain();
+      miningMidGain.gain.value = 0.16;
+
+      const miningNoiseSource = ctx.createBufferSource();
+      miningNoiseSource.buffer = this.noiseBuffer;
+      miningNoiseSource.loop = true;
+      const miningNoiseGain = ctx.createGain();
+      miningNoiseGain.gain.value = 0.34;
+
+      miningOscLow.connect(miningLowGain);
+      miningLowGain.connect(miningFilter);
+      miningOscMid.connect(miningMidGain);
+      miningMidGain.connect(miningFilter);
+      miningNoiseSource.connect(miningNoiseGain);
+      miningNoiseGain.connect(miningFilter);
+
+      miningFilter.connect(miningMasterGain);
+      miningMasterGain.connect(compressor);
+      miningMasterGain.connect(echoBus);
+
+      miningOscLow.start();
+      miningOscMid.start();
+      miningNoiseSource.start();
+
+      this.miningMasterGain = miningMasterGain;
+      this.miningFilter = miningFilter;
+      this.miningOscLow = miningOscLow;
+      this.miningOscMid = miningOscMid;
+      this.miningNoiseSource = miningNoiseSource;
+
       this.isInitialized = true;
       return true;
     } catch {
@@ -422,6 +478,28 @@ class SpaceAudioEngine {
         this.warpFilter.frequency.setTargetAtTime(220 + bell * 1650, now, 0.08);
       } else {
         this.warpMasterGain.gain.setTargetAtTime(0, now, 0.1);
+      }
+    }
+
+    // Continuous Orbital Mining Laser Harmonic Beam
+    if (this.miningMasterGain && this.miningFilter && this.miningOscLow && this.miningOscMid) {
+      const mInt =
+        params.mode === 'SPACECRAFT' ? Math.max(0, Math.min(1, params.miningIntensity || 0)) : 0;
+      const isCockpit = params.cameraView === 'COCKPIT';
+      const targetGain = mInt > 0.02 ? (isCockpit ? 0.085 : 0.145) * mInt : 0;
+      this.miningMasterGain.gain.setTargetAtTime(targetGain, now, 0.06);
+      if (mInt > 0.02) {
+        this.miningFilter.frequency.setTargetAtTime(
+          520 + mInt * 680 + Math.sin(params.clockTime * 11.5) * 145,
+          now,
+          0.05
+        );
+        this.miningOscLow.frequency.setTargetAtTime(76 + mInt * 26, now, 0.06);
+        this.miningOscMid.frequency.setTargetAtTime(
+          232 + mInt * 82 + Math.sin(params.clockTime * 7.4) * 18,
+          now,
+          0.05
+        );
       }
     }
   }
@@ -892,6 +970,50 @@ class SpaceAudioEngine {
     src.start(now, 0.05, 0.28);
   }
 
+  public playMiningYieldChime(): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || this.muted) return;
+    const now = this.ctx.currentTime;
+    [587.33, 880, 1174.66].forEach((freq, i) => {
+      if (!this.ctx || !this.compressor) return;
+      const t = now + i * 0.045;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(0.055, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.24);
+      osc.connect(g);
+      g.connect(this.compressor);
+      if (this.echoBus) g.connect(this.echoBus);
+      osc.start(t);
+      osc.stop(t + 0.26);
+    });
+  }
+
+  public playSynthesisSuccess(): void {
+    this.unlock();
+    if (!this.ctx || !this.compressor || this.muted) return;
+    const now = this.ctx.currentTime;
+    [440, 554.37, 659.25, 880].forEach((freq, i) => {
+      if (!this.ctx || !this.compressor) return;
+      const t = now + i * 0.055;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(0.068, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.34);
+      osc.connect(g);
+      g.connect(this.compressor);
+      if (this.echoBus) g.connect(this.echoBus);
+      osc.start(t);
+      osc.stop(t + 0.36);
+    });
+  }
+
   public dispose(): void {
     try {
       this.droneOscA?.stop();
@@ -904,6 +1026,9 @@ class SpaceAudioEngine {
       this.warpOscLow?.stop();
       this.warpOscHigh?.stop();
       this.warpNoiseSource?.stop();
+      this.miningOscLow?.stop();
+      this.miningOscMid?.stop();
+      this.miningNoiseSource?.stop();
       if (this.ctx && this.ctx.state !== 'closed') {
         this.ctx.close().catch(() => {});
       }

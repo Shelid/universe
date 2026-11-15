@@ -341,7 +341,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
           {activeTab === 'ships' && (
             <section className="space-y-2.5">
               <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-slate-400">
-                <span>Frota no Galpão (Ao Vivo 3D)</span>
+                <span>Pinturas da Nave Polivalente (Ao Vivo 3D)</span>
                 <span className="font-semibold" style={{ color: activeShip.accentHex }}>
                   {activeShip.codename}
                 </span>
