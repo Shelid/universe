@@ -2034,8 +2034,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         camera.updateProjectionMatrix();
       }
 
-      // Park selected Spaceship firmly on landing pad with deployed landing gear wheels
-      const hangarShipScale = 1.05;
+      // True 1:1 metric scale: glbWrapper uses 0.14 internal scale, so 1 / 0.14 restores native 53.08m x 43.19m x 17.32m starship alongside 1.90m astronaut
+      const hangarShipScale = 1 / 0.14;
       currentShipScale = hangarShipScale;
       sr7.setLandingGearDeployed(true);
       sr7.rootGroup.visible = true;
@@ -2048,7 +2048,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         hangarBay.padTopY - sr7.getFloorOffsetY(true) * hangarShipScale,
         hangarBay.shipAnchorPos.z
       );
-      sr7.rootGroup.rotation.set(0, -0.72, 0);
+      sr7.rootGroup.rotation.set(0, 2.18, 0);
 
       sr7.updateAnimations({
         dt: dtStep,
@@ -2102,17 +2102,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         worldScale: 1.0,
       });
 
-      // Frame either Overview (Ship + Astronaut), Close-up Ship, or Close-up Astronaut (offset right for left sidebar)
+      // Frame either Overview (1:1 Ship + full 1.90m Astronaut), Ship Inspection, or Close-up Astronaut (offset right for left sidebar)
       if (focusMode === 'SHIP') {
         _hangarFocusTarget.set(
-          hangarBay.shipAnchorPos.x - 1.35,
-          1.05,
-          hangarBay.shipAnchorPos.z + 0.15
+          hangarBay.shipAnchorPos.x - 10.5,
+          5.2,
+          hangarBay.shipAnchorPos.z
         );
         _hangarFocusCamPos.set(
-          hangarBay.shipAnchorPos.x + 2.85,
-          2.25,
-          hangarBay.shipAnchorPos.z + 6.85
+          hangarBay.shipAnchorPos.x - 21.0,
+          14.2,
+          hangarBay.shipAnchorPos.z + 63.0
         );
       } else if (focusMode === 'CHARACTER') {
         _hangarFocusTarget.set(
@@ -2121,13 +2121,13 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           hangarBay.astronautAnchorPos.z
         );
         _hangarFocusCamPos.set(
-          hangarBay.astronautAnchorPos.x - 0.35,
-          1.45,
-          hangarBay.astronautAnchorPos.z + 3.15
+          hangarBay.astronautAnchorPos.x - 0.30,
+          1.48,
+          hangarBay.astronautAnchorPos.z + 3.25
         );
       } else {
-        _hangarFocusTarget.set(-1.35, 1.25, 0.25);
-        _hangarFocusCamPos.set(0.35, 2.75, 11.85);
+        _hangarFocusTarget.set(-5.5, 3.8, -5.0);
+        _hangarFocusCamPos.set(-21.5, 2.35, 42.5);
       }
 
       if (forceSnap || !wasLobbyShowcaseActive) {
@@ -2159,19 +2159,19 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       }
 
       controls.enabled = true;
-      controls.minDistance = 2.1;
-      controls.maxDistance = 13.5;
-      controls.minPolarAngle = 0.28;
-      controls.maxPolarAngle = Math.PI * 0.485;
+      controls.minDistance = focusMode === 'CHARACTER' ? 1.85 : 9.5;
+      controls.maxDistance = focusMode === 'CHARACTER' ? 16.0 : 88.0;
+      controls.minPolarAngle = 0.24;
+      controls.maxPolarAngle = Math.PI * 0.54;
       controls.update();
 
-      // Keep camera strictly inside the 30m x 36m x 10.6m Hangar walls & ceiling
-      camera.position.x = THREE.MathUtils.clamp(camera.position.x, -12.6, 12.6);
-      camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0.48, 8.6);
-      camera.position.z = THREE.MathUtils.clamp(camera.position.z, -14.2, 14.8);
-      controls.target.x = THREE.MathUtils.clamp(controls.target.x, -7.5, 7.5);
-      controls.target.y = THREE.MathUtils.clamp(controls.target.y, 0.35, 3.8);
-      controls.target.z = THREE.MathUtils.clamp(controls.target.z, -8.5, 8.5);
+      // Keep camera strictly inside the 132m x 132m x 36m 1:1 Hangar walls & ceiling
+      camera.position.x = THREE.MathUtils.clamp(camera.position.x, -59.5, 59.5);
+      camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0.55, 31.5);
+      camera.position.z = THREE.MathUtils.clamp(camera.position.z, -59.5, 60.5);
+      controls.target.x = THREE.MathUtils.clamp(controls.target.x, -42.0, 42.0);
+      controls.target.y = THREE.MathUtils.clamp(controls.target.y, 0.35, 16.0);
+      controls.target.z = THREE.MathUtils.clamp(controls.target.z, -42.0, 44.0);
     };
 
     const animate = (now: number) => {

@@ -12,11 +12,16 @@ export interface HangarBayRefs {
   dispose: () => void;
 }
 
-function createFloorTextures(): {
+function createFloorTextures(
+  width: number,
+  depth: number,
+  shipAnchorPos: THREE.Vector3,
+  padRadius: number
+): {
   map: THREE.CanvasTexture;
   roughnessMap: THREE.CanvasTexture;
 } {
-  const size = 1024;
+  const size = 2048;
   const colCanvas = document.createElement('canvas');
   colCanvas.width = size;
   colCanvas.height = size;
@@ -27,29 +32,29 @@ function createFloorTextures(): {
   rCanvas.height = size;
   const rCtx = rCanvas.getContext('2d')!;
 
-  // Base industrial epoxy-concrete plates
+  // Base industrial epoxy-concrete plates (5.5m x 5.5m slabs across 132m x 132m bay)
   ctx.fillStyle = '#141a24';
   ctx.fillRect(0, 0, size, size);
   rCtx.fillStyle = '#a8a8a8';
   rCtx.fillRect(0, 0, size, size);
 
-  const tiles = 8;
+  const tiles = 24;
   const tilePx = size / tiles;
   for (let gx = 0; gx < tiles; gx++) {
     for (let gy = 0; gy < tiles; gy++) {
       const shade = 20 + ((gx * 7 + gy * 13) % 9);
       ctx.fillStyle = `rgb(${shade}, ${shade + 6}, ${shade + 14})`;
-      ctx.fillRect(gx * tilePx + 3, gy * tilePx + 3, tilePx - 6, tilePx - 6);
+      ctx.fillRect(gx * tilePx + 2, gy * tilePx + 2, tilePx - 4, tilePx - 4);
 
       const rough = 135 + ((gx * 11 + gy * 5) % 45);
       rCtx.fillStyle = `rgb(${rough}, ${rough}, ${rough})`;
-      rCtx.fillRect(gx * tilePx + 3, gy * tilePx + 3, tilePx - 6, tilePx - 6);
+      rCtx.fillRect(gx * tilePx + 2, gy * tilePx + 2, tilePx - 4, tilePx - 4);
     }
   }
 
-  // Expansion joint dark grooves + subtle steel bolt dots
+  // Expansion joint dark grooves
   ctx.strokeStyle = '#090d14';
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 3;
   for (let i = 0; i <= tiles; i++) {
     const p = i * tilePx;
     ctx.beginPath();
@@ -62,17 +67,17 @@ function createFloorTextures(): {
     ctx.stroke();
   }
 
-  // Painted yellow/amber bay boundary lane + caution stripes aligned with ship landing pad (3.15, -2.15)
-  const padX = size * 0.605;
-  const padY = size * 0.44;
-  const ringR = size * 0.22;
+  // Painted yellow/amber bay boundary lane + caution stripes aligned with 1:1 ship landing pad
+  const padX = size * (0.5 + shipAnchorPos.x / width);
+  const padY = size * (0.5 + shipAnchorPos.z / depth);
+  const ringR = size * (padRadius / width);
 
   ctx.save();
   ctx.strokeStyle = 'rgba(245, 158, 11, 0.72)';
   ctx.lineWidth = 10;
-  ctx.setLineDash([28, 14]);
+  ctx.setLineDash([36, 18]);
   ctx.beginPath();
-  ctx.arc(padX, padY, ringR + 28, 0, Math.PI * 2);
+  ctx.arc(padX, padY, ringR + 24, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 
@@ -81,37 +86,37 @@ function createFloorTextures(): {
   rCtx.strokeStyle = '#555555';
   rCtx.lineWidth = 12;
   rCtx.beginPath();
-  rCtx.arc(padX, padY, ringR + 28, 0, Math.PI * 2);
+  rCtx.arc(padX, padY, ringR + 24, 0, Math.PI * 2);
   rCtx.stroke();
   rCtx.restore();
 
   // Cyan docking alignment stripes
   ctx.save();
   ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-  ctx.lineWidth = 5;
+  ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.moveTo(padX, padY - ringR - 80);
-  ctx.lineTo(padX, padY + ringR + 80);
+  ctx.moveTo(padX, padY - ringR - 72);
+  ctx.lineTo(padX, padY + ringR + 72);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(padX - ringR - 70, padY);
-  ctx.lineTo(padX + ringR + 70, padY);
+  ctx.moveTo(padX - ringR - 64, padY);
+  ctx.lineTo(padX + ringR + 64, padY);
   ctx.stroke();
   ctx.restore();
 
-  // Walkway lane leading to astronaut staging spot
+  // Perimeter hangar walkway boundary lane
   ctx.save();
   ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
   ctx.lineWidth = 6;
-  ctx.strokeRect(size * 0.14, size * 0.12, size * 0.72, size * 0.76);
+  ctx.strokeRect(size * 0.08, size * 0.08, size * 0.84, size * 0.84);
   ctx.restore();
 
   // Stencil hangar bay text
   ctx.save();
-  ctx.fillStyle = 'rgba(226, 232, 240, 0.32)';
-  ctx.font = 'bold 26px monospace';
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.36)';
+  ctx.font = 'bold 34px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('BAÍA 01 · HANGAR ORBITAL', padX, padY + ringR + 74);
+  ctx.fillText('BAÍA 01 · HANGAR ORBITAL · ESCALA 1:1', padX, padY + ringR + 76);
   ctx.restore();
 
   const map = new THREE.CanvasTexture(colCanvas);
@@ -141,20 +146,20 @@ function createWallRibTexture(): THREE.CanvasTexture {
     ctx.fillRect(x + 24, 0, 8, 512);
   }
 
-  // Horizontal panel seams & subtle caution stripe near base
+  // Horizontal panel seams & human-scale caution stripe near base (~1.1m height on 34m walls)
   ctx.fillStyle = '#0c121c';
   ctx.fillRect(0, 170, 512, 6);
   ctx.fillRect(0, 340, 512, 6);
 
   ctx.fillStyle = '#b45309';
-  ctx.fillRect(0, 456, 512, 16);
+  ctx.fillRect(0, 488, 512, 10);
   ctx.fillStyle = '#0f172a';
-  for (let x = -40; x < 540; x += 40) {
+  for (let x = -40; x < 540; x += 32) {
     ctx.beginPath();
-    ctx.moveTo(x, 456);
-    ctx.lineTo(x + 20, 456);
-    ctx.lineTo(x + 8, 472);
-    ctx.lineTo(x - 12, 472);
+    ctx.moveTo(x, 488);
+    ctx.lineTo(x + 16, 488);
+    ctx.lineTo(x + 6, 498);
+    ctx.lineTo(x - 10, 498);
     ctx.closePath();
     ctx.fill();
   }
@@ -162,7 +167,7 @@ function createWallRibTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.repeat.set(6, 1);
+  tex.repeat.set(16, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -255,17 +260,20 @@ export function createHangarBay3D(): HangarBayRefs {
     return m;
   };
 
-  const width = 30;
-  const depth = 36;
-  const height = 10.6;
+  // True 1:1 metric scale: 1 Three.js unit = 1 meter.
+  // Accommodates native 53.08m x 43.19m x 17.32m starship alongside 1.90m astronaut.
+  const width = 132;
+  const depth = 132;
+  const height = 36;
   const halfW = width * 0.5;
   const halfD = depth * 0.5;
-  const padTopY = 0.045;
-  const shipAnchorPos = new THREE.Vector3(3.15, 0, -2.15);
-  const astronautAnchorPos = new THREE.Vector3(-0.75, 0, 2.95);
+  const padTopY = 0.14;
+  const padRadius = 27.5;
+  const shipAnchorPos = new THREE.Vector3(16.0, 0, -14.0);
+  const astronautAnchorPos = new THREE.Vector3(-17.2, 0, 23.0);
 
   const isNodeEnv = typeof document === 'undefined';
-  const floorTexs = !isNodeEnv ? createFloorTextures() : null;
+  const floorTexs = !isNodeEnv ? createFloorTextures(width, depth, shipAnchorPos, padRadius) : null;
   const wallTex = !isNodeEnv ? createWallRibTexture() : null;
   const signTex = !isNodeEnv ? createHangarSignTexture() : null;
   const diagTex = !isNodeEnv ? createDiagScreenTexture() : null;
@@ -346,10 +354,10 @@ export function createHangarBay3D(): HangarBayRefs {
     })
   );
 
-  const pillarGeo = trackGeo(new THREE.BoxGeometry(0.65, height, 0.95));
-  const beamGeo = trackGeo(new THREE.BoxGeometry(width - 0.8, 0.55, 0.48));
-  const fixtureHousingGeo = trackGeo(new THREE.BoxGeometry(3.4, 0.16, 0.42));
-  const fixtureLedGeo = trackGeo(new THREE.BoxGeometry(3.15, 0.08, 0.28));
+  const pillarGeo = trackGeo(new THREE.BoxGeometry(1.6, height, 2.2));
+  const beamGeo = trackGeo(new THREE.BoxGeometry(width - 2.0, 1.45, 1.15));
+  const fixtureHousingGeo = trackGeo(new THREE.BoxGeometry(11.0, 0.45, 1.2));
+  const fixtureLedGeo = trackGeo(new THREE.BoxGeometry(10.2, 0.22, 0.8));
   const ceilingLedMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: '#f8fafc',
@@ -359,60 +367,60 @@ export function createHangarBay3D(): HangarBayRefs {
     })
   );
 
-  const zBays = [-13.5, -7.0, 0, 7.0, 13.5];
+  const zBays = [-52, -26, 0, 26, 52];
   zBays.forEach((zb) => {
     const leftCol = new THREE.Mesh(pillarGeo, steelDarkMat);
-    leftCol.position.set(-halfW + 0.35, height * 0.5, zb);
+    leftCol.position.set(-halfW + 0.85, height * 0.5, zb);
     const rightCol = new THREE.Mesh(pillarGeo, steelDarkMat);
-    rightCol.position.set(halfW - 0.35, height * 0.5, zb);
+    rightCol.position.set(halfW - 0.85, height * 0.5, zb);
     rootGroup.add(leftCol, rightCol);
 
     const roofBeam = new THREE.Mesh(beamGeo, steelDarkMat);
-    roofBeam.position.set(0, height - 0.48, zb);
+    roofBeam.position.set(0, height - 1.0, zb);
     rootGroup.add(roofBeam);
 
     // High-Bay Ceiling LED Light Banks flanking center
-    [-4.8, 4.8].forEach((lx) => {
+    [-21, 21].forEach((lx) => {
       const housing = new THREE.Mesh(fixtureHousingGeo, steelTrimMat);
-      housing.position.set(lx, height - 0.82, zb);
+      housing.position.set(lx, height - 1.75, zb);
       const led = new THREE.Mesh(fixtureLedGeo, ceilingLedMat);
-      led.position.set(lx, height - 0.90, zb);
+      led.position.set(lx, height - 1.98, zb);
       rootGroup.add(housing, led);
     });
   });
 
-  // Side Mezzanine Catwalk Ledges
-  const catwalkGeo = trackGeo(new THREE.BoxGeometry(1.4, 0.22, depth - 1.2));
-  [-halfW + 0.8, halfW - 0.8].forEach((cx) => {
+  // Side Mezzanine Catwalk Ledges (roughly cockpit bridge observation height ~14.5m)
+  const catwalkGeo = trackGeo(new THREE.BoxGeometry(2.8, 0.48, depth - 3.2));
+  [-halfW + 1.6, halfW - 1.6].forEach((cx) => {
     const ledge = new THREE.Mesh(catwalkGeo, steelTrimMat);
-    ledge.position.set(cx, 5.2, 0);
+    ledge.position.set(cx, 14.5, 0);
     rootGroup.add(ledge);
   });
 
-  // 4. Giant Armored Twin Blast Gate Doors on Rear Hangar Wall (z = -halfD)
-  const gateFrameGeo = trackGeo(new THREE.BoxGeometry(15.6, 7.8, 0.55));
+  // 4. Giant Armored Twin Blast Gate Doors on Rear Hangar Wall (z = -halfD, sized for 43.2m wingspan)
+  const gateFrameGeo = trackGeo(new THREE.BoxGeometry(62.0, 24.5, 1.2));
   const gateFrame = new THREE.Mesh(gateFrameGeo, steelDarkMat);
-  gateFrame.position.set(0, 3.9, -halfD + 0.32);
+  gateFrame.position.set(0, 12.25, -halfD + 0.65);
   rootGroup.add(gateFrame);
 
-  const gateLeafGeo = trackGeo(new THREE.BoxGeometry(6.8, 7.0, 0.38));
+  const gateLeafGeo = trackGeo(new THREE.BoxGeometry(27.5, 22.0, 0.85));
   const leftGate = new THREE.Mesh(gateLeafGeo, steelTrimMat);
-  leftGate.position.set(-3.46, 3.52, -halfD + 0.55);
+  leftGate.position.set(-13.95, 11.05, -halfD + 1.1);
   const rightGate = new THREE.Mesh(gateLeafGeo, steelTrimMat);
-  rightGate.position.set(3.46, 3.52, -halfD + 0.55);
+  rightGate.position.set(13.95, 11.05, -halfD + 1.1);
   rootGroup.add(leftGate, rightGate);
 
   // Horizontal blast door reinforcement ribs & amber caution pillars
-  const doorRibGeo = trackGeo(new THREE.BoxGeometry(13.8, 0.24, 0.14));
-  [1.4, 3.1, 4.8, 6.3].forEach((ry) => {
+  const doorRibGeo = trackGeo(new THREE.BoxGeometry(55.5, 0.6, 0.3));
+  [4.0, 9.2, 14.4, 19.6].forEach((ry) => {
     const rib = new THREE.Mesh(doorRibGeo, steelDarkMat);
-    rib.position.set(0, ry, -halfD + 0.78);
+    rib.position.set(0, ry, -halfD + 1.65);
     rootGroup.add(rib);
   });
-  const hazardColGeo = trackGeo(new THREE.BoxGeometry(0.42, 7.4, 0.55));
-  [-7.2, 7.2].forEach((hx) => {
+  const hazardColGeo = trackGeo(new THREE.BoxGeometry(1.1, 23.0, 1.2));
+  [-28.4, 28.4].forEach((hx) => {
     const hCol = new THREE.Mesh(hazardColGeo, cautionAmberMat);
-    hCol.position.set(hx, 3.7, -halfD + 0.52);
+    hCol.position.set(hx, 11.5, -halfD + 1.15);
     rootGroup.add(hCol);
   });
 
@@ -426,10 +434,10 @@ export function createHangarBay3D(): HangarBayRefs {
     })
   );
   const centerSeamStrip = new THREE.Mesh(
-    trackGeo(new THREE.BoxGeometry(0.12, 6.8, 0.12)),
+    trackGeo(new THREE.BoxGeometry(0.32, 21.6, 0.3)),
     accentMat
   );
-  centerSeamStrip.position.set(0, 3.45, -halfD + 0.80);
+  centerSeamStrip.position.set(0, 10.9, -halfD + 1.72);
   rootGroup.add(centerSeamStrip);
 
   const signMat = trackMat(
@@ -442,12 +450,12 @@ export function createHangarBay3D(): HangarBayRefs {
       roughness: 0.35,
     })
   );
-  const signBoard = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(8.6, 1.55)), signMat);
-  signBoard.position.set(1.2, 6.95, -halfD + 0.94);
+  const signBoard = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(28.0, 5.2)), signMat);
+  signBoard.position.set(2.0, 26.2, -halfD + 1.85);
   rootGroup.add(signBoard);
 
-  // 5. Raised Circular Landing Pad (ships rest at y = padTopY without any z-fighting)
-  const padDeckGeo = trackGeo(new THREE.CylinderGeometry(4.45, 4.75, padTopY, 32));
+  // 5. Raised Circular Landing Pad (27.5m radius for 53m starship; rests at y = padTopY)
+  const padDeckGeo = trackGeo(new THREE.CylinderGeometry(padRadius, padRadius + 1.1, padTopY, 64));
   const padDeckMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: '#253142',
@@ -459,13 +467,13 @@ export function createHangarBay3D(): HangarBayRefs {
   padDeck.position.set(shipAnchorPos.x, padTopY * 0.5, shipAnchorPos.z);
   rootGroup.add(padDeck);
 
-  const padRingGeo = trackGeo(new THREE.TorusGeometry(4.56, 0.04, 8, 48));
+  const padRingGeo = trackGeo(new THREE.TorusGeometry(padRadius + 0.3, 0.14, 10, 84));
   padRingGeo.rotateX(Math.PI / 2);
   const padRing = new THREE.Mesh(padRingGeo, accentMat);
-  padRing.position.set(shipAnchorPos.x, padTopY + 0.01, shipAnchorPos.z);
+  padRing.position.set(shipAnchorPos.x, padTopY + 0.04, shipAnchorPos.z);
   rootGroup.add(padRing);
 
-  // 6. Ground Support Props Around Perimeter (keeps camera sweep crystal clear)
+  // 6. True 1:1 Human-Scale Ground Support Equipment beside Apron + Heavy Refueling Tanks by Wall
   const crateMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: '#3b4a5e',
@@ -486,26 +494,25 @@ export function createHangarBay3D(): HangarBayRefs {
     box.rotation.y = rotY;
     rootGroup.add(box);
   };
-  addCrate(1.9, 1.15, 1.35, -8.8, -8.5, 0.14);
-  addCrate(1.3, 0.95, 1.2, -10.5, -7.2, -0.25);
-  addCrate(1.1, 0.85, 1.1, -8.7, -8.5, 0.35); // stacked feel via offset height:
-  const topCrate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.05, 0.8, 0.95)), cautionAmberMat);
-  topCrate.position.set(-8.8, 1.55, -8.5);
-  topCrate.rotation.y = 0.24;
+  addCrate(1.85, 1.12, 1.32, -23.0, 18.8, 0.16);
+  addCrate(1.28, 0.92, 1.15, -24.8, 20.4, -0.25);
+  const topCrate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.02, 0.78, 0.92)), cautionAmberMat);
+  topCrate.position.set(-23.0, 1.51, 18.8);
+  topCrate.rotation.y = 0.28;
   rootGroup.add(topCrate);
 
-  // Cryo propellant tanks on back-right bay
-  const tankGeo = trackGeo(new THREE.CylinderGeometry(0.45, 0.45, 2.4, 16));
-  [7.8, 8.95].forEach((tx) => {
+  // Industrial Cryo Propellant Tank Bank along rear-right wall (true heavy drydock scale)
+  const tankGeo = trackGeo(new THREE.CylinderGeometry(1.35, 1.35, 8.6, 20));
+  [46.0, 49.8, 53.6].forEach((tx) => {
     const t = new THREE.Mesh(tankGeo, tankMat);
-    t.position.set(tx, 1.2, -9.8);
+    t.position.set(tx, 4.3, -53.0);
     rootGroup.add(t);
   });
 
-  // Diagnostic Workstation Kiosk (back-left near astronaut)
-  const kioskStand = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.4, 1.15, 0.65)), steelDarkMat);
-  kioskStand.position.set(-5.8, 0.575, -1.8);
-  kioskStand.rotation.y = 0.55;
+  // 1:1 Human-Scale Diagnostic Workstation Kiosk beside Astronaut (-17.2, 0, 23.0)
+  const kioskStand = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.35, 1.12, 0.62)), steelDarkMat);
+  kioskStand.position.set(-19.5, 0.56, 21.0);
+  kioskStand.rotation.y = 0.56;
   rootGroup.add(kioskStand);
 
   const diagMat = trackMat(
@@ -518,12 +525,12 @@ export function createHangarBay3D(): HangarBayRefs {
       roughness: 0.2,
     })
   );
-  const kioskScreen = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(1.26, 0.78)), diagMat);
-  kioskScreen.position.set(-5.7, 1.52, -1.72);
-  kioskScreen.rotation.y = 0.55;
+  const kioskScreen = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(1.22, 0.76)), diagMat);
+  kioskScreen.position.set(-19.4, 1.48, 21.08);
+  kioskScreen.rotation.y = 0.56;
   rootGroup.add(kioskScreen);
 
-  // Subtle Perimeter Amber Hazard Beacons
+  // Subtle Perimeter Amber Hazard Beacons atop Blast Door Columns
   const beaconMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: '#f59e0b',
@@ -532,35 +539,35 @@ export function createHangarBay3D(): HangarBayRefs {
       roughness: 0.25,
     })
   );
-  const beaconGeo = trackGeo(new THREE.SphereGeometry(0.14, 12, 12));
-  [-7.2, 7.2].forEach((bx) => {
+  const beaconGeo = trackGeo(new THREE.SphereGeometry(0.42, 12, 12));
+  [-28.4, 28.4].forEach((bx) => {
     const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-    beacon.position.set(bx, 7.45, -halfD + 0.52);
+    beacon.position.set(bx, 23.25, -halfD + 1.15);
     rootGroup.add(beacon);
   });
 
-  // 7. Tailored Studio Hangar Lighting (zero universe leak, invariant intensity)
-  const hangarHemi = new THREE.HemisphereLight('#c7dcf5', '#1b2434', 0.95);
+  // 7. Tailored Studio Hangar Lighting (zero universe leak, full 120m x 120m x 34m coverage)
+  const hangarHemi = new THREE.HemisphereLight('#cfe2fa', '#1b2434', 1.05);
   rootGroup.add(hangarHemi);
 
-  const keyLight = new THREE.DirectionalLight('#f8fafc', 1.45);
-  keyLight.position.set(5.5, 9.6, 7.5);
+  const keyLight = new THREE.DirectionalLight('#f8fafc', 1.55);
+  keyLight.position.set(22.0, 31.0, 32.0);
   const keyTarget = new THREE.Object3D();
-  keyTarget.position.set(0, 1.2, 0);
+  keyTarget.position.set(6.0, 4.0, -8.0);
   rootGroup.add(keyLight, keyTarget);
   keyLight.target = keyTarget;
 
-  const rimCoolLight = new THREE.DirectionalLight('#7dd3fc', 0.88);
-  rimCoolLight.position.set(-6.5, 7.2, -9.5);
+  const rimCoolLight = new THREE.DirectionalLight('#7dd3fc', 0.95);
+  rimCoolLight.position.set(-28.0, 24.0, -36.0);
   rimCoolLight.target = keyTarget;
   rootGroup.add(rimCoolLight);
 
-  const padOverheadFill = new THREE.PointLight('#e0f2fe', 0.72, 26, 0);
-  padOverheadFill.position.set(1.2, 7.8, 0.4);
+  const padOverheadFill = new THREE.PointLight('#e0f2fe', 0.85, 115, 0);
+  padOverheadFill.position.set(14.0, 29.0, -8.0);
   rootGroup.add(padOverheadFill);
 
-  const workWarmFill = new THREE.PointLight('#fdba74', 0.45, 24, 0);
-  workWarmFill.position.set(-7.5, 4.8, -6.5);
+  const workWarmFill = new THREE.PointLight('#fdba74', 0.55, 65, 0);
+  workWarmFill.position.set(-20.0, 9.5, 22.0);
   rootGroup.add(workWarmFill);
 
   const setAccentColor = (hex: string) => {
