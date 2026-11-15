@@ -194,6 +194,7 @@ export function App() {
     firePulseCount: 0,
     interiorLightsOn: true,
     recenterTrigger: 0,
+    walkingInside: false,
   });
 
   const [spacecraftTelemetry, setSpacecraftTelemetry] = useState<SpacecraftTelemetry>({
@@ -305,6 +306,7 @@ export function App() {
       throttle: 0,
       brakeRequested: false,
       autopilotTargetId: null,
+      walkingInside: false,
       recenterTrigger: (prev.recenterTrigger || 0) + 1,
     }));
   }, []);
@@ -328,6 +330,7 @@ export function App() {
           throttle: 0,
           boostActive: false,
           autopilotTargetId: null,
+          walkingInside: false,
         }));
         setEvaActive(true);
         return;
@@ -341,6 +344,7 @@ export function App() {
         throttle: 0,
         boostActive: false,
         autopilotTargetId: null,
+        walkingInside: false,
       }));
     },
     [launchSpacecraftSR7, spacecraftControl.isActive]
@@ -467,6 +471,7 @@ export function App() {
           throttle: 0,
           brakeRequested: false,
           autopilotTargetId: null,
+          walkingInside: false,
           recenterTrigger: (prev.recenterTrigger || 0) + 1,
         }));
       } else if (mode === 'EVA_WALK') {
@@ -477,12 +482,18 @@ export function App() {
           throttle: 0,
           boostActive: false,
           autopilotTargetId: null,
+          walkingInside: false,
         }));
         setEvaActive(true);
       } else {
         spaceAudio.playSelectBody('planet');
         setEvaActive(false);
-        setSpacecraftControl((prev) => ({ ...prev, isActive: false, throttle: 0 }));
+        setSpacecraftControl((prev) => ({
+          ...prev,
+          isActive: false,
+          throttle: 0,
+          walkingInside: false,
+        }));
       }
       setStationDeployCommand((prev) => ({ seq: prev.seq + 1, mode }));
     },
@@ -501,6 +512,7 @@ export function App() {
       throttle: 0,
       boostActive: false,
       autopilotTargetId: null,
+      walkingInside: false,
     }));
     setWarpState((w) => ({ ...w, isActive: false, stage: 'IDLE' }));
     setIsMainMenuOpen(true);
@@ -548,6 +560,7 @@ export function App() {
         throttle: 0,
         boostActive: false,
         autopilotTargetId: null,
+        walkingInside: false,
       }));
       setSelectedInteriorLayerId(targetBody.interiorLayers[0]?.id || null);
       setBodySelectSeq((s) => s + 1);

@@ -139,12 +139,16 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
               }))
             }
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-100 text-[11px] font-medium transition-colors"
-            title="Alternar Câmera 3ª Pessoa / Cabine 1ª Pessoa (Tecla V)"
+            title={
+              controlState.walkingInside
+                ? 'Alternar Visão 1ª / 3ª Pessoa dentro da Cabine (Tecla V)'
+                : 'Alternar Câmera 3ª Pessoa / Cabine 1ª Pessoa (Tecla V)'
+            }
           >
             {controlState.cameraView === 'EXTERNAL' ? (
               <>
                 <Camera className="w-3.5 h-3.5 text-sky-300" />
-                <span>Cabine</span>
+                <span>{controlState.walkingInside ? '1ª Pessoa' : 'Cabine'}</span>
               </>
             ) : (
               <>
@@ -154,7 +158,38 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             )}
           </button>
 
-          {controlState.cameraView === 'COCKPIT' && (
+          <button
+            onClick={() =>
+              onUpdateControl((prev) => {
+                const nextWalk = !prev.walkingInside;
+                spaceAudio.playCockpitSwitch(nextWalk);
+                return {
+                  ...prev,
+                  walkingInside: nextWalk,
+                  throttle: 0,
+                  boostActive: false,
+                  autopilotTargetId: null,
+                  brakeRequested: nextWalk ? true : false,
+                  cameraView: nextWalk ? 'EXTERNAL' : prev.cameraView,
+                };
+              })
+            }
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${
+              controlState.walkingInside
+                ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-300 text-emerald-50 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-400/40 text-amber-100'
+            }`}
+            title={
+              controlState.walkingInside
+                ? 'Voltar ao Assento de Comando da Nave (Tecla G)'
+                : 'Levantar e Andar Livremente dentro da Nave com Colisão Física (Tecla G)'
+            }
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>{controlState.walkingInside ? 'Sentar no Comando' : 'Andar na Nave'}</span>
+          </button>
+
+          {!controlState.walkingInside && controlState.cameraView === 'COCKPIT' && (
             <button
               onClick={() =>
                 onUpdateControl((prev) => {
@@ -701,16 +736,24 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     TECLADO & MOUSE
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Propulsão / Frear</span>
+                    <span className="text-slate-400">Propulsão / Desacelerar</span>
                     <span className="font-mono text-white">W / S</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Manobrar (Curvar / Subir / Descer)</span>
-                    <span className="font-mono text-white">A / D + Setas ou Botão Direito</span>
+                    <span className="text-slate-400">Virar (Esquerda / Direita)</span>
+                    <span className="font-mono text-white">A / D ou ← / →</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Subir / Descer (Vertical Invertida)</span>
+                    <span className="font-mono text-white">↓ Sobe / ↑ Desce</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Rolar Asas (360°)</span>
                     <span className="font-mono text-white">Q / E</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Andar Dentro da Nave / Sentar</span>
+                    <span className="font-mono text-amber-300">G</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Motor de Dobra</span>
@@ -749,7 +792,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
       )}
 
       {/* OPTIONAL COMPACT TOUCH D-PAD (Hidden on screen unless user enables for mobile touch flight) */}
-      {showTouchPad && (
+      {showTouchPad && !controlState.walkingInside && (
         <div className="pointer-events-auto fixed left-3 bottom-16 z-30 bg-slate-950/85 backdrop-blur-xl border border-sky-500/35 rounded-2xl p-2 shadow-xl">
           <div className="grid grid-cols-3 gap-1">
             <button
@@ -759,8 +802,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
             <button
-              {...holdButtonProps('pitch', 1)}
+              {...holdButtonProps('pitch', -1)}
               className="w-8 h-8 rounded-lg bg-white/10 active:bg-sky-500/45 flex items-center justify-center text-white"
+              title="Descer (Seta Cima Invertida)"
             >
               <ChevronUp className="w-4 h-4" />
             </button>
@@ -792,8 +836,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
             <div />
             <button
-              {...holdButtonProps('pitch', -1)}
+              {...holdButtonProps('pitch', 1)}
               className="w-8 h-8 rounded-lg bg-white/10 active:bg-sky-500/45 flex items-center justify-center text-white"
+              title="Subir (Seta Baixo Invertida)"
             >
               <ChevronDown className="w-4 h-4" />
             </button>
@@ -804,7 +849,30 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
       {/* CLEAN SLIM BOTTOM FLIGHT PILL (Leaves ~95% of Viewport Unobstructed!) */}
       <div className="pb-3 px-3 flex justify-center">
-        <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/78 backdrop-blur-xl border border-white/15 rounded-full px-3.5 py-1.5 shadow-xl max-w-full">
+        {controlState.walkingInside ? (
+          <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-slate-950/82 backdrop-blur-xl border border-emerald-400/35 rounded-full px-4 py-1.5 shadow-xl text-[11px] font-mono text-slate-200">
+            <span className="text-emerald-300 font-bold">CABINE (A PÉ)</span>
+            <span className="text-white/25">·</span>
+            <span>W/A/S/D Mover</span>
+            <span className="hidden sm:inline text-white/25">·</span>
+            <span className="hidden sm:inline">Shift Correr · Espaço Pulo</span>
+            <span className="text-white/25">·</span>
+            <span>V 1ª/3ª Pessoa</span>
+            <span className="text-white/25">·</span>
+            <button
+              onClick={() =>
+                onUpdateControl((prev) => {
+                  spaceAudio.playCockpitSwitch(false);
+                  return { ...prev, walkingInside: false, brakeRequested: false };
+                })
+              }
+              className="px-2.5 py-0.5 rounded-full bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/45 text-amber-100 text-[10px] font-bold transition-colors"
+            >
+              G Sentar no Comando
+            </button>
+          </div>
+        ) : (
+          <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/78 backdrop-blur-xl border border-white/15 rounded-full px-3.5 py-1.5 shadow-xl max-w-full">
           <div className="text-[11px] font-mono text-white font-bold whitespace-nowrap">
             {telemetry.speedFormatted}
           </div>
@@ -915,6 +983,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             <Compass className="w-3.5 h-3.5" />
           </button>
         </div>
+        )}
       </div>
     </div>
   );

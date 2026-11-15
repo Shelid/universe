@@ -333,6 +333,7 @@ export interface SpacecraftControlState {
   firePulseCount: number; // Triggers ventral telemetry/plasma cannons
   interiorLightsOn: boolean;
   recenterTrigger?: number;
+  walkingInside?: boolean;
 }
 
 export interface NearbySpacecraftContact {

@@ -6,6 +6,10 @@ import {
   fetchCachedBlob,
   resolveModelAssetUrl,
 } from './assetCdnCache';
+import {
+  buildShipInteriorCollider,
+  ShipInteriorCollider,
+} from './shipInteriorCollider';
 
 export interface SR7SpacecraftRefs {
   rootGroup: THREE.Group;
@@ -44,6 +48,8 @@ export interface SR7SpacecraftRefs {
   rightMuzzleFlash: THREE.Mesh;
   muzzlePositionsLocal: [THREE.Vector3, THREE.Vector3];
   clickableCockpitControls: THREE.Object3D[];
+  interiorWalkerAnchor: THREE.Group;
+  readonly interiorCollider: ShipInteriorCollider | null;
   modelReadyPromise: Promise<void>;
   setVariant: (preset: SpacecraftPreset) => void;
   dispose: () => void;
@@ -280,6 +286,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
   };
 
   let modelReadyPromise: Promise<void> = Promise.resolve();
+  let interiorCollider: ShipInteriorCollider | null = null;
   const tailLightMaterials: THREE.MeshStandardMaterial[] = [];
   const neonMaterials: THREE.MeshStandardMaterial[] = [];
   const screenMaterials: THREE.MeshStandardMaterial[] = [];
@@ -564,6 +571,31 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
               }
 
               glbWrapper.add(loadedRoot);
+
+              // Bake physical 3D collision mesh for cabin walkthrough strictly in hullGroup-local coordinates
+              glbWrapper.updateMatrix();
+              const hullRelMeshes: Array<{ mesh: THREE.Mesh; matrix: THREE.Matrix4 }> = [];
+              const collectHullRelMeshes = (obj: THREE.Object3D, parentMat: THREE.Matrix4) => {
+                obj.updateMatrix();
+                const localToHull = new THREE.Matrix4().multiplyMatrices(parentMat, obj.matrix);
+                const m = obj as THREE.Mesh;
+                if (m.isMesh && m.visible) {
+                  hullRelMeshes.push({ mesh: m, matrix: localToHull });
+                }
+                for (let c = 0; c < obj.children.length; c++) {
+                  collectHullRelMeshes(obj.children[c], localToHull);
+                }
+              };
+              collectHullRelMeshes(loadedRoot, glbWrapper.matrix);
+              interiorCollider = buildShipInteriorCollider(
+                hullRelMeshes,
+                new THREE.Box3(
+                  new THREE.Vector3(-0.65, -0.35, -3.95),
+                  new THREE.Vector3(0.65, 0.45, -2.05)
+                ),
+                0.04
+              );
+
               resolve();
 
               // Stream PBR textures progressively in the background with bounded GPU VRAM & concurrency
@@ -731,6 +763,11 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
   pilotSeatAnchor.position.set(-0.1155, -0.012, -3.352);
   pilotSeatAnchor.scale.setScalar(0.68);
   interiorGroup.add(pilotSeatAnchor);
+
+  // Free-walk cabin anchor (1:1 hullGroup-local coords so cabin physics collider matches directly)
+  const interiorWalkerAnchor = new THREE.Group();
+  interiorWalkerAnchor.name = 'spaceship-interior-walker-anchor';
+  interiorGroup.add(interiorWalkerAnchor);
 
   // 3rd-Person Chase Camera Anchor behind & slightly above Spaceship
   const chaseCameraAnchor = new THREE.Object3D();
@@ -938,6 +975,10 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     rightMuzzleFlash,
     muzzlePositionsLocal,
     clickableCockpitControls,
+    interiorWalkerAnchor,
+    get interiorCollider() {
+      return interiorCollider;
+    },
     modelReadyPromise,
     setVariant,
     dispose,
