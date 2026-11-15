@@ -564,6 +564,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     controls.addEventListener('start', stopAutoCamera);
     let cockpitFovTargetOffset = 0;
     let cockpitFovOffset = 0;
+    let externalZoomTargetMult = 1.0;
+    let externalZoomMult = 1.0;
     const handleWheelInterrupt = (e: WheelEvent) => {
       cameraCommandRef.current.activeTransition = false;
       if (stateRef.current.spacecraftControl.isActive) {
@@ -574,7 +576,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             12
           );
         } else {
-          lastManualOrbitTimestamp = performance.now();
+          externalZoomTargetMult = THREE.MathUtils.clamp(
+            externalZoomTargetMult + Math.sign(e.deltaY) * 0.14,
+            0.55,
+            2.85
+          );
         }
       }
     };
@@ -1425,6 +1431,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let prevEvaRadarTrigger = stateRef.current.evaRadarTrigger || 0;
     let evaRadarAgeSec = 99;
     let prevSpaceParkedValid = false;
+    let shipAnchorMode: 'NONE' | 'STATION' | 'BODY' = 'NONE';
+    let shipAnchorBodyId = 'earth';
+    const prevShipAnchorWorldPos = new THREE.Vector3();
 
     const projectileGroup = new THREE.Group();
     scene.add(projectileGroup);
@@ -1450,6 +1459,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let angVelPitch = 0;
     let angVelYaw = 0;
     let angVelRoll = 0;
+    let visualBankAngle = 0;
     let boostBlend = 0;
     let continuousThrottle = 0;
     let lastSyncedReactThrottle = 0;
@@ -1460,6 +1470,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let lastFirePulseCount = 0;
     let muzzleFlashAlpha = 0;
     let isCockpitLooking = false;
+    let isExternalLooking = false;
     let isCockpitSteerDragging = false;
     let cockpitLastLookX = 0;
     let cockpitLastLookY = 0;
@@ -1467,6 +1478,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     let cockpitLookTargetPitch = 0;
     let cockpitLookYaw = 0;
     let cockpitLookPitch = 0;
+    let externalLookTargetYaw = 0;
+    let externalLookTargetPitch = 0;
+    let externalLookYaw = 0;
+    let externalLookPitch = 0;
+    const externalCamQuat = new THREE.Quaternion();
+    let hasExternalCamQuat = false;
     let cockpitDragOriginX = 0;
     let cockpitDragOriginY = 0;
     let cockpitDragSteerX = 0;
@@ -1495,8 +1512,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
       pressedKeys.add(e.code);
 
-      if (e.code === 'Space') {
+      if (
+        e.code === 'Space' ||
+        e.code === 'ArrowUp' ||
+        e.code === 'ArrowDown' ||
+        e.code === 'ArrowLeft' ||
+        e.code === 'ArrowRight'
+      ) {
         e.preventDefault();
+      }
+
+      if (e.code === 'Space') {
         (document.activeElement as HTMLElement | null)?.blur?.();
         continuousThrottle = 0;
         lastSyncedReactThrottle = 0;
@@ -1532,9 +1558,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         cockpitLookTargetYaw = 0;
         cockpitLookTargetPitch = 0;
         cockpitFovTargetOffset = 0;
-        if (stateRef.current.spacecraftControl.cameraView === 'EXTERNAL') {
-          prevCameraView = 'COCKPIT';
-        }
+        externalLookTargetYaw = 0;
+        externalLookTargetPitch = 0;
+        externalZoomTargetMult = 1.0;
       } else if (e.code === 'KeyF') {
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -1546,7 +1572,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           interiorLightsOn: !prev.interiorLightsOn,
         }));
       } else if (e.code === 'KeyW' && !e.repeat) {
-        continuousThrottle = Math.min(1, Number((continuousThrottle + 0.08).toFixed(2)));
+        continuousThrottle = Math.max(0.35, Math.min(1, Number((continuousThrottle + 0.12).toFixed(2))));
         lastSyncedReactThrottle = continuousThrottle;
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -1554,7 +1580,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           throttle: continuousThrottle,
         }));
       } else if (e.code === 'KeyS' && !e.repeat) {
-        continuousThrottle = Math.max(-0.5, Number((continuousThrottle - 0.08).toFixed(2)));
+        continuousThrottle = Math.max(0, Number((continuousThrottle - 0.15).toFixed(2)));
         lastSyncedReactThrottle = continuousThrottle;
         callbacksRef.current.onUpdateSpacecraftControl((prev) => ({
           ...prev,
@@ -1578,18 +1604,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const handlePointerDown = (e: MouseEvent) => {
       spaceAudio.unlock();
       pointerDownPos.set(e.clientX, e.clientY);
-      if (
-        stateRef.current.spacecraftControl.isActive &&
-        stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
-      ) {
+      if (stateRef.current.spacecraftControl.isActive) {
         if (e.button === 2) {
           isCockpitSteerDragging = true;
           cockpitDragOriginX = e.clientX;
           cockpitDragOriginY = e.clientY;
         } else if (e.button === 0) {
-          isCockpitLooking = true;
-          cockpitLastLookX = e.clientX;
-          cockpitLastLookY = e.clientY;
+          if (stateRef.current.spacecraftControl.cameraView === 'COCKPIT') {
+            isCockpitLooking = true;
+            cockpitLastLookX = e.clientX;
+            cockpitLastLookY = e.clientY;
+          } else {
+            isExternalLooking = true;
+            cockpitLastLookX = e.clientX;
+            cockpitLastLookY = e.clientY;
+            lastManualOrbitTimestamp = performance.now();
+          }
         }
       }
     };
@@ -1611,6 +1641,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           );
         }
       }
+      if (isExternalLooking) {
+        if ((e.buttons & 1) === 0) {
+          isExternalLooking = false;
+        } else {
+          const dx = e.clientX - cockpitLastLookX;
+          const dy = e.clientY - cockpitLastLookY;
+          cockpitLastLookX = e.clientX;
+          cockpitLastLookY = e.clientY;
+          lastManualOrbitTimestamp = performance.now();
+          externalLookTargetYaw = THREE.MathUtils.clamp(externalLookTargetYaw - dx * 0.0055, -2.85, 2.85);
+          externalLookTargetPitch = THREE.MathUtils.clamp(
+            externalLookTargetPitch - dy * 0.0048,
+            -1.15,
+            1.25
+          );
+        }
+      }
       if (isCockpitSteerDragging) {
         if ((e.buttons & 2) === 0) {
           isCockpitSteerDragging = false;
@@ -1620,8 +1667,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const dx = e.clientX - cockpitDragOriginX;
           const dy = e.clientY - cockpitDragOriginY;
           if (Math.hypot(dx, dy) >= 4) {
-            cockpitDragSteerX = THREE.MathUtils.clamp(-dx * 0.008, -1.1, 1.1);
-            cockpitDragSteerY = THREE.MathUtils.clamp(-dy * 0.008, -1.1, 1.1);
+            cockpitDragSteerX = THREE.MathUtils.clamp(-dx * 0.0085, -1.15, 1.15);
+            cockpitDragSteerY = THREE.MathUtils.clamp(-dy * 0.0085, -1.15, 1.15);
           }
         }
       }
@@ -1629,6 +1676,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     const handlePointerUp = (e: MouseEvent) => {
       isCockpitLooking = false;
+      isExternalLooking = false;
       isCockpitSteerDragging = false;
       cockpitDragSteerX = 0;
       cockpitDragSteerY = 0;
@@ -1647,69 +1695,73 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       raycaster.setFromCamera(mouse, camera);
 
       if (stateRef.current.spacecraftControl.isActive) {
-        const cockpitHits = raycaster.intersectObjects(sr7.clickableCockpitControls, false);
-        if (cockpitHits.length > 0) {
-          const action = cockpitHits[0].object.userData?.action;
-          if (action === 'headlights') {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => {
-              spaceAudio.playCockpitSwitch(!p.headlightsOn);
-              return { ...p, headlightsOn: !p.headlightsOn };
-            });
-            return;
-          }
-          if (action === 'sas') {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => {
-              spaceAudio.playCockpitSwitch(!p.sasEnabled);
-              return { ...p, sasEnabled: !p.sasEnabled };
-            });
-            return;
-          }
-          if (action === 'interior_lights') {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => {
-              spaceAudio.playCockpitSwitch(!p.interiorLightsOn);
-              return { ...p, interiorLightsOn: !p.interiorLightsOn };
-            });
-            return;
-          }
-          if (action === 'shields') {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => {
-              spaceAudio.playCockpitSwitch(!p.shieldsOn);
-              return { ...p, shieldsOn: !p.shieldsOn };
-            });
-            return;
-          }
-          if (action === 'scanner') {
-            spaceAudio.playCockpitSwitch(true);
-            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
-              ...p,
-              radarPulseTimestamp: performance.now(),
-            }));
-            return;
-          }
-          if (action === 'boost') {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => {
-              spaceAudio.playCockpitSwitch(!p.boostActive);
-              return { ...p, boostActive: !p.boostActive };
-            });
-            return;
-          }
-          if (action === 'fire') {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
-              ...p,
-              firePulseCount: p.firePulseCount + 1,
-            }));
-            return;
-          }
-          if (action === 'throttle_step') {
-            spaceAudio.playCockpitSwitch(true);
-            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
-              ...p,
-              brakeRequested: false,
-              throttle: p.throttle < 0.4 ? 0.5 : p.throttle < 0.9 ? 1.0 : 0,
-            }));
-            return;
+        if (stateRef.current.spacecraftControl.cameraView === 'COCKPIT') {
+          const cockpitHits = raycaster.intersectObjects(sr7.clickableCockpitControls, false);
+          if (cockpitHits.length > 0) {
+            const action = cockpitHits[0].object.userData?.action;
+            if (action === 'headlights') {
+              callbacksRef.current.onUpdateSpacecraftControl((p) => {
+                spaceAudio.playCockpitSwitch(!p.headlightsOn);
+                return { ...p, headlightsOn: !p.headlightsOn };
+              });
+              return;
+            }
+            if (action === 'sas') {
+              callbacksRef.current.onUpdateSpacecraftControl((p) => {
+                spaceAudio.playCockpitSwitch(!p.sasEnabled);
+                return { ...p, sasEnabled: !p.sasEnabled };
+              });
+              return;
+            }
+            if (action === 'interior_lights') {
+              callbacksRef.current.onUpdateSpacecraftControl((p) => {
+                spaceAudio.playCockpitSwitch(!p.interiorLightsOn);
+                return { ...p, interiorLightsOn: !p.interiorLightsOn };
+              });
+              return;
+            }
+            if (action === 'shields') {
+              callbacksRef.current.onUpdateSpacecraftControl((p) => {
+                spaceAudio.playCockpitSwitch(!p.shieldsOn);
+                return { ...p, shieldsOn: !p.shieldsOn };
+              });
+              return;
+            }
+            if (action === 'scanner') {
+              spaceAudio.playCockpitSwitch(true);
+              callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+                ...p,
+                radarPulseTimestamp: performance.now(),
+              }));
+              return;
+            }
+            if (action === 'boost') {
+              callbacksRef.current.onUpdateSpacecraftControl((p) => {
+                spaceAudio.playCockpitSwitch(!p.boostActive);
+                return { ...p, boostActive: !p.boostActive };
+              });
+              return;
+            }
+            if (action === 'fire') {
+              callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+                ...p,
+                firePulseCount: p.firePulseCount + 1,
+              }));
+              return;
+            }
+            if (action === 'throttle_step') {
+              spaceAudio.playCockpitSwitch(true);
+              callbacksRef.current.onUpdateSpacecraftControl((p) => ({
+                ...p,
+                brakeRequested: false,
+                throttle: p.throttle < 0.4 ? 0.5 : p.throttle < 0.9 ? 1.0 : 0,
+              }));
+              return;
+            }
           }
         }
+        // Never raycast planets/clickableMeshes while piloting the ship (prevents accidental autopilot or camera ejection)
+        return;
       }
 
       if (stateRef.current.isExploringInterior) {
@@ -1727,64 +1779,67 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (hits.length > 0) {
         const bodyId = hits[0].object.userData?.bodyId;
         if (bodyId) {
-          if (stateRef.current.spacecraftControl.isActive) {
-            callbacksRef.current.onUpdateSpacecraftControl((p) => ({
-              ...p,
-              autopilotTargetId: bodyId,
-            }));
-          } else {
-            callbacksRef.current.onSelectBody(
-              bodyId,
-              bodyId !== stateRef.current.selectedBodyId
-            );
-          }
+          callbacksRef.current.onSelectBody(
+            bodyId,
+            bodyId !== stateRef.current.selectedBodyId
+          );
         }
       }
     };
 
     const handleDoubleClick = () => {
-      if (
-        stateRef.current.spacecraftControl.isActive &&
-        stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
-      ) {
+      if (stateRef.current.spacecraftControl.isActive) {
         cockpitLookTargetYaw = 0;
         cockpitLookTargetPitch = 0;
         cockpitFovTargetOffset = 0;
+        externalLookTargetYaw = 0;
+        externalLookTargetPitch = 0;
+        externalZoomTargetMult = 1.0;
+        lastManualOrbitTimestamp = 0;
       }
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      if (
-        stateRef.current.spacecraftControl.isActive &&
-        stateRef.current.spacecraftControl.cameraView === 'COCKPIT'
-      ) {
+      if (stateRef.current.spacecraftControl.isActive) {
         e.preventDefault();
       }
     };
 
     const handleTouchStart = (e: TouchEvent) => {
       spaceAudio.unlock();
-      if (
-        stateRef.current.spacecraftControl.isActive &&
-        stateRef.current.spacecraftControl.cameraView === 'COCKPIT' &&
-        e.touches.length === 1
-      ) {
-        isCockpitLooking = true;
+      if (stateRef.current.spacecraftControl.isActive && e.touches.length === 1) {
+        if (stateRef.current.spacecraftControl.cameraView === 'COCKPIT') {
+          isCockpitLooking = true;
+        } else {
+          isExternalLooking = true;
+          lastManualOrbitTimestamp = performance.now();
+        }
         cockpitLastLookX = e.touches[0].clientX;
         cockpitLastLookY = e.touches[0].clientY;
       }
     };
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isCockpitLooking || e.touches.length !== 1) return;
+      if (e.touches.length !== 1) return;
       const dx = e.touches[0].clientX - cockpitLastLookX;
       const dy = e.touches[0].clientY - cockpitLastLookY;
       cockpitLastLookX = e.touches[0].clientX;
       cockpitLastLookY = e.touches[0].clientY;
-      cockpitLookTargetYaw = THREE.MathUtils.clamp(cockpitLookTargetYaw + dx * 0.0052, -2.95, 2.95);
-      cockpitLookTargetPitch = THREE.MathUtils.clamp(cockpitLookTargetPitch + dy * 0.005, -1.32, 1.48);
+      if (isCockpitLooking) {
+        cockpitLookTargetYaw = THREE.MathUtils.clamp(cockpitLookTargetYaw + dx * 0.0052, -2.95, 2.95);
+        cockpitLookTargetPitch = THREE.MathUtils.clamp(cockpitLookTargetPitch + dy * 0.005, -1.32, 1.48);
+      } else if (isExternalLooking) {
+        lastManualOrbitTimestamp = performance.now();
+        externalLookTargetYaw = THREE.MathUtils.clamp(externalLookTargetYaw - dx * 0.0055, -2.85, 2.85);
+        externalLookTargetPitch = THREE.MathUtils.clamp(
+          externalLookTargetPitch - dy * 0.0048,
+          -1.15,
+          1.25
+        );
+      }
     };
     const handleTouchEnd = () => {
       isCockpitLooking = false;
+      isExternalLooking = false;
       isCockpitSteerDragging = false;
       cockpitDragSteerX = 0;
       cockpitDragSteerY = 0;
@@ -2059,7 +2114,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           Boolean(pendingStationCmd) ||
           Boolean(st.lobbyShowcaseActive);
         const nearEarthForSats =
-          st.selectedBodyId === 'earth' || camera.position.distanceTo(earthPos) < 0.16;
+          st.selectedBodyId === 'earth' ||
+          camera.position.distanceTo(earthPos) < 0.16 ||
+          (prevSpaceParkedValid && sr7.rootGroup.position.distanceTo(earthPos) < 0.16);
         const showEarthSats = (nearEarthForSats || isStationFocused) && !st.isExploringInterior;
         satelliteGroup.visible = showEarthSats;
 
@@ -2184,6 +2241,58 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         camera.updateProjectionMatrix();
       }
 
+      // Maintain parked/flying Spacecraft position in its local orbital reference frame
+      // (Orbital Station or nearest celestial body) so leaving and returning to the ship
+      // keeps it at the exact same spot relative to the station or planet!
+      if (prevSpaceParkedValid && !st.lobbyShowcaseActive) {
+        _tmpV1.set(0, 0, 0);
+        if (shipAnchorMode === 'STATION' && hasOrbitalStationPos) {
+          _tmpV1.subVectors(orbitalStationWorldPos, prevShipAnchorWorldPos);
+        } else if (shipAnchorMode === 'BODY' && bodyWorldPositions[shipAnchorBodyId]) {
+          _tmpV1.subVectors(bodyWorldPositions[shipAnchorBodyId], prevShipAnchorWorldPos);
+        }
+        if (_tmpV1.lengthSq() > 0 && _tmpV1.lengthSq() < 0.25) {
+          sr7.rootGroup.position.add(_tmpV1);
+          if ((st.spacecraftControl.isActive && wasSpacecraftActive) || (st.evaActive && wasEvaActive)) {
+            camera.position.add(_tmpV1);
+            controls.target.add(_tmpV1);
+            if (st.evaActive && !evaAttachedToShip) {
+              astronaut.rootGroup.position.add(_tmpV1);
+            }
+          }
+        }
+
+        if (
+          hasOrbitalStationPos &&
+          sr7.rootGroup.position.distanceTo(orbitalStationWorldPos) < orbitalStationWorldScale * 260
+        ) {
+          shipAnchorMode = 'STATION';
+          prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
+        } else {
+          let bestBodyId = 'earth';
+          let bestRatio = Infinity;
+          for (let i = 0; i < ALL_CELESTIAL_BODIES.length; i++) {
+            const b = ALL_CELESTIAL_BODIES[i];
+            if (b.category === 'galaxy') continue;
+            const bPos = bodyWorldPositions[b.id];
+            if (!bPos) continue;
+            const bRad = Math.max(0.00015, getScaledRadius(b, st.scaleMode));
+            const ratio = sr7.rootGroup.position.distanceTo(bPos) / bRad;
+            if (ratio < bestRatio) {
+              bestRatio = ratio;
+              bestBodyId = b.id;
+            }
+          }
+          shipAnchorMode = 'BODY';
+          shipAnchorBodyId = bestBodyId;
+          if (bodyWorldPositions[bestBodyId]) {
+            prevShipAnchorWorldPos.copy(bodyWorldPositions[bestBodyId]);
+          }
+        }
+      } else {
+        shipAnchorMode = 'NONE';
+      }
+
       // Handle explicit Station Deploy actions (Orbit Close-Up / Ship Approach / EVA Deck Walk)
       const stationCmd = st.stationDeployCommand;
       if (stationCmd && stationCmd.seq !== prevStationDeploySeq && hasOrbitalStationPos) {
@@ -2213,15 +2322,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           angVelPitch = 0;
           angVelYaw = 0;
           angVelRoll = 0;
+          visualBankAngle = 0;
+          sr7.hullGroup.rotation.z = 0;
+          sr7.interiorGroup.rotation.z = 0;
           continuousThrottle = 0;
           lastSyncedReactThrottle = 0;
           prevSpaceParkedValid = true;
+          shipAnchorMode = 'STATION';
+          prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
           wasSpacecraftActive = true;
           wasLobbyShowcaseActive = false;
           sr7.rootGroup.scale.setScalar(currentShipScale);
           sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
           sr7.chaseCameraAnchor.getWorldPosition(_tmpV2);
           camera.position.copy(_tmpV2);
+          externalCamQuat.copy(sr7.rootGroup.quaternion);
+          camera.quaternion.copy(externalCamQuat);
+          hasExternalCamQuat = true;
           controls.minDistance = Math.max(1e-7, currentShipScale * 2.85);
           controls.maxDistance = 200000;
           resetControlsDamping(sr7.rootGroup.position);
@@ -2234,6 +2351,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           sr7.rootGroup.lookAt(orbitalStationWorldPos);
           sr7.rootGroup.scale.setScalar(currentShipScale);
           prevSpaceParkedValid = true;
+          shipAnchorMode = 'STATION';
+          prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
 
           if (evaAttachedToShip) {
             scene.add(astronaut.rootGroup);
@@ -2269,6 +2388,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           // ORBIT_INSPECT: frame the 12-module Orbital Station from the exterior with Earth behind it
           wasLobbyShowcaseActive = false;
           cameraCommandRef.current.activeTransition = false;
+          if (!prevSpaceParkedValid) {
+            _tmpV1
+              .copy(orbitalStation.shipApproachLocal)
+              .multiplyScalar(orbitalStationWorldScale)
+              .applyQuaternion(orbitalStation.rootGroup.quaternion);
+            sr7.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV1);
+            sr7.rootGroup.lookAt(orbitalStationWorldPos);
+            sr7.rootGroup.scale.setScalar(currentShipScale);
+            prevSpaceParkedValid = true;
+            shipAnchorMode = 'STATION';
+            prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
+          }
           if (earthPos) {
             previousTargetWorldPos.copy(earthPos);
             hasInitializedTargetPos = true;
@@ -2299,7 +2430,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         wasSpacecraftActive = false;
         wasEvaActive = false;
         wasLobbyShowcaseActive = false;
-        prevSpaceParkedValid = false;
         controls.enabled = true;
         controls.minDistance = 0.0000004;
         controls.maxDistance = 200000;
@@ -2435,6 +2565,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         sr7.rootGroup.visible = true;
         sr7.rootGroup.scale.setScalar(lobbyScale);
+        sr7.hullGroup.rotation.z = 0;
+        sr7.interiorGroup.rotation.z = 0;
         sr7.rootGroup.position
           .copy(stagingCenter)
           .addScaledVector(stageRight, lobbyScale * 1.45)
@@ -2544,29 +2676,87 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         wasWarpingLastFrame = false;
         const sc = st.spacecraftControl;
 
-        // Compute true orbital-vessel scale from the most dominant nearby celestial body
+        if (!wasSpacecraftActive) {
+          if (!prevSpaceParkedValid) {
+            if (hasOrbitalStationPos && st.selectedSatelliteId === 'sat-orbital-gateway') {
+              _tmpV1
+                .copy(orbitalStation.shipApproachLocal)
+                .multiplyScalar(orbitalStationWorldScale)
+                .applyQuaternion(orbitalStation.rootGroup.quaternion);
+              sr7.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV1);
+              sr7.rootGroup.lookAt(orbitalStationWorldPos);
+              shipAnchorMode = 'STATION';
+              prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
+            } else {
+              const initScale = THREE.MathUtils.clamp(
+                Math.max(0.00015, targetRadius) * 0.0038,
+                0.0000028,
+                0.00175
+              );
+              const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
+              const spawnDist =
+                selectedBody.category === 'galaxy'
+                  ? targetRadius * 1.45
+                  : targetRadius * 2.55 + initScale * 7.5;
+              sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
+              sr7.rootGroup.lookAt(targetPos);
+              shipAnchorMode = 'BODY';
+              shipAnchorBodyId = selectedBody.id;
+              prevShipAnchorWorldPos.copy(targetPos);
+            }
+            prevSpaceParkedValid = true;
+          }
+          shipVelocity.set(0, 0, 0);
+          angVelPitch = 0;
+          angVelYaw = 0;
+          angVelRoll = 0;
+          visualBankAngle = 0;
+          sr7.hullGroup.rotation.z = 0;
+          sr7.interiorGroup.rotation.z = 0;
+          continuousThrottle = sc.throttle;
+          lastSyncedReactThrottle = sc.throttle;
+          lastManualOrbitTimestamp = 0;
+          cockpitLookTargetYaw = 0;
+          cockpitLookTargetPitch = 0;
+          cockpitLookYaw = 0;
+          cockpitLookPitch = 0;
+          cockpitFovTargetOffset = 0;
+          cockpitFovOffset = 0;
+          externalLookTargetYaw = 0;
+          externalLookTargetPitch = 0;
+          externalLookYaw = 0;
+          externalLookPitch = 0;
+          externalZoomTargetMult = 1.0;
+          externalZoomMult = 1.0;
+          externalCamQuat.copy(sr7.rootGroup.quaternion);
+          hasExternalCamQuat = true;
+          wasSpacecraftActive = true;
+          wasEvaActive = false;
+          prevCameraView = sc.cameraView;
+          lastFirePulseCount = sc.firePulseCount;
+        }
+
+        // Compute true orbital-vessel scale from the most dominant nearby celestial body around the ship
         let dominantBody = selectedBody;
         let dominantRadius = Math.max(0.00015, targetRadius);
         let nearestPlanetDist = sr7.rootGroup.position.distanceTo(targetPos);
         let nearestPlanetRadius = Math.max(0.00015, targetRadius);
         let bestProxRatio = Infinity;
 
-        if (wasSpacecraftActive) {
-          for (let i = 0; i < ALL_CELESTIAL_BODIES.length; i++) {
-            const b = ALL_CELESTIAL_BODIES[i];
-            if (b.category === 'galaxy') continue;
-            const bPos = bodyWorldPositions[b.id];
-            if (!bPos) continue;
-            const bRad = Math.max(0.00015, getScaledRadius(b, st.scaleMode));
-            const bDist = sr7.rootGroup.position.distanceTo(bPos);
-            const ratio = bDist / bRad;
-            if (ratio < bestProxRatio) {
-              bestProxRatio = ratio;
-              dominantBody = b;
-              dominantRadius = bRad;
-              nearestPlanetDist = bDist;
-              nearestPlanetRadius = bRad;
-            }
+        for (let i = 0; i < ALL_CELESTIAL_BODIES.length; i++) {
+          const b = ALL_CELESTIAL_BODIES[i];
+          if (b.category === 'galaxy') continue;
+          const bPos = bodyWorldPositions[b.id];
+          if (!bPos) continue;
+          const bRad = Math.max(0.00015, getScaledRadius(b, st.scaleMode));
+          const bDist = sr7.rootGroup.position.distanceTo(bPos);
+          const ratio = bDist / bRad;
+          if (ratio < bestProxRatio) {
+            bestProxRatio = ratio;
+            dominantBody = b;
+            dominantRadius = bRad;
+            nearestPlanetDist = bDist;
+            nearestPlanetRadius = bRad;
           }
         }
 
@@ -2579,24 +2769,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           0.0000028,
           0.00175
         );
-        const prevFrameScale = currentShipScale;
-        if (!wasSpacecraftActive) {
-          currentShipScale = desiredShipScale;
-        } else {
-          currentShipScale = THREE.MathUtils.lerp(
-            currentShipScale,
-            desiredShipScale,
-            Math.min(1, dt * 3.0)
-          );
-          // Preserve consistent chase framing if scaling between Sun, Gas Giants, and Rocky Worlds
-          if (sc.cameraView === 'EXTERNAL' && prevCameraView === 'EXTERNAL' && prevFrameScale > 0) {
-            const scaleRatio = currentShipScale / prevFrameScale;
-            if (Math.abs(scaleRatio - 1) > 1e-5) {
-              _tmpV2.subVectors(camera.position, sr7.rootGroup.position).multiplyScalar(scaleRatio);
-              camera.position.copy(sr7.rootGroup.position).add(_tmpV2);
-            }
-          }
-        }
+        currentShipScale = THREE.MathUtils.lerp(
+          currentShipScale,
+          desiredShipScale,
+          Math.min(1, dt * 4.5)
+        );
         sr7.rootGroup.scale.setScalar(currentShipScale);
 
         // Keep rim lighting subtle and dynamic so PBR metallic bevels gleam cleanly anywhere in deep space
@@ -2607,42 +2784,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           .addScaledVector(_tmpV2, currentShipScale * 26);
         shipRimLight.target.position.copy(sr7.rootGroup.position);
         shipRimLight.target.updateMatrixWorld();
-
-        if (!wasSpacecraftActive) {
-          if (!prevSpaceParkedValid) {
-            const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-            const spawnDist =
-              selectedBody.category === 'galaxy'
-                ? targetRadius * 1.45
-                : targetRadius * 2.55 + currentShipScale * 7.5;
-            sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
-            sr7.rootGroup.lookAt(targetPos);
-            prevSpaceParkedValid = true;
-          }
-          shipVelocity.set(0, 0, 0);
-          angVelPitch = 0;
-          angVelYaw = 0;
-          angVelRoll = 0;
-          continuousThrottle = sc.throttle;
-          lastSyncedReactThrottle = sc.throttle;
-          lastManualOrbitTimestamp = 0;
-          cockpitLookTargetYaw = 0;
-          cockpitLookTargetPitch = 0;
-          cockpitLookYaw = 0;
-          cockpitLookPitch = 0;
-          cockpitFovTargetOffset = 0;
-          cockpitFovOffset = 0;
-          wasSpacecraftActive = true;
-          wasEvaActive = false;
-          prevCameraView = sc.cameraView;
-          lastFirePulseCount = sc.firePulseCount;
-          if (sc.cameraView === 'EXTERNAL') {
-            sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
-            sr7.chaseCameraAnchor.getWorldPosition(_tmpV2);
-            camera.position.copy(_tmpV2);
-            controls.target.copy(sr7.rootGroup.position);
-          }
-        }
 
         // Attach shared Astronaut character to Fighter pilot seat (visible looking through clear exterior glass)
         if (!evaAttachedToShip) {
@@ -2659,52 +2800,28 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           mode: 'SEATED',
           moveSpeed01: 0,
           boostActive: false,
-          pitchTilt: angVelPitch / 1.05,
-          rollTilt: angVelRoll / 1.45,
+          pitchTilt: angVelPitch / 1.25,
+          rollTilt: (angVelRoll + visualBankAngle) / 1.45,
           visorLightOn: false,
           worldScale: currentShipScale,
         });
 
         sr7.rootGroup.visible = true;
 
-        // Synchronize smooth keyboard hold throttle (W/S) with HUD slider/presets seamlessly
-        if (Math.abs(sc.throttle - lastSyncedReactThrottle) > 0.002) {
-          continuousThrottle = sc.throttle;
-          lastSyncedReactThrottle = sc.throttle;
-        } else {
-          const wHeld = pressedKeys.has('KeyW');
-          const sHeld = pressedKeys.has('KeyS');
-          if (wHeld || sHeld) {
-            const deltaT = ((wHeld ? 1 : 0) - (sHeld ? 1 : 0)) * dt * 0.58;
-            continuousThrottle = THREE.MathUtils.clamp(continuousThrottle + deltaT, -0.5, 1.0);
-            throttleSyncTimer += dt;
-            if (throttleSyncTimer > 0.075 && Math.abs(continuousThrottle - lastSyncedReactThrottle) > 0.015) {
-              throttleSyncTimer = 0;
-              const nextSync = Number(continuousThrottle.toFixed(2));
-              lastSyncedReactThrottle = nextSync;
-              cb.onUpdateSpacecraftControl((prev) => ({
-                ...prev,
-                brakeRequested: false,
-                throttle: nextSync,
-              }));
-            }
-          }
-        }
-
-        // 1. Gather Smooth 6-DOF Attitude Inputs (Newtonian Angular Inertia + SAS Gyro Stabilizer)
+        // 1. Gather Smooth 6-DOF Starfighter Attitude & Propulsion Inputs
         const vSteer = st.virtualSteerInput;
         cockpitSteerSmoothX = THREE.MathUtils.lerp(
           cockpitSteerSmoothX,
           cockpitDragSteerX,
-          Math.min(1, dt * 9.5)
+          Math.min(1, dt * 11.0)
         );
         cockpitSteerSmoothY = THREE.MathUtils.lerp(
           cockpitSteerSmoothY,
           cockpitDragSteerY,
-          Math.min(1, dt * 9.5)
+          Math.min(1, dt * 11.0)
         );
         if (!isCockpitSteerDragging) {
-          const dragDecay = Math.exp(-dt * 9.5);
+          const dragDecay = Math.exp(-dt * 10.5);
           cockpitDragSteerX *= dragDecay;
           cockpitDragSteerY *= dragDecay;
         }
@@ -2728,20 +2845,55 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         yawInput = THREE.MathUtils.clamp(yawInput, -1.25, 1.25);
         rollInput = THREE.MathUtils.clamp(rollInput, -1.25, 1.25);
 
+        const wHeld = pressedKeys.has('KeyW') || (vSteer?.forward || 0) > 0.1;
+        const sHeld = pressedKeys.has('KeyS') || (vSteer?.forward || 0) < -0.1;
+        const isSteeringActively = Math.abs(pitchInput) > 0.05 || Math.abs(yawInput) > 0.05;
+
+        // Synchronize keyboard W/S & steering impulse with HUD throttle slider seamlessly
+        if (Math.abs(sc.throttle - lastSyncedReactThrottle) > 0.002 && !wHeld && !sHeld) {
+          continuousThrottle = Math.max(0, sc.throttle);
+          lastSyncedReactThrottle = continuousThrottle;
+        } else {
+          if (wHeld) {
+            continuousThrottle = THREE.MathUtils.clamp(
+              Math.max(0.32, continuousThrottle) + dt * 0.85,
+              0,
+              1.0
+            );
+          } else if (sHeld) {
+            continuousThrottle = THREE.MathUtils.clamp(continuousThrottle - dt * 1.15, 0, 1.0);
+          } else if (isSteeringActively && !pressedKeys.has('Space') && continuousThrottle < 0.30) {
+            // Auto-engage smooth forward impulse when steering so the ship curves forward like a real starfighter instead of pivoting in place
+            continuousThrottle = THREE.MathUtils.lerp(continuousThrottle, 0.32, Math.min(1, dt * 4.5));
+          }
+          throttleSyncTimer += dt;
+          if (
+            throttleSyncTimer > 0.075 &&
+            (Math.abs(continuousThrottle - lastSyncedReactThrottle) > 0.015 ||
+              (sc.brakeRequested && (wHeld || isSteeringActively)))
+          ) {
+            throttleSyncTimer = 0;
+            const nextSync = Number(continuousThrottle.toFixed(2));
+            lastSyncedReactThrottle = nextSync;
+            cb.onUpdateSpacecraftControl((prev) => ({
+              ...prev,
+              brakeRequested: prev.brakeRequested && !wHeld && !isSteeringActively,
+              throttle: nextSync,
+            }));
+          }
+        }
+
         const activeShipPreset = getSpacecraftPreset(st.selectedShipId || 'sr7-vanguard');
         const agilityMult = activeShipPreset.flightMultipliers.agility;
         const speedMult = activeShipPreset.flightMultipliers.speed;
         const boostMult = activeShipPreset.flightMultipliers.boost;
 
-        const targetAngPitch = pitchInput * 1.05 * agilityMult;
-        const targetAngYaw = yawInput * 1.05 * agilityMult;
-        // Subtle RCS roll coordination only when SAS stabilization is engaged
-        const bankAssist = sc.sasEnabled && Math.abs(rollInput) < 0.05 ? -yawInput * 0.24 : 0;
-        const targetAngRoll = rollInput * 1.45 * agilityMult + bankAssist;
+        const targetAngPitch = pitchInput * 1.28 * agilityMult;
+        const targetAngYaw = yawInput * 1.28 * agilityMult;
+        const targetAngRoll = rollInput * 1.65 * agilityMult;
 
-        const rotAccel = Math.min(1, dt * 5.8);
-        // True vacuum rotation in Newtonian mode (near-zero drag) vs crisp RCS damping with SAS ON
-        const rotDamp = Math.min(1, dt * (sc.sasEnabled ? 5.6 : 0.14));
+        const rotAccel = Math.min(1, dt * 8.2);
+        const rotDamp = Math.min(1, dt * (sc.sasEnabled ? 7.2 : 0.45));
         angVelPitch = THREE.MathUtils.lerp(
           angVelPitch,
           targetAngPitch,
@@ -2755,14 +2907,28 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         angVelRoll = THREE.MathUtils.lerp(
           angVelRoll,
           targetAngRoll,
-          Math.abs(rollInput) > 0.01 || Math.abs(bankAssist) > 0.01 ? rotAccel : rotDamp
+          Math.abs(rollInput) > 0.01 ? rotAccel : rotDamp
         );
 
         if (Math.abs(angVelPitch) > 0.0005) sr7.rootGroup.rotateX(angVelPitch * dt);
         if (Math.abs(angVelYaw) > 0.0005) sr7.rootGroup.rotateY(angVelYaw * dt);
         if (Math.abs(angVelRoll) > 0.0005) sr7.rootGroup.rotateZ(angVelRoll * dt);
 
-        // 2. Autopilot Alignment & Smooth Automated Approach (supports Bodies & Estação Orbital)
+        // Starfighter Coordinated Wing Bank into Left/Right Turns (auto-levels when flying straight!)
+        const targetVisualBank = THREE.MathUtils.clamp(
+          angVelYaw * 0.42 - rollInput * 0.16,
+          -0.64,
+          0.64
+        );
+        visualBankAngle = THREE.MathUtils.lerp(
+          visualBankAngle,
+          targetVisualBank,
+          Math.min(1, dt * 7.8)
+        );
+        sr7.hullGroup.rotation.z = visualBankAngle;
+        sr7.interiorGroup.rotation.z = visualBankAngle * 0.45;
+
+        // 2. Autopilot Alignment & Smooth Automated Approach (Never ejects camera out of ship!)
         const autoTargetId = sc.autopilotTargetId;
         const isStationAutoTarget = autoTargetId === 'sat-orbital-gateway' && hasOrbitalStationPos;
         const autoPos = isStationAutoTarget
@@ -2771,7 +2937,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             ? bodyWorldPositions[autoTargetId]
             : null;
         let autopilotStatus: SpacecraftTelemetry['autopilotStatus'] = 'OFF';
-        let autoThrottleDrive = continuousThrottle;
+        let autoThrottleDrive = wHeld ? Math.max(continuousThrottle, 0.55) : continuousThrottle;
 
         if (autoPos && autoTargetId) {
           const autoBody = getCelestialBody(isStationAutoTarget ? 'earth' : autoTargetId);
@@ -2785,7 +2951,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
           if (distToAuto <= stopDist) {
             autopilotStatus = 'ARRIVED';
-            shipVelocity.multiplyScalar(Math.exp(-dt * 5.2));
+            shipVelocity.multiplyScalar(Math.exp(-dt * 5.8));
             if (shipVelocity.length() < currentShipScale * 0.08) {
               spaceAudio.playAutopilotArrived();
               shipVelocity.set(0, 0, 0);
@@ -2797,13 +2963,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 throttle: 0,
                 boostActive: false,
               }));
-              if (isStationAutoTarget) {
-                cb.onSelectBody('earth', false);
-                const gatewaySat = st.propagatedSatellites.find((s) => s.id === 'sat-orbital-gateway');
-                if (gatewaySat) cb.onSelectSatellite(gatewaySat);
-              } else {
-                cb.onSelectBody(autoTargetId, false);
-              }
             }
           } else {
             _tmpMat4.lookAt(sr7.rootGroup.position, autoPos, _worldUp);
@@ -2811,22 +2970,26 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             const alignAngle = sr7.rootGroup.quaternion.angleTo(_tmpQuat1);
 
             if (Math.abs(pitchInput) < 0.08 && Math.abs(yawInput) < 0.08) {
-              sr7.rootGroup.quaternion.slerp(_tmpQuat1, Math.min(1, dt * 2.8));
+              sr7.rootGroup.quaternion.slerp(_tmpQuat1, Math.min(1, dt * 3.2));
             }
             autopilotStatus = alignAngle > 0.14 ? 'ALIGNING' : 'CRUISING';
-            if (!sc.brakeRequested) {
+            if (!sc.brakeRequested && !sHeld) {
               autoThrottleDrive = alignAngle > 0.35 ? 0.35 : distToAuto > stopDist * 2.4 ? 1.0 : 0.45;
             }
           }
         }
 
-        // 3. True Newtonian Momentum Integration & Adaptive Scale Cruise Across Real 1:1 Space
+        // 3. Responsive Starfighter Propulsion & Adaptive Scale Cruise Across Real 1:1 Space
         const boosting =
           sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight');
-        boostBlend = THREE.MathUtils.lerp(boostBlend, boosting ? 1 : 0, Math.min(1, dt * 3.8));
-        const effectiveThrottle = sc.brakeRequested
+        boostBlend = THREE.MathUtils.lerp(boostBlend, boosting ? 1 : 0, Math.min(1, dt * 4.2));
+        const isBrakingNow =
+          (sc.brakeRequested && !wHeld && !isSteeringActively) ||
+          pressedKeys.has('Space') ||
+          (sHeld && continuousThrottle <= 0.04);
+        const effectiveThrottle = isBrakingNow
           ? 0
-          : THREE.MathUtils.clamp(autoThrottleDrive + (vSteer?.forward || 0), -0.8, 1.2);
+          : THREE.MathUtils.clamp(autoThrottleDrive + Math.max(0, vSteer?.forward || 0), 0, 1.2);
         const nearestClearance = Math.max(
           currentShipScale * 14,
           nearestPlanetDist - nearestPlanetRadius * 1.02
@@ -2839,46 +3002,73 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           ) * speedMult
           : (!boosting
             ? THREE.MathUtils.clamp(
-              Math.max(currentShipScale * 16.0, nearestClearance * 0.85),
-              currentShipScale * 16.0,
+              Math.max(currentShipScale * 18.0, nearestClearance * 0.85),
+              currentShipScale * 18.0,
               520.0
             )
             : THREE.MathUtils.clamp(
-              Math.max(currentShipScale * 38.0, nearestClearance * 1.6),
-              currentShipScale * 38.0,
+              Math.max(currentShipScale * 42.0, nearestClearance * 1.6),
+              currentShipScale * 42.0,
               3200.0
             )) * speedMult;
 
         const maxSpeed = adaptiveCruise * THREE.MathUtils.lerp(1.0, 3.8 * boostMult, boostBlend);
         const shipForward = _tmpV1.set(0, 0, -1).applyQuaternion(sr7.rootGroup.quaternion).normalize();
 
-        if (sc.brakeRequested) {
-          shipVelocity.multiplyScalar(Math.exp(-dt * 4.4));
+        if (isBrakingNow) {
+          shipVelocity.multiplyScalar(Math.exp(-dt * 5.2));
+          if (shipVelocity.length() < currentShipScale * 0.04) {
+            shipVelocity.set(0, 0, 0);
+          }
+        } else if (sHeld) {
+          shipVelocity.multiplyScalar(Math.exp(-dt * 3.8));
+        } else if (effectiveThrottle > 0.01) {
+          const targetCruiseSpeed = maxSpeed * Math.min(1.0, effectiveThrottle);
+          const thrustAccel = maxSpeed * (boosting ? 2.4 : 1.75);
+          shipVelocity.addScaledVector(shipForward, effectiveThrottle * thrustAccel * dt);
+          const spd = shipVelocity.length();
+          if (spd > 1e-8) {
+            const alignRate = sc.sasEnabled ? 10.5 : 3.2;
+            _tmpV2.copy(shipForward).multiplyScalar(spd);
+            shipVelocity.lerp(_tmpV2, Math.min(1, dt * alignRate));
+          }
+          const newSpd = shipVelocity.length();
+          if (newSpd > targetCruiseSpeed) {
+            _tmpV2.copy(shipVelocity).setLength(targetCruiseSpeed);
+            shipVelocity.lerp(_tmpV2, Math.min(1, dt * 4.5));
+          }
+        } else if (sc.sasEnabled) {
+          // Smooth fly-by-wire deceleration when throttle is set to 0%
+          const spd = shipVelocity.length();
+          if (spd > 1e-8) {
+            _tmpV2.copy(shipForward).multiplyScalar(spd);
+            shipVelocity.lerp(_tmpV2, Math.min(1, dt * 8.0));
+          }
+          shipVelocity.multiplyScalar(Math.exp(-dt * 1.4));
           if (shipVelocity.length() < currentShipScale * 0.03) {
             shipVelocity.set(0, 0, 0);
           }
-        } else if (Math.abs(effectiveThrottle) > 0.01) {
-          const thrustAccel = maxSpeed * (boosting ? 1.55 : 0.92);
-          shipVelocity.addScaledVector(shipForward, effectiveThrottle * thrustAccel * dt);
-          if (sc.sasEnabled) {
-            const spd = shipVelocity.length();
-            if (spd > 1e-8) {
-              _tmpV2.copy(shipForward).multiplyScalar(effectiveThrottle >= 0 ? spd : -spd);
-              shipVelocity.lerp(_tmpV2, Math.min(1, dt * 1.55));
-            }
-          }
-          const newSpd = shipVelocity.length();
-          if (newSpd > maxSpeed) {
-            _tmpV2.copy(shipVelocity).setLength(maxSpeed);
-            shipVelocity.lerp(_tmpV2, Math.min(1, dt * 3.5));
-          }
-        } else if (sc.sasEnabled) {
-          // Coupled fly-by-wire coasts freely with only subtle orbital micro-trim
-          shipVelocity.multiplyScalar(Math.exp(-dt * 0.16));
         }
 
         const shipDisplacement = _tmpV3.copy(shipVelocity).multiplyScalar(dt);
         sr7.rootGroup.position.add(shipDisplacement);
+
+        // Planetary Upper-Atmosphere Keep-Out (prevents flying inside planet meshes; skims smoothly over horizon)
+        const dominantWorldPos = bodyWorldPositions[dominantBody.id];
+        if (dominantWorldPos && dominantBody.category !== 'galaxy') {
+          const minPlanetSurfaceDist = dominantRadius * 1.038 + currentShipScale * 2.5;
+          _tmpV4.subVectors(sr7.rootGroup.position, dominantWorldPos);
+          const curPlanetDist = _tmpV4.length();
+          if (curPlanetDist < minPlanetSurfaceDist && curPlanetDist > 1e-9) {
+            _tmpV4.divideScalar(curPlanetDist);
+            sr7.rootGroup.position.copy(dominantWorldPos).addScaledVector(_tmpV4, minPlanetSurfaceDist);
+            const inwardVel = shipVelocity.dot(_tmpV4);
+            if (inwardVel < 0) {
+              shipVelocity.addScaledVector(_tmpV4, -inwardVel);
+            }
+          }
+        }
+
         if (
           hasOrbitalStationPos &&
           orbitalStation.enforceExteriorKeepOutWorld(
@@ -2920,7 +3110,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               44,
               94
             )
-            : THREE.MathUtils.lerp(48, 57, boostBlend);
+            : THREE.MathUtils.lerp(48, 58, boostBlend);
         if (Math.abs(camera.fov - targetFov) > 0.1) {
           camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, Math.min(1, dt * 6.5));
           camera.updateProjectionMatrix();
@@ -2959,16 +3149,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           }
         }
 
-        // 6. Camera Placement: Elastic 3rd-Person Spring Chase + Orbit OR 360° Free-Look 1st-Person Cockpit
+        // 6. Camera Placement: Locked 6-DOF Starfighter Chase Rig OR 360° Free-Look 1st-Person Cockpit
+        controls.enabled = false;
+        const curRecenter = sc.recenterTrigger || 0;
+        if (curRecenter !== prevRecenterTrigger) {
+          prevRecenterTrigger = curRecenter;
+          lastManualOrbitTimestamp = 0;
+          cockpitLookTargetYaw = 0;
+          cockpitLookTargetPitch = 0;
+          cockpitFovTargetOffset = 0;
+          externalLookTargetYaw = 0;
+          externalLookTargetPitch = 0;
+          externalZoomTargetMult = 1.0;
+        }
+
         if (sc.cameraView === 'COCKPIT') {
-          controls.enabled = false;
-          const curRecenter = sc.recenterTrigger || 0;
-          if (curRecenter !== prevRecenterTrigger) {
-            prevRecenterTrigger = curRecenter;
-            cockpitLookTargetYaw = 0;
-            cockpitLookTargetPitch = 0;
-            cockpitFovTargetOffset = 0;
-          }
           if (prevCameraView !== 'COCKPIT') {
             cockpitLookTargetYaw = 0;
             cockpitLookTargetPitch = 0;
@@ -3003,11 +3198,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             .applyQuaternion(sr7.rootGroup.quaternion);
           camera.position.copy(_tmpV4).add(_tmpV5);
 
-          // Smooth Free-Look ('YXZ') + subtle inertial G-lean
+          // Smooth Free-Look ('YXZ') + subtle inertial G-lean & coordinated wing bank
           _tmpEuler.set(
-            cockpitLookPitch + angVelPitch * -0.022,
-            cockpitLookYaw + angVelYaw * -0.022,
-            angVelRoll * -0.036,
+            cockpitLookPitch + angVelPitch * -0.024,
+            cockpitLookYaw + angVelYaw * -0.024,
+            angVelRoll * -0.036 + visualBankAngle * 0.38,
             'YXZ'
           );
           _tmpQuat1.setFromEuler(_tmpEuler);
@@ -3017,46 +3212,64 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             .copy(camera.position)
             .addScaledVector(camForward, Math.max(0.0001, currentShipScale * 18));
         } else {
-          controls.enabled = true;
-          controls.minDistance = Math.max(1e-7, currentShipScale * 2.85);
-          controls.maxDistance = 190000;
-          const curRecenter = sc.recenterTrigger || 0;
-          if (curRecenter !== prevRecenterTrigger) {
-            prevRecenterTrigger = curRecenter;
-            lastManualOrbitTimestamp = 0;
-            prevCameraView = 'COCKPIT';
+          if (prevCameraView !== 'EXTERNAL' || !hasExternalCamQuat) {
+            externalLookTargetYaw = 0;
+            externalLookTargetPitch = 0;
+            externalLookYaw = 0;
+            externalLookPitch = 0;
+            externalCamQuat.copy(sr7.rootGroup.quaternion);
+            hasExternalCamQuat = true;
           }
 
-          if (prevCameraView !== 'EXTERNAL') {
-            sr7.chaseCameraAnchor.updateWorldMatrix(true, false);
-            sr7.chaseCameraAnchor.getWorldPosition(_tmpV4);
-            camera.position.copy(_tmpV4);
-            controls.target.copy(sr7.rootGroup.position);
-            lastManualOrbitTimestamp = 0;
-          } else {
-            camera.position.add(shipDisplacement);
-            controls.target.copy(sr7.rootGroup.position);
-
-            // Elastic Chase Spring: softly aligns behind engines unless user recently orbited to inspect hull
-            const secondsSinceManualOrbit = (now - lastManualOrbitTimestamp) / 1000;
-            const hasSteeringOrThrust =
-              Math.abs(angVelYaw) > 0.05 ||
-              Math.abs(angVelPitch) > 0.05 ||
-              Math.abs(effectiveThrottle) > 0.08;
-            if (lastManualOrbitTimestamp === 0 || (secondsSinceManualOrbit > 2.6 && hasSteeringOrThrust)) {
-              const currentOffset = _tmpV4.subVectors(camera.position, sr7.rootGroup.position);
-              const currentDist = Math.max(controls.minDistance, currentOffset.length());
-              // Subtle cinematic side/up lag during sharp turns + warp boost zoom-out
-              _tmpV5
-                .set(-angVelYaw * 0.55, 1.28 + angVelPitch * 0.45, 6.1 + boostBlend * 1.35)
-                .applyQuaternion(sr7.rootGroup.quaternion)
-                .normalize();
-              const currentDir = _tmpV6.copy(currentOffset).normalize();
-              const followLerp = Math.min(1, dt * (2.8 + Math.abs(angVelYaw) * 1.4));
-              currentDir.lerp(_tmpV5, followLerp).normalize();
-              camera.position.copy(sr7.rootGroup.position).addScaledVector(currentDir, currentDist);
-            }
+          // Smoothly auto-center chase look behind tail when actively piloting
+          const secondsSinceManualOrbit = (now - lastManualOrbitTimestamp) / 1000;
+          if (
+            !isExternalLooking &&
+            (isSteeringActively || wHeld || secondsSinceManualOrbit > 1.8)
+          ) {
+            const recenterSpeed = isSteeringActively || wHeld ? 4.8 : 2.2;
+            externalLookTargetYaw = THREE.MathUtils.lerp(
+              externalLookTargetYaw,
+              0,
+              Math.min(1, dt * recenterSpeed)
+            );
+            externalLookTargetPitch = THREE.MathUtils.lerp(
+              externalLookTargetPitch,
+              0,
+              Math.min(1, dt * recenterSpeed)
+            );
           }
+
+          externalLookYaw = THREE.MathUtils.lerp(
+            externalLookYaw,
+            externalLookTargetYaw,
+            Math.min(1, dt * 12)
+          );
+          externalLookPitch = THREE.MathUtils.lerp(
+            externalLookPitch,
+            externalLookTargetPitch,
+            Math.min(1, dt * 12)
+          );
+          externalZoomMult = THREE.MathUtils.lerp(
+            externalZoomMult,
+            externalZoomTargetMult,
+            Math.min(1, dt * 10)
+          );
+
+          // Slerp chase camera basis tightly to ship attitude so turning/pitching turns camera & ship together!
+          externalCamQuat.slerp(sr7.rootGroup.quaternion, Math.min(1, dt * 11.5));
+
+          _tmpEuler.set(externalLookPitch, externalLookYaw, 0, 'YXZ');
+          _tmpQuat1.setFromEuler(_tmpEuler);
+          const finalChaseQuat = _tmpQuat1.premultiply(externalCamQuat);
+
+          const chaseDist = (6.35 + boostBlend * 1.45) * externalZoomMult * currentShipScale;
+          const chaseHeight = (1.34 + angVelPitch * 0.22) * currentShipScale;
+          const chaseSideLag = -angVelYaw * 0.36 * currentShipScale;
+
+          _tmpV4.set(chaseSideLag, chaseHeight, chaseDist).applyQuaternion(finalChaseQuat);
+          camera.position.copy(sr7.rootGroup.position).add(_tmpV4);
+
           if (hasOrbitalStationPos) {
             orbitalStation.enforceExteriorKeepOutWorld(
               camera.position,
@@ -3064,7 +3277,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               1.6
             );
           }
-          controls.update();
+
+          // Aim slightly ahead of the starfighter nose so the ship sits heroically in the lower-center frame
+          _tmpV5
+            .set(0, 0.38 * currentShipScale, -3.2 * currentShipScale)
+            .applyQuaternion(sr7.rootGroup.quaternion)
+            .add(sr7.rootGroup.position);
+          _tmpV6.set(0, 1, 0).applyQuaternion(finalChaseQuat).normalize();
+          _tmpMat4.lookAt(camera.position, _tmpV5, _tmpV6);
+          camera.quaternion.setFromRotationMatrix(_tmpMat4);
+          controls.target.copy(sr7.rootGroup.position);
         }
         if (prevCameraView !== sc.cameraView) {
           spaceAudio.playCameraSwitch(sc.cameraView);
@@ -3075,10 +3297,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           prevRadarAudioTs = sc.radarPulseTimestamp;
           if (sc.radarPulseTimestamp > 0) spaceAudio.playRadarScan();
         }
-        if (sc.brakeRequested && !prevBrakeAudio) {
+        if (isBrakingNow && !prevBrakeAudio) {
           spaceAudio.playBrakeRetro();
         }
-        prevBrakeAudio = sc.brakeRequested;
+        prevBrakeAudio = isBrakingNow;
         if (sc.autopilotTargetId !== prevAutopilotIdAudio) {
           prevAutopilotIdAudio = sc.autopilotTargetId;
           if (sc.autopilotTargetId) spaceAudio.playAutopilotLock();
@@ -3092,7 +3314,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           throttle: Math.abs(effectiveThrottle),
           speedNorm: Math.min(1.5, currentSpeed / Math.max(0.0005, adaptiveCruise)),
           boostBlend,
-          isBraking: sc.brakeRequested,
+          isBraking: isBrakingNow,
           rcsIntensity: Math.min(1, Math.hypot(pitchInput, yawInput, rollInput)),
         });
 
@@ -3177,7 +3399,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         _tmpEuler.setFromQuaternion(sr7.rootGroup.quaternion, 'YXZ');
         const pitchDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.x));
         const yawDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.y));
-        const rollDegVal = Math.round(THREE.MathUtils.radToDeg(_tmpEuler.z));
+        const rollDegVal = Math.round(
+          THREE.MathUtils.radToDeg(_tmpEuler.z + visualBankAngle)
+        );
         const liveReactorTemp = Math.round(
           320 + Math.abs(effectiveThrottle) * 240 + boostBlend * 380
         );
@@ -3185,14 +3409,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         sr7.updateAnimations({
           dt,
           clockTime,
-          throttle: sc.brakeRequested ? 0 : effectiveThrottle,
+          throttle: isBrakingNow ? 0 : effectiveThrottle,
           boostActive: boosting,
           headlightsOn: sc.headlightsOn,
           interiorLightsOn: sc.interiorLightsOn,
           shieldsOn: sc.shieldsOn,
-          pitchInput: angVelPitch / 1.05,
-          rollInput: angVelRoll / 1.45,
-          yawInput: angVelYaw / 1.05,
+          pitchInput: angVelPitch / 1.25,
+          rollInput: (angVelRoll + visualBankAngle) / 1.45,
+          yawInput: angVelYaw / 1.25,
           pitchDeg: pitchDegVal,
           rollDeg: rollDegVal,
           radarPulseAgeSec: radarAgeSec,
@@ -3265,14 +3489,25 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         // Park Light Fighter visibly beside Astronaut!
         sr7.rootGroup.scale.setScalar(currentShipScale);
+        sr7.hullGroup.rotation.z = 0;
+        sr7.interiorGroup.rotation.z = 0;
         if (!prevSpaceParkedValid) {
-          const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
-          const spawnDist =
-            selectedBody.category === 'galaxy'
-              ? targetRadius * 1.45
-              : targetRadius * 2.55 + currentShipScale * 7.5;
-          sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
-          sr7.rootGroup.lookAt(targetPos);
+          if (hasOrbitalStationPos && st.selectedSatelliteId === 'sat-orbital-gateway') {
+            _tmpV1
+              .copy(orbitalStation.shipApproachLocal)
+              .multiplyScalar(orbitalStationWorldScale)
+              .applyQuaternion(orbitalStation.rootGroup.quaternion);
+            sr7.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV1);
+            sr7.rootGroup.lookAt(orbitalStationWorldPos);
+          } else {
+            const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
+            const spawnDist =
+              selectedBody.category === 'galaxy'
+                ? targetRadius * 1.45
+                : targetRadius * 2.55 + currentShipScale * 7.5;
+            sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
+            sr7.rootGroup.lookAt(targetPos);
+          }
           prevSpaceParkedValid = true;
         }
         sr7.rootGroup.visible = true;
@@ -3313,43 +3548,28 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const isNearOrbitalStation =
           hasOrbitalStationPos &&
           (st.selectedSatelliteId === 'sat-orbital-gateway' ||
+            sr7.rootGroup.position.distanceTo(orbitalStationWorldPos) <
+              orbitalStationWorldScale * 180 ||
             astronaut.rootGroup.position.distanceTo(orbitalStationWorldPos) <
               orbitalStationWorldScale * 95);
 
         if (!wasEvaActive) {
-          if (hasOrbitalStationPos && st.selectedSatelliteId === 'sat-orbital-gateway') {
-            _tmpV1
-              .copy(orbitalStation.shipApproachLocal)
-              .multiplyScalar(orbitalStationWorldScale)
-              .applyQuaternion(orbitalStation.rootGroup.quaternion);
-            sr7.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV1);
-            sr7.rootGroup.lookAt(orbitalStationWorldPos);
-            prevSpaceParkedValid = true;
-
-            _tmpV2
-              .copy(orbitalStation.walkSpawnLocal)
-              .multiplyScalar(orbitalStationWorldScale)
-              .applyQuaternion(orbitalStation.rootGroup.quaternion);
-            astronaut.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV2);
-            astronaut.rootGroup.quaternion.copy(orbitalStation.rootGroup.quaternion);
+          // Always spawn Astronaut right beside the parked ship (keeping the ship in its exact spot!)
+          _tmpV1.set(1, 0, 0.35).normalize().applyQuaternion(sr7.rootGroup.quaternion);
+          astronaut.rootGroup.position
+            .copy(sr7.rootGroup.position)
+            .addScaledVector(_tmpV1, currentShipScale * 2.55);
+          astronaut.rootGroup.quaternion.copy(sr7.rootGroup.quaternion);
+          if (isNearOrbitalStation) {
             evaUp.set(0, 1, 0).applyQuaternion(orbitalStation.rootGroup.quaternion).normalize();
-            _tmpV3.set(0, 0, -1).applyQuaternion(astronaut.rootGroup.quaternion).normalize();
-            _tmpV4.set(1, 0, 0).applyQuaternion(astronaut.rootGroup.quaternion).normalize();
-            camera.position
-              .copy(astronaut.rootGroup.position)
-              .addScaledVector(evaUp, currentShipScale * 1.45)
-              .addScaledVector(_tmpV4, currentShipScale * 0.48)
-              .addScaledVector(_tmpV3, -currentShipScale * 4.2);
           } else {
-            _tmpV1.set(1, 0, 0.35).normalize().applyQuaternion(sr7.rootGroup.quaternion);
-            astronaut.rootGroup.position
-              .copy(sr7.rootGroup.position)
-              .addScaledVector(_tmpV1, currentShipScale * 2.55);
-            astronaut.rootGroup.quaternion.copy(sr7.rootGroup.quaternion);
             evaUp.set(0, 1, 0);
-            _tmpV2.set(0, 1.35, 3.6).multiplyScalar(currentShipScale).applyQuaternion(astronaut.rootGroup.quaternion);
-            camera.position.copy(astronaut.rootGroup.position).add(_tmpV2);
           }
+          _tmpV2
+            .set(0, 1.35, 3.6)
+            .multiplyScalar(currentShipScale)
+            .applyQuaternion(astronaut.rootGroup.quaternion);
+          camera.position.copy(astronaut.rootGroup.position).add(_tmpV2);
           evaVelocity.set(0, 0, 0);
           wasEvaActive = true;
 
@@ -3533,12 +3753,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       } else {
         const returningFromLobby = wasLobbyShowcaseActive;
-        sr7.rootGroup.visible = false;
+        // Keep parked spacecraft visible in space and preserve prevSpaceParkedValid so returning to "Nave" resumes at the exact same spot!
+        sr7.rootGroup.visible = prevSpaceParkedValid;
+        sr7.hullGroup.rotation.z = 0;
+        sr7.interiorGroup.rotation.z = 0;
         astronaut.rootGroup.visible = false;
         wasLobbyShowcaseActive = false;
         wasSpacecraftActive = false;
         wasEvaActive = false;
-        prevSpaceParkedValid = false;
         prevBrakeAudio = false;
         prevAutopilotIdAudio = null;
         if (!evaAttachedToShip) {

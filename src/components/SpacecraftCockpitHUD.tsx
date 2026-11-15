@@ -679,15 +679,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     TECLADO & MOUSE
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Acelerar / Reduzir</span>
+                    <span className="text-slate-400">Propulsão / Frear</span>
                     <span className="font-mono text-white">W / S</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Virar e Inclinar</span>
-                    <span className="font-mono text-white">A / D e Setas</span>
+                    <span className="text-slate-400">Manobrar (Curvar / Subir / Descer)</span>
+                    <span className="font-mono text-white">A / D + Setas ou Botão Direito</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Rolar Nave</span>
+                    <span className="text-slate-400">Rolar Asas (360°)</span>
                     <span className="font-mono text-white">Q / E</span>
                   </div>
                   <div className="flex justify-between">
@@ -792,10 +792,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           <div className="flex items-center gap-1.5">
             <input
               type="range"
-              min={-0.5}
+              min={0}
               max={1}
               step={0.05}
-              value={controlState.throttle}
+              value={Math.max(0, controlState.throttle)}
               onChange={(e) =>
                 onUpdateControl((prev) => ({
                   ...prev,
