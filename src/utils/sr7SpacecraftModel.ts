@@ -192,7 +192,7 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
     const loader = new GLTFLoader();
     modelReadyPromise = new Promise<void>((resolve) => {
       loader.load(
-        '/models/spaceship.glb',
+        '/models/spaceship/spaceship.gltf',
         (gltf) => {
           if (disposed) {
             disposeNodeResources(gltf.scene);
@@ -227,6 +227,9 @@ export function createSR7Spacecraft3DGroup(options?: { maxAnisotropy?: number })
                     std.aoMap,
                   ].forEach((tx) => {
                     if (tx) {
+                      tx.generateMipmaps = false;
+                      tx.minFilter = THREE.LinearFilter;
+                      tx.magFilter = THREE.LinearFilter;
                       tx.anisotropy = maxAniso;
                       tx.needsUpdate = true;
                     }
