@@ -363,6 +363,8 @@ export type MiningRecipeId =
   | 'hydrazine-fuel'
   | 'titanium-plates'
   | 'cryo-coolant'
+  | 'battery-capacitor'
+  | 'platinum-reactor-catalyst'
   | 'he3-warp-cell'
   | 'interstellar-resonator';
 

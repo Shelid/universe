@@ -1038,9 +1038,11 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     <div className="flex items-center justify-between text-[10px] font-mono text-emerald-300">
                       <span className="font-bold flex items-center gap-1.5">
                         <FlaskConical className="w-3.5 h-3.5" />
-                        SÍNTESE & COMBINAÇÃO QUÍMICA
+                        MÁQUINA DE COMBINAÇÃO &amp; SÍNTESE (10)
                       </span>
-                      <span className="text-slate-400">Bat {Math.round(survival.batteryPercent)}%</span>
+                      <span className="text-sky-200 font-bold">
+                        ⚡ Energia {Math.round(survival.batteryPercent)}%
+                      </span>
                     </div>
 
                     <div className="space-y-2">
@@ -1831,6 +1833,17 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 }
               >
                 DOBRA {Math.round(survival.warpEnergyPercent)}%
+              </span>
+              <span className="text-white/20">·</span>
+              <span
+                className={
+                  survival.batteryPercent < 20
+                    ? 'text-rose-300 font-bold animate-pulse'
+                    : 'text-amber-200'
+                }
+                title="Energia Elétrica Principal da Nave (Bateria & Reator)"
+              >
+                ENERGIA {Math.round(survival.batteryPercent)}%
               </span>
               <span className="text-white/20">·</span>
               <span

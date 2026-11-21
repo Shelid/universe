@@ -36,6 +36,8 @@ export const RECIPE_IMAGE_PATHS: Record<MiningRecipeId, string> = {
   'hydrazine-fuel': '/images/items/hydrazine-fuel.webp',
   'titanium-plates': '/images/items/titanium-plates.webp',
   'cryo-coolant': '/images/items/cryo-coolant.webp',
+  'battery-capacitor': '/images/items/sulfur-compounds.webp',
+  'platinum-reactor-catalyst': '/images/items/platinum-group.webp',
   'he3-warp-cell': '/images/items/he3-warp-cell.webp',
   'interstellar-resonator': '/images/items/interstellar-resonator.webp',
 };

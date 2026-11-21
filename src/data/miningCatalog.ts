@@ -237,10 +237,11 @@ export const CELESTIAL_MINING_PROFILES: Record<string, CatalogCelestialMiningPro
     hardnessFactor: 0.85,
     laserColorHex: '#38bdf8',
     yields: [
-      { resourceId: 'water-ice', weight: 0.36, purity: 0.96, veinNote: 'Cristais de gelo polar e alta troposfera' },
-      { resourceId: 'silicate-regolith', weight: 0.30, purity: 0.90, veinNote: 'Escudos continentais de quartzo-basalto' },
-      { resourceId: 'iron-nickel', weight: 0.20, purity: 0.88, veinNote: 'Formações ferríferas bandadas' },
+      { resourceId: 'water-ice', weight: 0.30, purity: 0.96, veinNote: 'Cristais de gelo polar e alta troposfera' },
+      { resourceId: 'silicate-regolith', weight: 0.26, purity: 0.90, veinNote: 'Escudos continentais de quartzo-basalto' },
+      { resourceId: 'iron-nickel', weight: 0.18, purity: 0.88, veinNote: 'Formações ferríferas bandadas' },
       { resourceId: 'titanium-ilmenite', weight: 0.14, purity: 0.86, veinNote: 'Areias minerais ricas em ilmenita' },
+      { resourceId: 'helium-3', weight: 0.12, purity: 0.84, veinNote: 'Captura exosférica e magnetopausa terrestre' },
     ],
   },
   mercury: {
@@ -292,10 +293,11 @@ export const CELESTIAL_MINING_PROFILES: Record<string, CatalogCelestialMiningPro
     hardnessFactor: 0.95,
     laserColorHex: '#f97316',
     yields: [
-      { resourceId: 'silicate-regolith', weight: 0.36, purity: 0.88, veinNote: 'Basalto olivínico Syrtis Major' },
-      { resourceId: 'water-ice', weight: 0.28, purity: 0.87, veinNote: 'Glaciar enterrado em Arcadia Planitia' },
-      { resourceId: 'iron-nickel', weight: 0.20, purity: 0.84, veinNote: 'Hematita cristalina Meridiani' },
+      { resourceId: 'silicate-regolith', weight: 0.30, purity: 0.88, veinNote: 'Basalto olivínico Syrtis Major' },
+      { resourceId: 'water-ice', weight: 0.24, purity: 0.87, veinNote: 'Glaciar enterrado em Arcadia Planitia' },
+      { resourceId: 'iron-nickel', weight: 0.18, purity: 0.84, veinNote: 'Hematita cristalina Meridiani' },
       { resourceId: 'titanium-ilmenite', weight: 0.16, purity: 0.82, veinNote: 'Província vulcânica Tharsis' },
+      { resourceId: 'helium-3', weight: 0.12, purity: 0.85, veinNote: 'Regolito marciano exposto ao vento solar' },
     ],
   },
   phobos: {
@@ -776,48 +778,87 @@ export const CRAFTING_RECIPES: CatalogSynthesisRecipe[] = [
   {
     id: 'cryo-coolant',
     name: 'Fluido Refrigerante Bifásico & Escudo Térmico',
-    formula: 'H₂O + SO₂ + NH₃ → Resfriamento (-26°C) + Bateria',
+    formula: 'H₂O + SO₂ + NH₃ → Resfriamento (-32°C) + 18% Energia',
     category: 'ENGINEERING',
     ingredients: [
       { resourceId: 'water-ice', amount: 1 },
       { resourceId: 'sulfur-compounds', amount: 1 },
       { resourceId: 'ammonia-hydrates', amount: 1 },
     ],
-    energyCostPct: 5,
-    outputSummary: 'Resfria Reator/Casco (-26°C) & +12% Bateria',
-    effects: { coolingC: 26, battery: 12, hull: 4 },
+    energyCostPct: 4,
+    outputSummary: 'Resfria Reator/Casco (-32°C) & +18% Energia da Nave',
+    effects: { coolingC: 32, battery: 18, hull: 6 },
     scienceNote: 'Ciclo amônia-enxofre-água maximiza o calor latente de evaporação nos radiadores térmicos da nave.',
   },
   {
+    id: 'battery-capacitor',
+    name: 'Célula de Energia da Nave Li-Enxofre (Bateria)',
+    formula: 'SO₂ + SiO₂ + Fe-Ni → +52% Energia da Nave & +10% Casco',
+    category: 'ENGINEERING',
+    ingredients: [
+      { resourceId: 'sulfur-compounds', amount: 1 },
+      { resourceId: 'silicate-regolith', amount: 1 },
+      { resourceId: 'iron-nickel', amount: 1 },
+    ],
+    energyCostPct: 0,
+    outputSummary: '+52% Energia da Nave (Bateria) & +10% Casco',
+    effects: { battery: 52, hull: 10 },
+    scienceNote: 'Eletrólito sólido de sulfeto-silicato com eletrodos de ferro-níquel recarrega instantaneamente o banco de energia principal da nave.',
+  },
+  {
+    id: 'platinum-reactor-catalyst',
+    name: 'Catalisador Platinado de Reator & Propulsão',
+    formula: 'Pt + CH₄ + SiO₂ → +65% Energia, +40% Combustível & +180 CR',
+    category: 'PROPULSION',
+    ingredients: [
+      { resourceId: 'platinum-group', amount: 1 },
+      { resourceId: 'cryo-methane', amount: 1 },
+      { resourceId: 'silicate-regolith', amount: 1 },
+    ],
+    energyCostPct: 2,
+    outputSummary: '+65% Energia da Nave, +40% Combustível & +180 CR',
+    effects: { battery: 65, fuel: 40, credits: 180 },
+    scienceNote: 'Malha catalítica de platina-irídio reforma metano criogênico com eficiência máxima para a turbina e o gerador elétrico.',
+  },
+  {
     id: 'he3-warp-cell',
-    name: 'Célula de Fusão Aneutrônica D-³He',
-    formula: '³He + FeTiO₃ → +1 Célula & +44% Dobra',
+    name: 'Célula de Dobra Espacial Aneutrônica D-³He',
+    formula: '2 ³He + 2 FeTiO₃ + H₂O → +1 Célula & +38% Dobra',
     category: 'HIGH_TECH',
     ingredients: [
-      { resourceId: 'helium-3', amount: 1 },
-      { resourceId: 'titanium-ilmenite', amount: 1 },
+      { resourceId: 'helium-3', amount: 2 },
+      { resourceId: 'titanium-ilmenite', amount: 2 },
+      { resourceId: 'water-ice', amount: 1 },
     ],
-    energyCostPct: 4,
-    outputSummary: '+1 Célula de Dobra, +44% Energia Dobra & +28% Bateria',
-    effects: { warpEnergy: 44, warpCells: 1, battery: 28 },
-    scienceNote: 'Isótopo Hélio-3 encapsulado em matriz de titânio alimenta o núcleo Alcubierre sem nêutrons parasitas.',
+    energyCostPct: 12,
+    outputSummary: '+1 Célula de Dobra & +38% Combustível de Dobra',
+    effects: { warpEnergy: 38, warpCells: 1 },
+    scienceNote: 'Isótopo Hélio-3 refinado com deutério da água e blindado em titânio alimenta o motor de dobra interestelar.',
   },
   {
     id: 'interstellar-resonator',
     name: 'Sintetizador Quântico Interestelar (Súper-Pacote)',
-    formula: 'SiC Exótico + Pt + ³He → Sobrecarga Total + 650 CR',
+    formula: 'SiC Exótico + Pt + 2 ³He → Sobrecarga Total + 650 CR',
     category: 'HIGH_TECH',
     ingredients: [
       { resourceId: 'exotic-silicates', amount: 1 },
       { resourceId: 'platinum-group', amount: 1 },
-      { resourceId: 'helium-3', amount: 1 },
+      { resourceId: 'helium-3', amount: 2 },
     ],
-    energyCostPct: 12,
-    outputSummary: '+65% Dobra, +2 Células, +30% Casco, +30% Comb & +650 CR',
-    effects: { warpEnergy: 65, warpCells: 2, hull: 30, fuel: 30, coolingC: 22, credits: 650 },
+    energyCostPct: 14,
+    outputSummary: '+60% Dobra, +1 Célula, +45% Energia, +35% Comb & +650 CR',
+    effects: { warpEnergy: 60, warpCells: 1, battery: 45, hull: 30, fuel: 35, coolingC: 25, credits: 650 },
     scienceNote: 'Catalisadores de platina e silicatos interestelares maximizam a eficiência do reator de dobra e geram dados científicos valiosos.',
   },
 ];
+
+export function getRecipesUsingResource(
+  resourceId: MiningResourceId
+): CatalogSynthesisRecipe[] {
+  return CRAFTING_RECIPES.filter((recipe) =>
+    recipe.ingredients.some((ing) => ing.resourceId === resourceId)
+  );
+}
 
 export const MINING_RECIPES_BY_ID: Record<MiningRecipeId, CatalogSynthesisRecipe> =
   CRAFTING_RECIPES.reduce((acc, item) => {

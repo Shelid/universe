@@ -13,8 +13,10 @@ import {
   Trash2,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react';
 import {
+  getRecipesUsingResource,
   MINING_RECIPES_BY_ID,
   MINING_RESOURCE_LIST,
   MINING_RESOURCES,
@@ -166,7 +168,27 @@ const MODULE_META: Array<{
     creditValue: 135,
     description:
       'Cartucho bifásico super-resfriado para o loop térmico dos radiadores e dissipação instantânea de superaquecimento do reator.',
-    subtitle: 'Reduz temperatura do casco (-165°C) e limpa radiação',
+    subtitle: 'Reduz temperatura do casco (-32°C) e +18% Energia da Nave',
+  },
+  {
+    recipeId: 'battery-capacitor',
+    rarity: 'UNCOMMON',
+    colorHex: '#eab308',
+    unitMassKg: 2.8,
+    creditValue: 110,
+    description:
+      'Célula eletroquímica sólida Li-Enxofre combinando enxofre vulcânico, sílica de regolito e eletrodos de ferro-níquel para recarregar a energia elétrica principal da nave.',
+    subtitle: 'Recarrega +52% Energia da Nave (Bateria) & +10% Casco',
+  },
+  {
+    recipeId: 'platinum-reactor-catalyst',
+    rarity: 'RARE',
+    colorHex: '#e2e8f0',
+    unitMassKg: 2.4,
+    creditValue: 260,
+    description:
+      'Malha catalítica de platina-irídio que reforma metano criogênico em alta potência para alimentar o gerador elétrico e os propulsores.',
+    subtitle: '+65% Energia da Nave, +40% Combustível & +180 CR',
   },
   {
     recipeId: 'interstellar-resonator',
@@ -433,6 +455,12 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
               <span className="text-slate-300">{totalMassKg.toFixed(1)} kg</span>
             </div>
 
+            {/* Ship Energy Pill */}
+            <div className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-300/45 flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-100">
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>Energia {Math.round(survival.batteryPercent)}%</span>
+            </div>
+
             {/* Credits Pill */}
             <div className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-400/35 flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-200">
               <Coins className="w-3.5 h-3.5 text-emerald-300" />
@@ -465,7 +493,7 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
               [
                 { id: 'owned', label: `Na Mochila (${usedCargoUnits + totalProvisions} un)` },
                 { id: 'minerals', label: `Minérios (${usedCargoUnits} un)` },
-                { id: 'provisions', label: `Suprimentos & Módulos` },
+                { id: 'provisions', label: `⚙️ Máquina & Suprimentos` },
                 { id: 'catalog', label: `Todos os Itens (${allItems.length})` },
               ] as const
             ).map((tab) => (
@@ -717,6 +745,55 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Combinations & Utilities in Onboard Machine for Farmed Minerals */}
+                {selectedItem.kind === 'mineral' && (
+                  <div className="rounded-2xl bg-slate-900/75 border border-white/10 p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-cyan-200">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <FlaskConical className="w-3.5 h-3.5" />
+                        MÁQUINA DE COMBINAÇÃO — UTILIDADES
+                      </span>
+                      <span className="text-amber-200">
+                        ⚡ Energia {Math.round(survival.batteryPercent)}%
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {getRecipesUsingResource(selectedItem.id).map((rec) => {
+                        const canCraftRec =
+                          rec.ingredients.every(
+                            (ing) => (survival.cargoInventory[ing.resourceId] ?? 0) >= ing.amount
+                          ) && survival.batteryPercent >= rec.energyCostPct;
+                        return (
+                          <div
+                            key={rec.id}
+                            className="rounded-xl bg-slate-950/60 border border-white/15 p-2 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-bold text-white truncate">
+                                {rec.name}
+                              </div>
+                              <div className="text-[9px] font-mono text-emerald-200 truncate">
+                                {rec.outputSummary}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => onSynthesizeRecipe(rec.id)}
+                              disabled={!canCraftRec}
+                              className={`shrink-0 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-bold transition-colors ${
+                                canCraftRec
+                                  ? 'bg-emerald-500/35 hover:bg-emerald-500/50 border-emerald-300 text-white'
+                                  : 'bg-white/10 border-white/15 text-slate-300 opacity-60 cursor-not-allowed'
+                              }`}
+                            >
+                              Combinar
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Recipe Requirements for Provisions & Modules */}
                 {selectedRecipe && (

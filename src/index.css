@@ -65,59 +65,86 @@
   animation: slideInRightToast 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Luminous Frosted Titanium-Slate Glass Theme for All Menus & Modals */
+/* Luminous Celestial Ice-Blue & Frosted Silver-Pearl Glass Theme for All Menus & Modals */
 .menu-glass-surface {
   background: linear-gradient(
     145deg,
-    rgba(30, 46, 74, 0.88) 0%,
-    rgba(22, 36, 61, 0.86) 52%,
-    rgba(17, 28, 49, 0.90) 100%
+    rgba(76, 118, 172, 0.92) 0%,
+    rgba(62, 102, 154, 0.90) 50%,
+    rgba(48, 84, 134, 0.93) 100%
   ) !important;
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(26px) brightness(1.22) saturate(145%);
+  -webkit-backdrop-filter: blur(26px) brightness(1.22) saturate(145%);
+  border-color: rgba(186, 230, 253, 0.52) !important;
   box-shadow:
-    0 24px 72px rgba(4, 10, 24, 0.65),
-    inset 0 1px 1px rgba(255, 255, 255, 0.22),
-    inset 0 0 28px rgba(56, 189, 248, 0.07);
+    0 24px 70px rgba(6, 18, 42, 0.48),
+    inset 0 1px 2px rgba(255, 255, 255, 0.45),
+    inset 0 0 38px rgba(125, 211, 252, 0.22) !important;
 }
 
 .menu-glass-header {
   background: linear-gradient(
     90deg,
-    rgba(42, 63, 98, 0.72) 0%,
-    rgba(28, 56, 94, 0.62) 50%,
-    rgba(36, 55, 86, 0.72) 100%
+    rgba(96, 144, 202, 0.85) 0%,
+    rgba(78, 128, 188, 0.80) 50%,
+    rgba(88, 136, 194, 0.85) 100%
   ) !important;
+  border-color: rgba(186, 230, 253, 0.4) !important;
 }
 
 .menu-glass-subbar {
-  background: rgba(34, 52, 82, 0.62) !important;
+  background: rgba(82, 126, 182, 0.72) !important;
+  border-color: rgba(186, 230, 253, 0.35) !important;
 }
 
-/* Lighten inner dark slate-950/900 cards inside glass menus while keeping item thumbnails dark */
-.menu-glass-surface .bg-slate-950\/90,
-.menu-glass-surface .bg-slate-950\/85,
-.menu-glass-surface .bg-slate-950\/80,
-.menu-glass-surface .bg-slate-950\/75,
-.menu-glass-surface .bg-slate-950\/70,
-.menu-glass-surface .bg-slate-950\/65,
-.menu-glass-surface .bg-slate-950\/60,
-.menu-glass-surface .bg-slate-950\/50,
-.menu-glass-surface .bg-slate-900\/95,
-.menu-glass-surface .bg-slate-900\/90,
-.menu-glass-surface .bg-slate-900\/80,
-.menu-glass-surface .bg-slate-900\/75,
-.menu-glass-surface .bg-slate-900\/70,
-.menu-glass-surface .bg-slate-900\/65,
-.menu-glass-surface .bg-slate-900\/60 {
-  background-color: rgba(41, 61, 94, 0.56) !important;
-  border-color: rgba(148, 197, 255, 0.22) !important;
+/* Lighten all inner dark cards, panels, drawers, and pills inside glass menus */
+.menu-glass-surface [class*="bg-slate-950"],
+.menu-glass-surface [class*="bg-slate-900"],
+.menu-glass-surface [class*="bg-slate-800"] {
+  background-color: rgba(118, 164, 218, 0.26) !important;
+  border-color: rgba(186, 230, 253, 0.38) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
-.menu-glass-surface input.bg-slate-950,
-.menu-glass-surface select.bg-slate-950,
-.menu-glass-surface .bg-slate-950 {
-  background-color: rgba(27, 43, 70, 0.78) !important;
+.menu-glass-surface button[class*="bg-slate-9"],
+.menu-glass-surface button[class*="bg-white/5"],
+.menu-glass-surface button[class*="bg-white/[0.03]"] {
+  background-color: rgba(148, 194, 245, 0.22) !important;
+  border-color: rgba(186, 230, 253, 0.36) !important;
+}
+
+.menu-glass-surface button[class*="bg-slate-9"]:hover,
+.menu-glass-surface button[class*="bg-white/5"]:hover,
+.menu-glass-surface button[class*="bg-white/[0.03]"]:hover {
+  background-color: rgba(168, 212, 255, 0.35) !important;
+  border-color: rgba(224, 242, 254, 0.65) !important;
+}
+
+.menu-glass-surface input[class*="bg-slate-"],
+.menu-glass-surface select[class*="bg-slate-"] {
+  background-color: rgba(44, 78, 126, 0.78) !important;
+  border-color: rgba(186, 230, 253, 0.48) !important;
+  color: #ffffff !important;
+}
+
+.menu-glass-surface input::placeholder {
+  color: rgba(226, 232, 240, 0.8) !important;
+}
+
+/* Boost muted slate text inside menus for crisp, bright readability */
+.menu-glass-surface .text-slate-400,
+.menu-glass-surface .text-slate-500 {
+  color: #e2e8f0 !important;
+}
+
+.menu-glass-surface .text-slate-300 {
+  color: #f1f5f9 !important;
+}
+
+/* Keep item studio icon frames rich sapphire-navy so glowing crystals pop cleanly */
+.menu-glass-surface .bg-\[\#060b16\] {
+  background: radial-gradient(circle at 50% 45%, #1d3658 0%, #0d1b30 100%) !important;
+  border-color: rgba(148, 197, 255, 0.35) !important;
 }
 
 @keyframes universeSpinSlow {

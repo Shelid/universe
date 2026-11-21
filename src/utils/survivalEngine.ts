@@ -147,9 +147,9 @@ export function adjustPowerPips(
 export function createInitialSurvivalState(): SurvivalResourcesState {
   return {
     fuelPercent: 100,
-    warpEnergyPercent: 100,
-    warpCells: 4,
-    maxWarpCells: 6,
+    warpEnergyPercent: 68,
+    warpCells: 1,
+    maxWarpCells: 5,
     batteryPercent: 100,
     ecoCruiseMode: false,
 
@@ -239,8 +239,8 @@ export function stepSurvivalSimulation(
     return {
       ...state,
       fuelPercent: 100,
-      warpEnergyPercent: 100,
-      warpCells: Math.max(state.warpCells, 4),
+      warpEnergyPercent: Math.max(state.warpEnergyPercent, 68),
+      warpCells: Math.max(state.warpCells, 1),
       batteryPercent: 100,
       shipOxygenPercent: 100,
       evaOxygenPercent: 100,
@@ -302,54 +302,55 @@ export function stepSurvivalSimulation(
   const engPips = state.powerPips.engines;
   const weapPips = state.powerPips.weapons;
 
-  // 3. Fuel & Warp Drive drain during active flight
+  // 3. Fuel & Warp Drive drain during active flight (Balanced tactical consumption)
   if (p.mode === 'SPACECRAFT') {
     const absThr = Math.abs(p.throttle);
-    const ecoMult = state.ecoCruiseMode ? 0.52 : 1.0;
+    const ecoMult = state.ecoCruiseMode ? 0.56 : 1.0;
     const thrustBurnRate =
-      (absThr * 0.24 + (p.isBraking ? 0.14 : 0) + (p.rcsActive ? 0.05 : 0)) *
+      (absThr * 0.62 + (p.isBraking ? 0.25 : 0) + (p.rcsActive ? 0.11 : 0)) *
       ecoMult *
       fuelEfficiency;
     fuel -= thrustBurnRate * dt;
 
     if (p.boostActive) {
-      warpEnergy -= 2.4 * ecoMult * warpEfficiency * dt;
-      fuel -= 0.09 * ecoMult * fuelEfficiency * dt;
+      // Medium duration warp tank (~25s of continuous FTL warp per full tank)
+      warpEnergy -= 3.9 * ecoMult * warpEfficiency * dt;
+      fuel -= 0.34 * ecoMult * fuelEfficiency * dt;
     } else {
-      // Trickle recharge warp capacitor from reactor + solar when cruising sub-warp
-      const warpRegen = 0.45 + (solarFluxKw > 40 ? 1.1 : 0) + engPips * 0.18;
+      // Very subtle reactor trickle so Warp Fuel mainly requires mining & combining Células de Dobra D-³He
+      const warpRegen = (solarFluxKw > 55 ? 0.12 : 0.04) + engPips * 0.025;
       warpEnergy = Math.min(100, warpEnergy + warpRegen * dt);
     }
   } else if (p.mode === 'EXPLORE') {
-    // Calm idle maintenance in observatory mode
-    warpEnergy = Math.min(100, warpEnergy + 0.8 * dt);
+    warpEnergy = Math.min(100, warpEnergy + 0.12 * dt);
   }
 
   // 4. Natural/Station Resupply
   if (refuelSource === 'ORBITAL_STATION') {
-    fuel = Math.min(100, fuel + 12 * dt);
+    fuel = Math.min(100, fuel + 10 * dt);
     shipO2 = Math.min(100, shipO2 + 18 * dt);
     evaO2 = Math.min(100, evaO2 + 25 * dt);
-    battery = Math.min(100, battery + 20 * dt);
-    warpEnergy = Math.min(100, warpEnergy + 15 * dt);
+    battery = Math.min(100, battery + 18 * dt);
+    warpEnergy = Math.min(100, warpEnergy + 4.5 * dt);
   } else if (refuelSource === 'GAS_GIANT_SCOOP') {
     // Atmospheric hydrogen / He-3 harvesting near Jupiter/Saturn/Uranus/Neptune!
-    fuel = Math.min(100, fuel + 5.8 * dt);
-    warpEnergy = Math.min(100, warpEnergy + 4.2 * dt);
+    fuel = Math.min(100, fuel + 4.6 * dt);
+    warpEnergy = Math.min(100, warpEnergy + 1.35 * dt);
   } else if (refuelSource === 'SOLAR_CORONA') {
-    battery = Math.min(100, battery + 14 * dt);
-    warpEnergy = Math.min(100, warpEnergy + 5.5 * dt);
+    battery = Math.min(100, battery + 12 * dt);
+    warpEnergy = Math.min(100, warpEnergy + 1.15 * dt);
   }
 
-  // 5. Battery & Power Load Balance
-  const batteryGen = solarFluxKw * 0.065 + (fuel > 1 ? 1.4 : 0.15);
+  // 5. Ship Energy (Battery & Reactor Power Bus Balance)
+  const batteryGen = solarFluxKw * 0.038 + (fuel > 1 ? 0.68 : 0.08);
   const batteryLoad =
-    0.25 +
-    (p.shieldsOn ? 0.55 + shieldPips * 0.14 : 0) +
-    (p.headlightsOn ? 0.18 : 0) +
-    lifePips * 0.22 +
-    weapPips * 0.08 +
-    (p.boostActive ? 1.2 : 0);
+    0.32 +
+    (p.mode === 'SPACECRAFT' ? Math.abs(p.throttle) * 0.45 : 0) +
+    (p.shieldsOn ? 0.58 + shieldPips * 0.15 : 0) +
+    (p.headlightsOn ? 0.22 : 0) +
+    lifePips * 0.24 +
+    weapPips * 0.12 +
+    (p.boostActive ? 1.55 : 0);
   battery = clampPct(battery + (batteryGen - batteryLoad) * dt);
 
   // 6. Thermal Physics (Solar heat + Warp/Engine heat vs Shadow & Radiators!)
@@ -516,8 +517,8 @@ export function consumeWarpCell(state: SurvivalResourcesState): SurvivalResource
   return {
     ...state,
     warpCells: state.warpCells - 1,
-    warpEnergyPercent: 100,
-    batteryPercent: Math.min(100, Number((state.batteryPercent + 25).toFixed(1))),
+    warpEnergyPercent: Math.min(100, Number((state.warpEnergyPercent + 55).toFixed(1))),
+    batteryPercent: Math.min(100, Number((state.batteryPercent + 20).toFixed(1))),
   };
 }
 
@@ -659,7 +660,7 @@ export function stepMiningSimulation(
   const bodyId = input.targetBodyId;
   const bodyName = input.targetBodyName ?? bodyId ?? '—';
   const ratio = input.surfaceDistanceRatio;
-  const maxMiningRatio = 4.8;
+  const maxMiningRatio = 6.8;
   const profile = bodyId ? getBodyMiningProfile(bodyId) : null;
   const inRange = Boolean(bodyId && profile && ratio <= maxMiningRatio);
 

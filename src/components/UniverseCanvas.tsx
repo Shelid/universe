@@ -1442,43 +1442,59 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     warpTunnelGroup.add(warpLines);
 
     // REALISTIC 3D ORBITAL MINING LASER RIG + SURFACE CRATER + UPWARD ORE PARTICLE STREAM
+    // Note: CylinderGeometry(radiusTop at y=+1 planet impact, radiusBottom at y=0 ship emitter lens)
+    // Perspective makes y=0 (~7 shipScales from camera) appear ~80x larger in screen pixels than y=1 (planet surface),
+    // so radiusBottom is tightly focused to match the ship's 0.085 turret lens while radiusTop expands at the planet crater!
     const miningBeamGroup = new THREE.Group();
     miningBeamGroup.visible = false;
     scene.add(miningBeamGroup);
 
-    const miningCoreGeo = new THREE.CylinderGeometry(0.11, 0.16, 1.0, 14, 1, true);
+    const miningCoreGeo = new THREE.CylinderGeometry(0.42, 0.055, 1.0, 18, 1, true);
     miningCoreGeo.translate(0, 0.5, 0);
     const miningCoreMat = new THREE.MeshBasicMaterial({
       color: '#ffffff',
       transparent: true,
-      opacity: 0.94,
+      opacity: 0.98,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     const miningCoreMesh = new THREE.Mesh(miningCoreGeo, miningCoreMat);
 
-    const miningSheathGeo = new THREE.CylinderGeometry(0.32, 0.54, 1.0, 16, 1, true);
+    const miningSheathGeo = new THREE.CylinderGeometry(0.95, 0.11, 1.0, 20, 1, true);
     miningSheathGeo.translate(0, 0.5, 0);
     const miningSheathMat = new THREE.MeshBasicMaterial({
       color: '#38bdf8',
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.62,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
     const miningSheathMesh = new THREE.Mesh(miningSheathGeo, miningSheathMat);
-    miningBeamGroup.add(miningSheathMesh, miningCoreMesh);
+
+    const miningCoronaGeo = new THREE.CylinderGeometry(1.65, 0.17, 1.0, 20, 1, true);
+    miningCoronaGeo.translate(0, 0.5, 0);
+    const miningCoronaMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCoronaMesh = new THREE.Mesh(miningCoronaGeo, miningCoronaMat);
+
+    miningBeamGroup.add(miningCoronaMesh, miningSheathMesh, miningCoreMesh);
 
     const miningMuzzleGlowMat = new THREE.MeshBasicMaterial({
-      color: '#7dd3fc',
+      color: '#e0f2fe',
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.92,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const miningMuzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), miningMuzzleGlowMat);
+    const miningMuzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 12), miningMuzzleGlowMat);
     miningBeamGroup.add(miningMuzzleGlow);
 
     const miningCraterGroup = new THREE.Group();
@@ -1486,46 +1502,112 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     scene.add(miningCraterGroup);
 
     const miningCraterDiscMat = new THREE.MeshBasicMaterial({
-      color: '#bae6fd',
+      color: '#ffffff',
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.96,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const miningCraterDisc = new THREE.Mesh(new THREE.CircleGeometry(0.42, 24), miningCraterDiscMat);
+    const miningCraterDisc = new THREE.Mesh(new THREE.CircleGeometry(0.42, 28), miningCraterDiscMat);
     miningCraterDisc.rotation.x = -Math.PI / 2;
-    miningCraterDisc.position.y = 0.015;
+    miningCraterDisc.position.y = 0.02;
+
+    // 3D Molten Plasma Hemisphere Dome (rises above planet curvature so impact is always visible)
+    const miningCraterDomeMat = new THREE.MeshBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0.86,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCraterDome = new THREE.Mesh(
+      new THREE.SphereGeometry(0.44, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52),
+      miningCraterDomeMat
+    );
+
+    // Compact Plasma Ablation Plume Crown at the crater center
+    const miningPlumeConeGeo = new THREE.ConeGeometry(0.42, 0.95, 20, 1, true);
+    miningPlumeConeGeo.translate(0, 0.48, 0);
+    const miningPlumeConeMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningPlumeCone = new THREE.Mesh(miningPlumeConeGeo, miningPlumeConeMat);
 
     const miningCraterHaloMat = new THREE.MeshBasicMaterial({
       color: '#38bdf8',
       transparent: true,
-      opacity: 0.44,
+      opacity: 0.75,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const miningCraterHalo = new THREE.Mesh(new THREE.RingGeometry(0.42, 1.05, 28), miningCraterHaloMat);
+    const miningCraterHalo = new THREE.Mesh(new THREE.RingGeometry(0.44, 0.72, 32), miningCraterHaloMat);
     miningCraterHalo.rotation.x = -Math.PI / 2;
-    miningCraterHalo.position.y = 0.025;
+    miningCraterHalo.position.y = 0.03;
 
     const miningCraterShockMat = new THREE.MeshBasicMaterial({
       color: '#bae6fd',
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.75,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const miningCraterShock = new THREE.Mesh(new THREE.RingGeometry(0.88, 1.15, 28), miningCraterShockMat);
+    const miningCraterShock = new THREE.Mesh(new THREE.RingGeometry(0.76, 0.92, 32), miningCraterShockMat);
     miningCraterShock.rotation.x = -Math.PI / 2;
-    miningCraterShock.position.y = 0.032;
+    miningCraterShock.position.y = 0.04;
 
-    const miningCraterLight = new THREE.PointLight('#38bdf8', 1.8, 0, 1.5);
-    miningCraterLight.position.set(0, 0.35, 0);
-    miningCraterGroup.add(miningCraterDisc, miningCraterHalo, miningCraterShock, miningCraterLight);
+    const miningCraterShockMat2 = new THREE.MeshBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const miningCraterShock2 = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.1, 32), miningCraterShockMat2);
+    miningCraterShock2.rotation.x = -Math.PI / 2;
+    miningCraterShock2.position.y = 0.05;
 
-    const MINING_STREAM_COUNT = 32;
+    const miningCraterLight = new THREE.PointLight('#38bdf8', 2.6, 0, 1.4);
+    miningCraterLight.position.set(0, 0.45, 0);
+    miningCraterGroup.add(
+      miningCraterDisc,
+      miningCraterDome,
+      miningPlumeCone,
+      miningCraterHalo,
+      miningCraterShock,
+      miningCraterShock2,
+      miningCraterLight
+    );
+
+    // Planetary Impact Surface Ejecta Sparks Fountain (28 incandescent plasma/rock fragments erupting from crater)
+    const MINING_EJECTA_COUNT = 28;
+    const miningEjectaGeo = new THREE.TetrahedronGeometry(1, 0);
+    const miningEjectaMat = new THREE.MeshBasicMaterial({
+      color: '#fef08a',
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const miningEjectaInstanced = new THREE.InstancedMesh(
+      miningEjectaGeo,
+      miningEjectaMat,
+      MINING_EJECTA_COUNT
+    );
+    miningEjectaInstanced.frustumCulled = false;
+    miningEjectaInstanced.visible = false;
+    scene.add(miningEjectaInstanced);
+
+    const MINING_STREAM_COUNT = 56;
     const miningStreamGeo = new THREE.OctahedronGeometry(1, 0);
     const miningStreamMat = new THREE.MeshBasicMaterial({
       color: '#38bdf8',
@@ -2455,6 +2537,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         miningBeamGroup.visible = false;
         miningCraterGroup.visible = false;
         miningStreamInstanced.visible = false;
+        miningEjectaInstanced.visible = false;
         hotspotGroup.visible = false;
       }
 
@@ -3006,9 +3089,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const t = nextProgress;
         const smoothEase = t * t * t * (t * (t * 6 - 15) + 10);
 
-        // Final orbital camera position on the sunlit hemisphere of the destination planet!
+        // Final orbital camera position on the sunlit hemisphere of the destination planet (comfortable panoramic distance)
         const arrivalOffsetDir = computeSunlitCameraOffsetDir(destPos, destBody.id);
-        const mult = destBody.id === 'sun' ? 4.6 : 3.25;
+        const mult = destBody.id === 'sun' ? 5.2 : 4.45;
         const goalCamPos = _tmpV1.copy(destPos).addScaledVector(arrivalOffsetDir, destRadius * mult);
 
         // Interpolate camera directly from actual starting camera position to goalCamPos
@@ -3133,7 +3216,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 .multiplyScalar(orbitalStationWorldScale)
                 .applyQuaternion(orbitalStation.rootGroup.quaternion);
               sr7.rootGroup.position.copy(orbitalStationWorldPos).add(_tmpV1);
-              sr7.rootGroup.lookAt(orbitalStationWorldPos);
+              _tmpMat4.lookAt(sr7.rootGroup.position, orbitalStationWorldPos, _worldUp);
+              sr7.rootGroup.quaternion.setFromRotationMatrix(_tmpMat4);
               shipAnchorMode = 'STATION';
               prevShipAnchorWorldPos.copy(orbitalStationWorldPos);
             } else {
@@ -3148,9 +3232,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
               const spawnDist =
                 selectedBody.category === 'galaxy'
                   ? targetRadius * 1.45
-                  : targetRadius * 2.55 + initScale * 7.5;
+                  : targetRadius * 3.65 + initScale * 11.0;
               sr7.rootGroup.position.copy(targetPos).addScaledVector(spawnDir, spawnDist);
-              sr7.rootGroup.lookAt(targetPos);
+              _tmpMat4.lookAt(sr7.rootGroup.position, targetPos, _worldUp);
+              sr7.rootGroup.quaternion.setFromRotationMatrix(_tmpMat4);
               shipAnchorMode = 'BODY';
               shipAnchorBodyId = selectedBody.id;
               prevShipAnchorWorldPos.copy(targetPos);
@@ -3513,10 +3598,24 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           st.scaleMode,
           bodyWorldPositions
         );
+        const autoTargetUuid = isWalkingInside ? null : sc.autopilotTargetId;
+        const autoTargetPosCheck =
+          autoTargetUuid === 'sat-orbital-gateway' && hasOrbitalStationPos
+            ? orbitalStationWorldPos
+            : autoTargetUuid
+              ? bodyWorldPositions[autoTargetUuid]
+              : null;
+        const isAutopilotFarWarp =
+          Boolean(autoTargetPosCheck) &&
+          sr7.rootGroup.position.distanceTo(autoTargetPosCheck!) >
+            Math.max(0.002, dominantRadius * 8.5);
         const rawBoostingWanted =
           !isWalkingInside &&
-          (sc.boostActive || pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight'));
-        const boosting = rawBoostingWanted && activeSurvivalRef.current.warpEnergyPercent > 0.25;
+          (sc.boostActive ||
+            isAutopilotFarWarp ||
+            pressedKeys.has('ShiftLeft') ||
+            pressedKeys.has('ShiftRight'));
+        const boosting = rawBoostingWanted && activeSurvivalRef.current.warpEnergyPercent > 0.35;
         if (sc.boostActive && rawBoostingWanted && !boosting) {
           cb.onUpdateSpacecraftControl((prev) =>
             prev.boostActive ? { ...prev, boostActive: false } : prev
@@ -3636,17 +3735,18 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         if (autoPos && autoTargetId) {
           const autoBody = getCelestialBody(isStationAutoTarget ? 'earth' : autoTargetId);
           const autoRadius = getScaledRadius(autoBody, st.scaleMode);
+          // Comfortable panoramic orbital stop distance (further back from the planet surface)
           const stopDist = isStationAutoTarget
-            ? orbitalStationWorldScale * 24.0
+            ? orbitalStationWorldScale * 28.0
             : autoBody.category === 'galaxy'
-              ? autoRadius * 1.35
-              : autoRadius * 2.55 + currentShipScale * 7.0;
+              ? autoRadius * 1.45
+              : autoRadius * 4.55 + currentShipScale * 14.0;
           const distToAuto = sr7.rootGroup.position.distanceTo(autoPos);
 
           if (distToAuto <= stopDist) {
             autopilotStatus = 'ARRIVED';
-            shipVelocity.multiplyScalar(Math.exp(-dt * 5.8));
-            if (shipVelocity.length() < currentShipScale * 0.08) {
+            shipVelocity.multiplyScalar(Math.exp(-dt * 6.8));
+            if (shipVelocity.length() < currentShipScale * 0.12) {
               spaceAudio.playAutopilotArrived();
               shipVelocity.set(0, 0, 0);
               continuousThrottle = 0;
@@ -3664,14 +3764,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             const alignAngle = sr7.rootGroup.quaternion.angleTo(_tmpQuat1);
 
             if (Math.abs(pitchInput) < 0.08 && Math.abs(yawInput) < 0.08) {
-              sr7.rootGroup.quaternion.slerp(_tmpQuat1, Math.min(1, dt * 3.2));
+              sr7.rootGroup.quaternion.slerp(_tmpQuat1, Math.min(1, dt * 3.4));
               _tmpEuler.setFromQuaternion(sr7.rootGroup.quaternion, 'YXZ');
               shipPitch = THREE.MathUtils.clamp(_tmpEuler.x, -1.42, 1.42);
               shipYaw = _tmpEuler.y;
             }
             autopilotStatus = alignAngle > 0.14 ? 'ALIGNING' : 'CRUISING';
             if (!sc.brakeRequested && !sHeld) {
-              autoThrottleDrive = alignAngle > 0.35 ? 0.35 : distToAuto > stopDist * 2.4 ? 1.0 : 0.45;
+              autoThrottleDrive =
+                alignAngle > 0.35
+                  ? 0.32
+                  : distToAuto > stopDist * 3.8
+                    ? 1.0
+                    : distToAuto > stopDist * 1.75
+                      ? 0.48
+                      : 0.22;
             }
           }
         }
@@ -3724,9 +3831,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           speedMult;
         const adaptiveCruise = autoPos
           ? THREE.MathUtils.clamp(
-            sr7.rootGroup.position.distanceTo(autoPos) * 0.32,
+            sr7.rootGroup.position.distanceTo(autoPos) * (boosting ? 0.32 : 0.065),
             currentShipScale * 3.0,
-            1800.0
+            boosting ? 1800.0 : Math.max(currentShipScale * 32.0, 28.0)
           ) * speedMult
           : THREE.MathUtils.lerp(
             subWarpSpeedCap,
@@ -4126,7 +4233,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           _miningShipToTarget.subVectors(bPos, _miningBeamStart);
           const d = _miningShipToTarget.length();
           const ratio = d / bRad;
-          if (ratio > 6.8) continue;
+          if (ratio > 8.2) continue;
           const dirToBody = _miningShipToTarget.divideScalar(Math.max(1e-9, d));
           const aimDot = THREE.MathUtils.clamp(shipForward.dot(dirToBody), -1, 1);
           const aimBonus = aimDot > 0.55 ? 0.58 : aimDot > 0.15 ? 0.85 : 1.15;
@@ -4250,6 +4357,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         miningBeamGroup.visible = showMiningBeam;
         miningCraterGroup.visible = showMiningBeam;
         miningStreamInstanced.visible = showMiningBeam;
+        miningEjectaInstanced.visible = showMiningBeam;
 
         if (showMiningBeam) {
           _miningColorTmp.set(miningStep.effectiveColorHex);
@@ -4257,69 +4365,116 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const beamLen = _miningBeamDir.length();
           if (beamLen > 1e-7) {
             _miningBeamDir.divideScalar(beamLen);
-            const pulse = 0.86 + 0.14 * Math.sin(clockTime * 22.0);
-            const radiusScale = THREE.MathUtils.clamp(
-              beamLen * 0.0045,
-              currentShipScale * 0.18,
-              currentShipScale * 0.42
-            ) * pulse;
+            const pulse = 0.9 + 0.12 * Math.sin(clockTime * 28.0);
+            const radiusScale = currentShipScale * 0.42 * pulse;
 
             miningBeamGroup.position.copy(_miningBeamStart);
             miningBeamGroup.quaternion.setFromUnitVectors(_worldUp, _miningBeamDir);
             miningCoreMesh.scale.set(radiusScale, beamLen, radiusScale);
-            miningSheathMesh.scale.set(radiusScale * 1.45, beamLen, radiusScale * 1.45);
-            miningMuzzleGlow.scale.setScalar(radiusScale * 1.3);
+            miningSheathMesh.scale.set(radiusScale, beamLen, radiusScale);
+            miningCoronaMesh.scale.set(radiusScale, beamLen, radiusScale);
+            miningMuzzleGlow.scale.setScalar(currentShipScale * 0.45 * pulse);
 
             miningSheathMat.color.copy(_miningColorTmp);
-            miningSheathMat.opacity = 0.36 + 0.12 * Math.sin(clockTime * 19.0);
+            miningSheathMat.opacity = 0.56 + 0.14 * Math.sin(clockTime * 19.0);
+            miningCoronaMat.color.copy(_miningColorTmp);
+            miningCoronaMat.opacity = 0.24 + 0.08 * Math.cos(clockTime * 15.0);
             miningMuzzleGlowMat.color.copy(_miningColorTmp);
-            miningCoreMat.opacity = 0.88 + 0.12 * Math.sin(clockTime * 31.0);
+            miningCoreMat.opacity = 0.94 + 0.06 * Math.sin(clockTime * 34.0);
 
-            // Surface Ablation Crater Spot
+            // Spectacular Planetary Surface Ablation Crater, Molten Dome, Plume Spire & Dual Shockwaves
             const craterSize = THREE.MathUtils.clamp(
-              beamLen * 0.024,
-              currentShipScale * 0.65,
-              miningTargetRadius * 0.0085
+              beamLen * 0.048,
+              currentShipScale * 1.4,
+              miningTargetRadius * 0.038
             );
             miningCraterGroup.position.copy(_miningBeamEnd);
             miningCraterGroup.quaternion.setFromUnitVectors(_worldUp, _miningNormalWorld);
             miningCraterGroup.scale.setScalar(craterSize);
             miningCraterHaloMat.color.copy(_miningColorTmp);
             miningCraterShockMat.color.copy(_miningColorTmp);
+            miningPlumeConeMat.color.copy(_miningColorTmp);
             miningCraterLight.color.copy(_miningColorTmp);
-            miningCraterLight.intensity = 1.15 + Math.sin(clockTime * 18.0) * 0.35;
-            miningCraterLight.distance = craterSize * 6.0;
-            const shockCycle = (clockTime * 2.2) % 1;
-            miningCraterShock.scale.setScalar(0.55 + shockCycle * 0.95);
-            miningCraterShockMat.opacity = (1 - shockCycle) * 0.55;
+            miningCraterLight.intensity = 2.2 + Math.sin(clockTime * 22.0) * 0.55;
+            miningCraterLight.distance = craterSize * 10.0;
 
-            // Upward helical stream of vaporized ore/ice chunks moving Crater -> Ship Ventral Intake
+            miningCraterDome.scale.setScalar(0.92 + 0.22 * Math.sin(clockTime * 28.0));
+            miningPlumeCone.scale.set(
+              0.9 + 0.18 * Math.sin(clockTime * 19.0),
+              1.0 + 0.32 * Math.cos(clockTime * 23.0),
+              0.9 + 0.18 * Math.sin(clockTime * 19.0)
+            );
+            miningPlumeCone.rotation.y = clockTime * 6.5;
+
+            const shockCycle1 = (clockTime * 2.4) % 1;
+            miningCraterShock.scale.setScalar(0.55 + shockCycle1 * 1.45);
+            miningCraterShockMat.opacity = (1 - shockCycle1) * 0.9;
+
+            const shockCycle2 = (clockTime * 2.4 + 0.5) % 1;
+            miningCraterShock2.scale.setScalar(0.55 + shockCycle2 * 1.75);
+            miningCraterShockMat2.opacity = (1 - shockCycle2) * 0.78;
+
+            // Perspective-compensated dual counter-rotating helical stream (funnels tightly into ship turret at frac=0, expands at planet crater at frac=1)
             _miningPerpU.set(0, 1, 0).cross(_miningBeamDir);
             if (_miningPerpU.lengthSq() < 1e-4) _miningPerpU.set(1, 0, 0).cross(_miningBeamDir);
             _miningPerpU.normalize();
             _miningPerpV.crossVectors(_miningBeamDir, _miningPerpU).normalize();
             miningStreamMat.color.copy(_miningColorTmp);
 
-            const pSizeBase = Math.max(currentShipScale * 0.045, radiusScale * 0.38);
             for (let pi = 0; pi < MINING_STREAM_COUNT; pi++) {
-              const frac = 1.0 - ((clockTime * 0.85 + pi / MINING_STREAM_COUNT) % 1.0);
-              const theta = clockTime * 7.5 + pi * 1.7;
-              const spiralRad = Math.max(
-                currentShipScale * 0.09,
-                Math.sin(frac * Math.PI) * radiusScale * 1.45
+              const isDownwardPulse = pi % 2 === 0;
+              const strandIdx = Math.floor(pi / 2);
+              const strandTotal = MINING_STREAM_COUNT / 2;
+              const frac = isDownwardPulse
+                ? (clockTime * 1.65 + strandIdx / strandTotal) % 1.0
+                : 1.0 - ((clockTime * 0.95 + strandIdx / strandTotal) % 1.0);
+              const theta =
+                (isDownwardPulse ? -clockTime * 10.5 : clockTime * 8.2) + strandIdx * 1.45;
+              const localRadius = THREE.MathUtils.lerp(
+                currentShipScale * 0.032,
+                craterSize * 0.36,
+                frac
               );
+              const spiralRad =
+                localRadius * (0.45 + 0.55 * Math.sin(frac * Math.PI)) * (isDownwardPulse ? 0.85 : 1.2);
               _miningParticlePos
                 .copy(_miningBeamStart)
                 .addScaledVector(_miningBeamDir, beamLen * frac)
                 .addScaledVector(_miningPerpU, Math.cos(theta) * spiralRad)
                 .addScaledVector(_miningPerpV, Math.sin(theta) * spiralRad);
               _miningDummyQuat.setFromAxisAngle(_miningBeamDir, theta);
-              const pScale = pSizeBase * (0.65 + (pi % 3) * 0.35);
-              _miningScaleVec.set(pScale, pScale, pScale);
+              const pScale =
+                THREE.MathUtils.lerp(currentShipScale * 0.016, craterSize * 0.11, frac) *
+                (isDownwardPulse ? 0.95 : 0.75 + (pi % 3) * 0.32);
+              _miningScaleVec.set(
+                pScale,
+                isDownwardPulse ? pScale * 1.8 : pScale,
+                pScale
+              );
               _miningTmpMat4.compose(_miningParticlePos, _miningDummyQuat, _miningScaleVec);
               miningStreamInstanced.setMatrixAt(pi, _miningTmpMat4);
             }
             miningStreamInstanced.instanceMatrix.needsUpdate = true;
+
+            // Planetary Surface Ejecta Sparks Fountain erupting outward from impact crater
+            const ejectaSizeBase = craterSize * 0.14;
+            for (let ei = 0; ei < MINING_EJECTA_COUNT; ei++) {
+              const life = (clockTime * 1.85 + ei * (1 / MINING_EJECTA_COUNT)) % 1.0;
+              const az = ei * 2.39996 + clockTime * 0.6;
+              const spread = craterSize * (0.28 + life * 1.65);
+              const lift = craterSize * (Math.sin(life * Math.PI) * 1.35);
+              _miningParticlePos
+                .copy(_miningBeamEnd)
+                .addScaledVector(_miningNormalWorld, lift)
+                .addScaledVector(_miningPerpU, Math.cos(az) * spread)
+                .addScaledVector(_miningPerpV, Math.sin(az) * spread);
+              _miningDummyQuat.setFromAxisAngle(_miningNormalWorld, az + life * 6.0);
+              const eScale = ejectaSizeBase * (1.0 - life * 0.65);
+              _miningScaleVec.set(eScale, eScale * 1.8, eScale);
+              _miningTmpMat4.compose(_miningParticlePos, _miningDummyQuat, _miningScaleVec);
+              miningEjectaInstanced.setMatrixAt(ei, _miningTmpMat4);
+            }
+            miningEjectaInstanced.instanceMatrix.needsUpdate = true;
           }
         }
 
@@ -4414,69 +4569,74 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           miningHotspotMult: postMiningSurv.mining.hotspotMultiplier || 1,
         });
 
-        // 7. Compute Nearest Contacts & Ship-Relative Radar Bearings
-        _tmpQuat1.copy(sr7.rootGroup.quaternion).invert();
-        const contactsUnsorted: NearbySpacecraftContact[] = [];
-        ALL_CELESTIAL_BODIES.forEach((b) => {
-          const bPos = bodyWorldPositions[b.id];
-          if (!bPos) return;
-          const dist = sr7.rootGroup.position.distanceTo(bPos);
-          const relLocal = _tmpV2.copy(bPos).sub(sr7.rootGroup.position).applyQuaternion(_tmpQuat1);
-          const bearingDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.x, -relLocal.z));
-          const horizDist = Math.max(0.001, Math.hypot(relLocal.x, relLocal.z));
-          const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.y, horizDist));
+        // 7. Compute Nearest Contacts & Ship-Relative Radar Bearings (throttled ~9 Hz to eliminate per-frame GC allocations)
+        const shouldSyncTelemetryNow = now - lastTelemetrySync > 110;
+        let radarContacts: NearbySpacecraftContact[] = [];
+        let nearestContact: NearbySpacecraftContact | undefined;
+        if (shouldSyncTelemetryNow) {
+          _tmpQuat1.copy(sr7.rootGroup.quaternion).invert();
+          const contactsUnsorted: NearbySpacecraftContact[] = [];
+          ALL_CELESTIAL_BODIES.forEach((b) => {
+            const bPos = bodyWorldPositions[b.id];
+            if (!bPos) return;
+            const dist = sr7.rootGroup.position.distanceTo(bPos);
+            const relLocal = _tmpV2.copy(bPos).sub(sr7.rootGroup.position).applyQuaternion(_tmpQuat1);
+            const bearingDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.x, -relLocal.z));
+            const horizDist = Math.max(0.001, Math.hypot(relLocal.x, relLocal.z));
+            const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(relLocal.y, horizDist));
 
-          const km = dist * 1_000_000;
-          let distFormatted = '';
-          if (b.category === 'galaxy' || dist >= 90000) {
-            const ly = dist * 59.8;
-            distFormatted =
-              ly >= 1_000_000
-                ? `${(ly / 1_000_000).toFixed(2)} Mly`
-                : `${Math.round(ly).toLocaleString('pt-BR')} ly`;
-          } else if (km < 5_000_000) {
-            distFormatted = `${Math.round(km).toLocaleString('pt-BR')} km`;
-          } else {
-            distFormatted = `${(dist / 149.59787).toFixed(2)} UA`;
+            const km = dist * 1_000_000;
+            let distFormatted = '';
+            if (b.category === 'galaxy' || dist >= 90000) {
+              const ly = dist * 59.8;
+              distFormatted =
+                ly >= 1_000_000
+                  ? `${(ly / 1_000_000).toFixed(2)} Mly`
+                  : `${Math.round(ly).toLocaleString('pt-BR')} ly`;
+            } else if (km < 5_000_000) {
+              distFormatted = `${Math.round(km).toLocaleString('pt-BR')} km`;
+            } else {
+              distFormatted = `${(dist / 149.59787).toFixed(2)} UA`;
+            }
+
+            contactsUnsorted.push({
+              id: b.id,
+              name: b.name,
+              category: b.category,
+              distanceUnits: dist,
+              distanceFormatted: distFormatted,
+              bearingDeg,
+              elevationDeg,
+            });
+          });
+          if (hasOrbitalStationPos) {
+            const stDist = sr7.rootGroup.position.distanceTo(orbitalStationWorldPos);
+            const stRel = _tmpV2
+              .copy(orbitalStationWorldPos)
+              .sub(sr7.rootGroup.position)
+              .applyQuaternion(_tmpQuat1);
+            const stBearing = THREE.MathUtils.radToDeg(Math.atan2(stRel.x, -stRel.z));
+            const stHoriz = Math.max(0.0001, Math.hypot(stRel.x, stRel.z));
+            const stElev = THREE.MathUtils.radToDeg(Math.atan2(stRel.y, stHoriz));
+            const stMeters = stDist * 1_000_000_000;
+            const stFormatted =
+              stMeters < 5000
+                ? `${Math.round(stMeters)} m`
+                : `${(stMeters / 1000).toFixed(1)} km`;
+            contactsUnsorted.push({
+              id: 'sat-orbital-gateway',
+              name: 'Estação Espacial Orbital',
+              category: 'planet',
+              distanceUnits: stDist,
+              distanceFormatted: stFormatted,
+              bearingDeg: stBearing,
+              elevationDeg: stElev,
+            });
           }
-
-          contactsUnsorted.push({
-            id: b.id,
-            name: b.name,
-            category: b.category,
-            distanceUnits: dist,
-            distanceFormatted: distFormatted,
-            bearingDeg,
-            elevationDeg,
-          });
-        });
-        if (hasOrbitalStationPos) {
-          const stDist = sr7.rootGroup.position.distanceTo(orbitalStationWorldPos);
-          const stRel = _tmpV2
-            .copy(orbitalStationWorldPos)
-            .sub(sr7.rootGroup.position)
-            .applyQuaternion(_tmpQuat1);
-          const stBearing = THREE.MathUtils.radToDeg(Math.atan2(stRel.x, -stRel.z));
-          const stHoriz = Math.max(0.0001, Math.hypot(stRel.x, stRel.z));
-          const stElev = THREE.MathUtils.radToDeg(Math.atan2(stRel.y, stHoriz));
-          const stMeters = stDist * 1_000_000_000;
-          const stFormatted =
-            stMeters < 5000
-              ? `${Math.round(stMeters)} m`
-              : `${(stMeters / 1000).toFixed(1)} km`;
-          contactsUnsorted.push({
-            id: 'sat-orbital-gateway',
-            name: 'Estação Espacial Orbital',
-            category: 'planet',
-            distanceUnits: stDist,
-            distanceFormatted: stFormatted,
-            bearingDeg: stBearing,
-            elevationDeg: stElev,
-          });
+          contactsUnsorted.sort((a, b) => a.distanceUnits - b.distanceUnits);
+          nearestContact = contactsUnsorted[0];
+          radarContacts = contactsUnsorted.slice(0, 7);
         }
-        contactsUnsorted.sort((a, b) => a.distanceUnits - b.distanceUnits);
-        const nearestContact = contactsUnsorted[0];
-        const radarContacts = contactsUnsorted.slice(0, 7);
 
         let speedFormatted = '0 km/h';
         if (currentSpeed > currentShipScale * 0.004) {
@@ -4540,8 +4700,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           radarPulseAgeSec: radarAgeSec,
           muzzleFlashAlpha,
           speedFormatted,
-          nearestName: nearestContact?.name || 'Espaço Profundo',
-          nearestDist: nearestContact?.distanceFormatted || '—',
+          nearestName: nearestContact?.name || dominantBody.name || 'Espaço Profundo',
+          nearestDist: nearestContact?.distanceFormatted || `${bestProxRatio.toFixed(1)}R`,
           reactorTempC: liveReactorTemp,
           sasEnabled: sc.sasEnabled,
           autopilotActive: Boolean(autoTargetId),
@@ -4558,7 +4718,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
 
         // Sync Live Telemetry to HUD (throttled ~9 Hz)
-        if (now - lastTelemetrySync > 110) {
+        if (shouldSyncTelemetryNow) {
           lastTelemetrySync = now;
           cb.onSyncSpacecraftTelemetry({
             speedUnitsPerSec: currentSpeed,
@@ -4595,6 +4755,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         miningBeamGroup.visible = false;
         miningCraterGroup.visible = false;
         miningStreamInstanced.visible = false;
+        miningEjectaInstanced.visible = false;
         hotspotGroup.visible = false;
         // ====================================================================
         // RIGGED ASTRONAUT EVA SPACEWALK / SURFACE MODE (Next to Parked Ship)
