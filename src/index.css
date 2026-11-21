@@ -65,86 +65,136 @@
   animation: slideInRightToast 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Luminous Celestial Ice-Blue & Frosted Silver-Pearl Glass Theme for All Menus & Modals */
+/* Clean, Professional Pearl-White & Frosted Platinum Light Theme for All Menus & Modals */
 .menu-glass-surface {
   background: linear-gradient(
-    145deg,
-    rgba(76, 118, 172, 0.92) 0%,
-    rgba(62, 102, 154, 0.90) 50%,
-    rgba(48, 84, 134, 0.93) 100%
+    160deg,
+    rgba(252, 253, 255, 0.96) 0%,
+    rgba(244, 246, 250, 0.95) 52%,
+    rgba(237, 241, 247, 0.96) 100%
   ) !important;
-  backdrop-filter: blur(26px) brightness(1.22) saturate(145%);
-  -webkit-backdrop-filter: blur(26px) brightness(1.22) saturate(145%);
-  border-color: rgba(186, 230, 253, 0.52) !important;
+  color: #0f172a !important;
+  backdrop-filter: blur(28px) saturate(135%);
+  -webkit-backdrop-filter: blur(28px) saturate(135%);
+  border-color: rgba(15, 23, 42, 0.14) !important;
   box-shadow:
-    0 24px 70px rgba(6, 18, 42, 0.48),
-    inset 0 1px 2px rgba(255, 255, 255, 0.45),
-    inset 0 0 38px rgba(125, 211, 252, 0.22) !important;
+    0 24px 70px rgba(2, 6, 23, 0.32),
+    0 4px 16px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
 }
 
 .menu-glass-header {
   background: linear-gradient(
     90deg,
-    rgba(96, 144, 202, 0.85) 0%,
-    rgba(78, 128, 188, 0.80) 50%,
-    rgba(88, 136, 194, 0.85) 100%
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(248, 250, 252, 0.94) 50%,
+    rgba(255, 255, 255, 0.96) 100%
   ) !important;
-  border-color: rgba(186, 230, 253, 0.4) !important;
+  border-color: rgba(15, 23, 42, 0.10) !important;
 }
 
 .menu-glass-subbar {
-  background: rgba(82, 126, 182, 0.72) !important;
-  border-color: rgba(186, 230, 253, 0.35) !important;
+  background: rgba(241, 245, 249, 0.94) !important;
+  border-color: rgba(15, 23, 42, 0.09) !important;
 }
 
-/* Lighten all inner dark cards, panels, drawers, and pills inside glass menus */
+/* Crisp pure-white inner cards & containers inside light menus */
 .menu-glass-surface [class*="bg-slate-950"],
 .menu-glass-surface [class*="bg-slate-900"],
-.menu-glass-surface [class*="bg-slate-800"] {
-  background-color: rgba(118, 164, 218, 0.26) !important;
-  border-color: rgba(186, 230, 253, 0.38) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+.menu-glass-surface [class*="bg-slate-800"],
+.menu-glass-surface [class*="bg-emerald-950"],
+.menu-glass-surface [class*="bg-cyan-950"] {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(15, 23, 42, 0.11) !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
 }
 
 .menu-glass-surface button[class*="bg-slate-9"],
 .menu-glass-surface button[class*="bg-white/5"],
+.menu-glass-surface button[class*="bg-white/10"],
 .menu-glass-surface button[class*="bg-white/[0.03]"] {
-  background-color: rgba(148, 194, 245, 0.22) !important;
-  border-color: rgba(186, 230, 253, 0.36) !important;
+  background-color: rgba(255, 255, 255, 0.88) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #1e293b !important;
 }
 
 .menu-glass-surface button[class*="bg-slate-9"]:hover,
 .menu-glass-surface button[class*="bg-white/5"]:hover,
+.menu-glass-surface button[class*="bg-white/10"]:hover,
 .menu-glass-surface button[class*="bg-white/[0.03]"]:hover {
-  background-color: rgba(168, 212, 255, 0.35) !important;
-  border-color: rgba(224, 242, 254, 0.65) !important;
+  background-color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.26) !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
 }
 
 .menu-glass-surface input[class*="bg-slate-"],
 .menu-glass-surface select[class*="bg-slate-"] {
-  background-color: rgba(44, 78, 126, 0.78) !important;
-  border-color: rgba(186, 230, 253, 0.48) !important;
-  color: #ffffff !important;
+  background-color: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+  color: #0f172a !important;
 }
 
 .menu-glass-surface input::placeholder {
-  color: rgba(226, 232, 240, 0.8) !important;
+  color: #64748b !important;
 }
 
-/* Boost muted slate text inside menus for crisp, bright readability */
+/* High-contrast dark charcoal & editorial accent typography inside light menus */
+.menu-glass-surface .text-white,
+.menu-glass-surface .text-slate-50,
+.menu-glass-surface .text-slate-100 {
+  color: #0f172a !important;
+}
+
+.menu-glass-surface .text-slate-200,
+.menu-glass-surface .text-slate-300 {
+  color: #334155 !important;
+}
+
 .menu-glass-surface .text-slate-400,
 .menu-glass-surface .text-slate-500 {
-  color: #e2e8f0 !important;
+  color: #64748b !important;
 }
 
-.menu-glass-surface .text-slate-300 {
-  color: #f1f5f9 !important;
+.menu-glass-surface [class*="text-sky-"] {
+  color: #0369a1 !important;
 }
 
-/* Keep item studio icon frames rich sapphire-navy so glowing crystals pop cleanly */
+.menu-glass-surface [class*="text-cyan-"] {
+  color: #0e7490 !important;
+}
+
+.menu-glass-surface [class*="text-emerald-"] {
+  color: #047857 !important;
+}
+
+.menu-glass-surface [class*="text-amber-"] {
+  color: #b45309 !important;
+}
+
+.menu-glass-surface [class*="text-rose-"] {
+  color: #be123c !important;
+}
+
+.menu-glass-surface [class*="text-indigo-"],
+.menu-glass-surface [class*="text-purple-"],
+.menu-glass-surface [class*="text-fuchsia-"] {
+  color: #4338ca !important;
+}
+
+.menu-glass-surface [class*="border-white/"] {
+  border-color: rgba(15, 23, 42, 0.10) !important;
+}
+
+/* Keep 3D item artwork frames dark obsidian studio boxes so glowing crystals & white badges pop */
 .menu-glass-surface .bg-\[\#060b16\] {
-  background: radial-gradient(circle at 50% 45%, #1d3658 0%, #0d1b30 100%) !important;
-  border-color: rgba(148, 197, 255, 0.35) !important;
+  background: radial-gradient(circle at 50% 45%, #17253b 0%, #09101d 100%) !important;
+  border-color: rgba(15, 23, 42, 0.22) !important;
+}
+
+.menu-glass-surface .bg-\[\#060b16\] span {
+  background-color: rgba(9, 16, 29, 0.86) !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
 @keyframes universeSpinSlow {

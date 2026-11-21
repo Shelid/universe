@@ -197,11 +197,27 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
     prevCargoRef.current = { ...curr };
 
     if (newlyAdded.length > 0) {
-      setMinedToasts((old) => [...old, ...newlyAdded].slice(-4));
+      setMinedToasts((old) => {
+        const next = [...old];
+        for (const item of newlyAdded) {
+          const last = next[next.length - 1];
+          if (last && last.resourceId === item.resourceId) {
+            next[next.length - 1] = {
+              ...last,
+              uid: item.uid,
+              addedQty: last.addedQty + item.addedQty,
+              totalOwned: item.totalOwned,
+            };
+          } else {
+            next.push(item);
+          }
+        }
+        return next.slice(-2);
+      });
       const idsToRemove = new Set(newlyAdded.map((item) => item.uid));
       const timer = window.setTimeout(() => {
         setMinedToasts((old) => old.filter((item) => !idsToRemove.has(item.uid)));
-      }, 3400);
+      }, 2400);
       return () => window.clearTimeout(timer);
     }
   }, [survival.cargoInventory]);
@@ -249,18 +265,13 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between select-none">
-      {/* MINIMAL SHIP PILL BAR: ESSENTIAL CAMERA, CABIN WALK & SHIP MENU */}
-      <div className="px-3 pt-3 sm:px-4 sm:pt-3 pr-28 sm:pr-36 flex flex-col items-start gap-1.5">
-        <div className="menu-glass-surface pointer-events-auto flex flex-wrap items-center gap-1.5 border border-sky-300/35 rounded-full px-2.5 py-1 shadow-xl">
+      {/* MINIMAL SHIP PILL BAR: ULTRA-CLEAN CAMERA, CABIN WALK & SHIP MENU */}
+      <div className="px-3 pt-2.5 sm:px-4 sm:pt-3 pr-24 sm:pr-32 flex flex-col items-start gap-1">
+        <div className="menu-glass-surface pointer-events-auto flex flex-wrap items-center gap-1 border rounded-full px-2 py-1 shadow-md">
           <span
-            className="w-2 h-2 rounded-full animate-pulse ml-0.5"
-            style={{ backgroundColor: activeShipAccent, boxShadow: `0 0 8px ${activeShipAccent}` }}
+            className="w-2 h-2 rounded-full ml-1 mr-0.5"
+            style={{ backgroundColor: activeShipAccent }}
           />
-          <span className="hidden md:inline text-[11px] font-bold tracking-wider text-white font-mono uppercase">
-            {activeShipName}
-          </span>
-
-          <div className="hidden md:block h-3.5 w-px bg-white/15 mx-0.5" />
 
           <button
             onClick={() =>
@@ -269,7 +280,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 cameraView: prev.cameraView === 'EXTERNAL' ? 'COCKPIT' : 'EXTERNAL',
               }))
             }
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-100 text-[11px] font-medium transition-colors"
+            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/80 hover:bg-white border border-slate-300/80 text-slate-900 text-[11px] font-medium transition-colors"
             title={
               controlState.walkingInside
                 ? 'Alternar Visão 1ª / 3ª Pessoa dentro da Cabine (Tecla V)'
@@ -278,12 +289,12 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           >
             {controlState.cameraView === 'EXTERNAL' ? (
               <>
-                <Camera className="w-3.5 h-3.5 text-sky-300" />
+                <Camera className="w-3 h-3 text-sky-700" />
                 <span>{controlState.walkingInside ? '1ª Pessoa' : 'Cabine'}</span>
               </>
             ) : (
               <>
-                <Eye className="w-3.5 h-3.5 text-sky-300" />
+                <Eye className="w-3 h-3 text-sky-700" />
                 <span>3ª Pessoa</span>
               </>
             )}
@@ -305,56 +316,28 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 };
               })
             }
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${controlState.walkingInside
-              ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-300 text-emerald-50 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
-              : 'bg-amber-500/20 hover:bg-amber-500/35 border-amber-400/40 text-amber-100'
-              }`}
+            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/80 hover:bg-white border border-slate-300/80 text-slate-900 text-[11px] font-medium transition-colors"
             title={
               controlState.walkingInside
                 ? 'Voltar ao Assento de Comando da Nave (Tecla G)'
                 : 'Levantar e Andar Livremente dentro da Nave com Colisão Física (Tecla G)'
             }
           >
-            <User className="w-3.5 h-3.5" />
-            <span>{controlState.walkingInside ? 'Sentar no Comando' : 'Andar na Nave'}</span>
+            <User className="w-3 h-3 text-amber-700" />
+            <span>{controlState.walkingInside ? 'Sentar' : 'Andar na Nave'}</span>
           </button>
-
-          {!controlState.walkingInside && controlState.cameraView === 'COCKPIT' && (
-            <button
-              onClick={() =>
-                onUpdateControl((prev) => {
-                  const cur = prev.cockpitSeat || 'LEFT';
-                  const next = cur === 'LEFT' ? 'CENTER' : cur === 'CENTER' ? 'RIGHT' : 'LEFT';
-                  return { ...prev, cockpitSeat: next };
-                })
-              }
-              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-100 text-[11px] font-medium transition-colors"
-              title="Alternar Assento dentro da Cabine: Comandante (Esq) / Visão Central / Co-Piloto (Dir) (Tecla B)"
-            >
-              <span>
-                {(controlState.cockpitSeat || 'LEFT') === 'LEFT'
-                  ? 'Assento: Comandante'
-                  : controlState.cockpitSeat === 'CENTER'
-                    ? 'Assento: Centro'
-                    : 'Assento: Co-Piloto'}
-              </span>
-            </button>
-          )}
 
           {!controlState.walkingInside && (
             <button
               onClick={() => setIsShipMenuOpen((open) => !open)}
-              className={`relative flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${isShipMenuOpen
-                ? 'bg-cyan-500/30 border-cyan-300 text-white shadow-[0_0_14px_rgba(34,211,238,0.4)]'
-                : 'bg-white/10 hover:bg-white/15 border-white/20 text-white'
-                }`}
+              className="relative flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/90 hover:bg-white border border-slate-300 text-slate-900 text-[11px] font-semibold transition-all"
               title="Abrir Menu Completo da Nave (Telemetria, Radar, Piloto Automático e Sistemas)"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-300" />
+              <SlidersHorizontal className="w-3 h-3 text-slate-700" />
               <span>Menu da Nave</span>
               {(controlState.autopilotTargetId || survival.activeStatusAlert) && (
                 <span
-                  className={`w-2 h-2 rounded-full animate-ping ${survival.activeStatusAlert ? 'bg-rose-400' : 'bg-amber-400'
+                  className={`w-2 h-2 rounded-full animate-ping ${survival.activeStatusAlert ? 'bg-rose-500' : 'bg-amber-500'
                     }`}
                 />
               )}
@@ -390,17 +373,14 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             </div>
           )}
 
-          {/* Clean Live Orbital Mining Laser Micro Pill (shown only when active or in orbital mining range) */}
-          {(survival.mining.isActive || survival.mining.inRange) && (
+          {/* Clean Live Orbital Mining Laser Micro Pill (shown ONLY while actively drilling so screen stays ultra-clean) */}
+          {survival.mining.isDrilling && (
             <button
               onClick={() => {
                 setActiveTab('mining');
                 setIsShipMenuOpen(true);
               }}
-              className={`pointer-events-auto flex items-center gap-2 backdrop-blur-xl border rounded-full px-3 py-1 text-[10px] font-mono shadow-lg transition-colors ${survival.mining.isDrilling
-                ? 'bg-cyan-950/90 border-cyan-400/75 text-cyan-100'
-                : 'bg-slate-950/85 border-sky-400/40 text-sky-100 hover:border-sky-300'
-                }`}
+              className="menu-glass-surface pointer-events-auto flex items-center gap-2 border rounded-full px-3 py-1 text-[10px] font-mono shadow-md transition-colors"
               title="Abrir Painel de Mineração & Síntese Química"
             >
               <Pickaxe
@@ -1761,7 +1741,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       className="px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0"
                       style={{
                         backgroundColor: `${def.colorHex}28`,
-                        color: '#e0f2fe',
+                        color: '#0f172a',
                         border: `1px solid ${def.colorHex}66`,
                       }}
                     >
@@ -2017,55 +1997,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   brakeRequested: true,
                 }))
               }
-              className="px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/35 text-rose-100 text-[10px] font-bold font-mono transition-colors"
+              className="px-2.5 py-0.5 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/35 text-rose-100 text-[10px] font-bold font-mono transition-colors"
               title="Freio Total (Espaço)"
             >
               Freio
-            </button>
-
-            <div className="h-4 w-px bg-white/15" />
-
-            {/* Manual 360° Ship Inclination / Roll Controls (← / → + 0° Level) */}
-            <div className="flex items-center gap-1" title="Inclinar Nave 360° / Ponta Cabeça (Setas ← e →)">
-              <button
-                {...holdButtonProps('roll', 1)}
-                className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
-                title="Inclinar para a Esquerda (Segure ←)"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">←</span>
-              </button>
-              <button
-                onClick={() =>
-                  onUpdateControl((prev) => ({
-                    ...prev,
-                    recenterTrigger: (prev.recenterTrigger || 0) + 1,
-                  }))
-                }
-                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-[10px] font-mono text-slate-300 min-w-[36px] text-center transition-colors"
-                title="Ângulo de Inclinação Atual (Clique ou pressione C para nivelar em 0°)"
-              >
-                {telemetry.rollDeg}°
-              </button>
-              <button
-                {...holdButtonProps('roll', -1)}
-                className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/5 hover:bg-sky-500/25 active:bg-sky-500/40 border border-white/15 text-sky-200 text-[10px] font-mono transition-colors"
-                title="Inclinar para a Direita (Segure →)"
-              >
-                <span className="hidden sm:inline">→</span>
-                <RotateCw className="w-3 h-3" />
-              </button>
-            </div>
-
-            <button
-              onClick={() => setShowTouchPad((v) => !v)}
-              className={`p-1.5 rounded-full border transition-colors ${showTouchPad
-                ? 'bg-amber-500/30 border-amber-400 text-amber-200'
-                : 'bg-white/5 hover:bg-white/15 border-white/10 text-slate-300'
-                }`}
-              title="Mostrar/Ocultar Manche na Tela"
-            >
-              <Compass className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
