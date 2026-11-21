@@ -219,40 +219,65 @@ export const MINING_RESOURCES: Record<MiningResourceId, CatalogResourceDefinitio
 export const MINING_RESOURCE_LIST: CatalogResourceDefinition[] = Object.values(MINING_RESOURCES);
 
 /**
- * Direct Ship Energy replenishment yields when mining or consuming energetic resources in the Backpack/Reactor.
+ * Direct Ship Energy & Battery Bank replenishment yields when mining or injecting minerals into the Reactor/Battery Bank.
  */
-export const ENERGY_MINERAL_YIELDS: Partial<
-  Record<
-    MiningResourceId,
-    { batteryPct: number; warpPct?: number; fuelPct?: number; label: string }
-  >
+export const ENERGY_MINERAL_YIELDS: Record<
+  MiningResourceId,
+  { batteryPct: number; bankPct: number; warpPct?: number; fuelPct?: number; label: string }
 > = {
   'helium-3': {
     batteryPct: 45,
-    warpPct: 12,
-    label: '+45% Energia da Nave · +12% Dobra',
+    bankPct: 35,
+    warpPct: 14,
+    label: '+45% Energia / Banco · +14% Dobra',
   },
   'exotic-silicates': {
     batteryPct: 40,
-    warpPct: 8,
-    label: '+40% Energia da Nave · +8% Dobra',
+    bankPct: 32,
+    warpPct: 10,
+    label: '+40% Energia / Banco · +10% Dobra',
   },
   'platinum-group': {
     batteryPct: 35,
-    label: '+35% Energia da Nave (Catalisador)',
+    bankPct: 28,
+    label: '+35% Energia / Banco (Catalisador)',
   },
   'sulfur-compounds': {
     batteryPct: 30,
-    label: '+30% Energia da Nave (Eletrólito)',
+    bankPct: 25,
+    label: '+30% Energia / Banco (Eletrólito Li-S)',
   },
   'cryo-methane': {
-    batteryPct: 24,
+    batteryPct: 25,
+    bankPct: 20,
     fuelPct: 12,
-    label: '+24% Energia da Nave · +12% Combustível',
+    label: '+25% Energia / Banco · +12% Combustível',
   },
   'titanium-ilmenite': {
+    batteryPct: 22,
+    bankPct: 18,
+    label: '+22% Energia / Banco (Termopar FeTiO₃)',
+  },
+  'ammonia-hydrates': {
     batteryPct: 18,
-    label: '+18% Energia da Nave (Termopar)',
+    bankPct: 15,
+    fuelPct: 8,
+    label: '+18% Energia / Banco · +8% Combustível',
+  },
+  'iron-nickel': {
+    batteryPct: 15,
+    bankPct: 12,
+    label: '+15% Energia / Banco (Anodo Metálico)',
+  },
+  'water-ice': {
+    batteryPct: 14,
+    bankPct: 12,
+    label: '+14% Energia / Banco (Célula H₂/O₂)',
+  },
+  'silicate-regolith': {
+    batteryPct: 12,
+    bankPct: 10,
+    label: '+12% Energia / Banco (Termossílica)',
   },
 };
 

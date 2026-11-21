@@ -4096,9 +4096,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           speedMult;
         const adaptiveCruise = autoPos
           ? THREE.MathUtils.clamp(
-            sr7.rootGroup.position.distanceTo(autoPos) * (boosting ? 0.32 : 0.065),
-            currentShipScale * 3.0,
-            boosting ? 1800.0 : Math.max(currentShipScale * 32.0, 28.0)
+            sr7.rootGroup.position.distanceTo(autoPos) * (boosting ? 0.38 : 0.24),
+            currentShipScale * 3.5,
+            boosting ? 2200.0 : 950.0
           ) * speedMult
           : THREE.MathUtils.lerp(
             subWarpSpeedCap,

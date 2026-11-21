@@ -54,6 +54,7 @@ import {
   sellAllCargoAction,
   sellCargoResourceAction,
   synthesizeRecipeAction,
+  transferBatteryBankToShipAction,
   useRepairKitAction,
 } from './utils/survivalEngine';
 import {
@@ -682,6 +683,18 @@ export function App() {
     },
     [handleSyncSurvivalState, showSurvivalNotice]
   );
+
+  const handleTransferBatteryBank = useCallback(() => {
+    const res = transferBatteryBankToShipAction(survivalRef.current);
+    handleSyncSurvivalState(res.state);
+    spaceAudio.unlock();
+    if (res.ok) {
+      spaceAudio.playProvisionUse('cell');
+    } else {
+      spaceAudio.playCockpitSwitch(false);
+    }
+    showSurvivalNotice(res.message);
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
 
   // Global Menu & EVA Hotkeys
   useEffect(() => {
@@ -1385,6 +1398,7 @@ export function App() {
           onToggleMiningLaser={handleToggleMiningLaser}
           onSynthesizeRecipe={handleSynthesizeRecipe}
           onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
+          onTransferBatteryBank={handleTransferBatteryBank}
           onSellCargo={handleSellCargo}
           onSellAllCargo={handleSellAllCargo}
           onDiscardCargo={handleDiscardCargo}
@@ -1530,6 +1544,7 @@ export function App() {
         onConsumeWarpCell={handleConsumeWarpCell}
         onSynthesizeRecipe={handleSynthesizeRecipe}
         onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
+        onTransferBatteryBank={handleTransferBatteryBank}
         onSellCargo={handleSellCargo}
         onSellAllCargo={handleSellAllCargo}
         onDiscardCargo={handleDiscardCargo}

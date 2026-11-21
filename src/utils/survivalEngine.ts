@@ -152,6 +152,7 @@ export function createInitialSurvivalState(): SurvivalResourcesState {
     warpCells: 1,
     maxWarpCells: 5,
     batteryPercent: 100,
+    batteryBankPercent: 85,
     ecoCruiseMode: false,
 
     shipOxygenPercent: 100,
@@ -243,6 +244,7 @@ export function stepSurvivalSimulation(
       warpEnergyPercent: Math.max(state.warpEnergyPercent, 68),
       warpCells: Math.max(state.warpCells, 1),
       batteryPercent: 100,
+      batteryBankPercent: Math.max(state.batteryBankPercent ?? 85, 85),
       shipOxygenPercent: 100,
       evaOxygenPercent: 100,
       hullIntegrity: 100,
@@ -267,6 +269,7 @@ export function stepSurvivalSimulation(
   let warpEnergy = state.warpEnergyPercent;
   const warpCells = state.warpCells;
   let battery = state.batteryPercent;
+  let batteryBank = state.batteryBankPercent ?? 85;
   let shipO2 = state.shipOxygenPercent;
   let evaO2 = state.evaOxygenPercent;
   let hull = state.hullIntegrity;
@@ -294,11 +297,11 @@ export function stepSurvivalSimulation(
   }
 
   // 2. Solar irradiance & inverse-distance solar charging (1 AU = 149.59787 units)
-  // The closer to the Sun, the faster the photovoltaic & thermal collectors recharge ship energy!
+  // Gentler distance falloff (0.72) so the Sun still charges the ship well at Mars/Jupiter while charging very fast near the Sun!
   const sunDistAU = Math.max(0.035, p.sunDistanceUnits / 149.59787);
   const solarFluxKw = p.inPlanetaryShadow
-    ? 2
-    : Math.min(480, Math.max(4, Math.round(98 / Math.pow(sunDistAU, 1.38))));
+    ? 4
+    : Math.min(520, Math.max(28, Math.round(135 / Math.pow(sunDistAU, 0.72))));
 
   const lifePips = state.powerPips.lifeSupport;
   const shieldPips = state.powerPips.shields;
@@ -333,32 +336,50 @@ export function stepSurvivalSimulation(
     fuel = Math.min(100, fuel + 10 * dt);
     shipO2 = Math.min(100, shipO2 + 18 * dt);
     evaO2 = Math.min(100, evaO2 + 25 * dt);
-    battery = Math.min(100, battery + 18 * dt);
+    battery = Math.min(100, battery + 22 * dt);
+    batteryBank = Math.min(100, batteryBank + 15 * dt);
     warpEnergy = Math.min(100, warpEnergy + 4.5 * dt);
   } else if (refuelSource === 'GAS_GIANT_SCOOP') {
     // Atmospheric hydrogen / He-3 harvesting near Jupiter/Saturn/Uranus/Neptune!
     fuel = Math.min(100, fuel + 4.6 * dt);
     warpEnergy = Math.min(100, warpEnergy + 1.35 * dt);
+    battery = Math.min(100, battery + 3.2 * dt);
   } else if (refuelSource === 'SOLAR_CORONA') {
-    // Close solar approach (< 0.48 AU): accelerated solar collector recharge scaling inversely with distance!
-    const coronaProximityBoost = THREE_CLAMP((72 - p.sunDistanceUnits) / 14, 0.8, 4.8);
-    battery = Math.min(100, battery + 5.5 * coronaProximityBoost * dt);
-    warpEnergy = Math.min(100, warpEnergy + 0.85 * coronaProximityBoost * dt);
+    // Close solar approach (< 0.48 AU): accelerated solar collector recharge + Battery Bank storage!
+    const coronaProximityBoost = THREE_CLAMP((72 - p.sunDistanceUnits) / 14, 0.9, 5.2);
+    battery = Math.min(100, battery + 7.5 * coronaProximityBoost * dt);
+    batteryBank = Math.min(100, batteryBank + 4.2 * coronaProximityBoost * dt);
+    warpEnergy = Math.min(100, warpEnergy + 0.95 * coronaProximityBoost * dt);
   }
 
-  // 5. Ship Energy (Photovoltaic Solar Collectors + Reactor Power Bus Balance)
-  // Closer to the Sun -> higher solarFluxKw -> much faster battery recharge!
-  const solarChargeRate = p.inPlanetaryShadow ? 0 : Math.pow(solarFluxKw / 95, 1.12) * 2.15;
-  const batteryGen = solarChargeRate + (fuel > 1 ? 0.55 : 0.08);
+  // 5. Ship Energy & Battery Bank (Faster Solar Charging + 62% Lower Drain so Energy Lasts Much Longer!)
+  const solarChargeRate = p.inPlanetaryShadow
+    ? 0
+    : Math.max(1.35, Math.pow(solarFluxKw / 95, 0.88) * 3.85);
+  const batteryGen = solarChargeRate + (fuel > 1 ? 0.65 : 0.12);
   const batteryLoad =
-    0.32 +
-    (p.mode === 'SPACECRAFT' ? Math.abs(p.throttle) * 0.45 : 0) +
-    (p.shieldsOn ? 0.58 + shieldPips * 0.15 : 0) +
-    (p.headlightsOn ? 0.22 : 0) +
-    lifePips * 0.24 +
-    weapPips * 0.12 +
-    (p.boostActive ? 1.55 : 0);
-  battery = clampPct(battery + (batteryGen - batteryLoad) * dt);
+    0.12 +
+    (p.mode === 'SPACECRAFT' ? Math.abs(p.throttle) * 0.16 : 0) +
+    (p.shieldsOn ? 0.20 + shieldPips * 0.05 : 0) +
+    (p.headlightsOn ? 0.07 : 0) +
+    lifePips * 0.08 +
+    weapPips * 0.04 +
+    (p.boostActive ? 0.52 : 0);
+
+  const rawNextBattery = battery + (batteryGen - batteryLoad) * dt;
+  if (rawNextBattery > 100) {
+    // Overflow solar/reactor energy is stored directly in the Ship's Battery Bank!
+    const surplus = rawNextBattery - 100;
+    battery = 100;
+    batteryBank = clampPct(batteryBank + surplus * 0.72);
+  } else if (rawNextBattery < 28 && batteryBank > 0.2) {
+    // Automatic reserve backup: Battery Bank discharges smoothly to keep Ship Energy healthy!
+    const transfer = Math.min(batteryBank, 12.0 * dt);
+    battery = clampPct(rawNextBattery + transfer * 1.4);
+    batteryBank = clampPct(batteryBank - transfer);
+  } else {
+    battery = clampPct(rawNextBattery);
+  }
 
   // 6. Thermal Physics (Solar heat + Warp/Engine heat vs Shadow & Radiators!)
   const sunHeatTargetC = p.inPlanetaryShadow
@@ -478,6 +499,7 @@ export function stepSurvivalSimulation(
     warpEnergyPercent: Number(warpEnergy.toFixed(1)),
     warpCells,
     batteryPercent: Number(battery.toFixed(1)),
+    batteryBankPercent: Number(batteryBank.toFixed(1)),
     shipOxygenPercent: Number(shipO2.toFixed(1)),
     evaOxygenPercent: Number(evaO2.toFixed(1)),
     hullIntegrity: Number(hull.toFixed(1)),
@@ -584,6 +606,7 @@ export function fullStationResupplyAction(state: SurvivalResourcesState): Surviv
     warpEnergyPercent: 100,
     warpCells: state.maxWarpCells,
     batteryPercent: 100,
+    batteryBankPercent: 100,
     shipOxygenPercent: 100,
     evaOxygenPercent: 100,
     hullIntegrity: 100,
@@ -870,13 +893,13 @@ export function stepMiningSimulation(
     (0.46 * weaponsMult * proximityFactor * hotspotMult) / hardness;
   const beamPowerKw = Math.round(320 * weaponsMult * proximityFactor);
 
-  // Energy & thermal load during active laser ablation (or direct Solar Corona energy harvesting!)
+  // Energy & thermal load during active laser ablation (65% lower energy drain + direct Solar Corona & mineral energy harvesting!)
   const isSolarSiphon = bodyId === 'sun';
   const batteryDrain = isSolarSiphon
-    ? -16.5 * dt // Siphoning the Sun directly recharges Ship Energy rapidly!
-    : (1.15 + prev.powerPips.weapons * 0.18) * dt;
+    ? -22.0 * dt // Siphoning the Sun directly recharges Ship Energy & Battery Bank rapidly!
+    : (0.38 + prev.powerPips.weapons * 0.06) * dt;
   const radiatorMitigation = prev.radiatorsDeployed ? 0.42 : 1.0;
-  const heatGain = (isSolarSiphon ? 6.2 : 4.2) * weaponsMult * radiatorMitigation * dt;
+  const heatGain = (isSolarSiphon ? 5.2 : 3.6) * weaponsMult * radiatorMitigation * dt;
 
   let nextProgress = prev.mining.extractionProgress01 + extractionRatePerSec * dt;
   let minedUnitsThisTick = 0;
@@ -905,12 +928,12 @@ export function stepMiningSimulation(
       minedUnitsThisTick = whole;
       minedResourceId = picked;
 
-      // Mining energy resources automatically channels thermoelectric/fusion energy into the ship's battery!
+      // Mining resources automatically channels thermoelectric/fusion energy into the ship's battery & Battery Bank!
       const energyYield = ENERGY_MINERAL_YIELDS[picked];
       if (energyYield) {
-        minedEnergyBonusPct = energyYield.batteryPct * 0.38 * whole;
+        minedEnergyBonusPct = energyYield.batteryPct * 0.48 * whole;
       } else {
-        minedEnergyBonusPct = 3.5 * whole;
+        minedEnergyBonusPct = 6.0 * whole;
       }
     } else {
       nextProgress = 0.99;
@@ -920,15 +943,19 @@ export function stepMiningSimulation(
   const resName = MINING_RESOURCES[minedResourceId ?? activeRes].name;
   const nextReactorTemp = Math.min(138, prev.reactorTempC + heatGain);
   const nextHullTemp = Math.min(115, prev.hullTempC + heatGain * 0.28);
-  const nextBattery = Math.max(
+  const rawMinedBattery = prev.batteryPercent - batteryDrain + minedEnergyBonusPct;
+  const nextBattery = Math.max(0, Math.min(100, Number(rawMinedBattery.toFixed(2))));
+  const bankOverflow = rawMinedBattery > 100 ? (rawMinedBattery - 100) * 0.85 : 0;
+  const nextBatteryBank = Math.max(
     0,
-    Math.min(100, Number((prev.batteryPercent - batteryDrain + minedEnergyBonusPct).toFixed(2)))
+    Math.min(100, Number(((prev.batteryBankPercent ?? 85) + bankOverflow).toFixed(2)))
   );
 
   return {
     state: {
       ...prev,
       batteryPercent: nextBattery,
+      batteryBankPercent: nextBatteryBank,
       reactorTempC: Number(nextReactorTemp.toFixed(1)),
       hullTempC: Number(nextHullTemp.toFixed(1)),
       cargoInventory: nextInventory,
@@ -1119,23 +1146,26 @@ export function consumeMineralForEnergyAction(
 ): { ok: boolean; state: SurvivalResourcesState; message: string } {
   const owned = state.cargoInventory[resourceId] ?? 0;
   if (owned <= 0) {
-    return { ok: false, state, message: 'Sem unidades desse recurso energético no porão.' };
+    return { ok: false, state, message: 'Sem unidades desse recurso no porão.' };
   }
   const energyYield = ENERGY_MINERAL_YIELDS[resourceId];
-  if (!energyYield) {
-    return {
-      ok: false,
-      state,
-      message: 'Este minério requer combinação na Máquina de Bordo para gerar energia.',
-    };
-  }
   const def = MINING_RESOURCES[resourceId];
   const nextInventory = { ...state.cargoInventory };
   const rem = owned - 1;
   if (rem <= 0) delete nextInventory[resourceId];
   else nextInventory[resourceId] = rem;
 
-  const nextBattery = Math.min(100, Number((state.batteryPercent + energyYield.batteryPct).toFixed(1)));
+  const rawBattery = state.batteryPercent + energyYield.batteryPct;
+  const nextBattery = Math.min(100, Number(rawBattery.toFixed(1)));
+  const overflowPct = Math.max(0, rawBattery - 100);
+  const addedToBank =
+    state.batteryPercent >= 99
+      ? energyYield.bankPct
+      : Number((overflowPct * 0.8 + energyYield.bankPct * 0.35).toFixed(1));
+  const nextBatteryBank = Math.min(
+    100,
+    Number(((state.batteryBankPercent ?? 85) + addedToBank).toFixed(1))
+  );
   const nextWarp = Math.min(
     100,
     Number((state.warpEnergyPercent + (energyYield.warpPct ?? 0)).toFixed(1))
@@ -1151,9 +1181,45 @@ export function consumeMineralForEnergyAction(
       ...state,
       cargoInventory: nextInventory,
       batteryPercent: nextBattery,
+      batteryBankPercent: nextBatteryBank,
       warpEnergyPercent: nextWarp,
       fuelPercent: nextFuel,
     },
-    message: `${def.name} convertido no reator: ${energyYield.label} (Energia em ${Math.round(nextBattery)}%)`,
+    message: `${def.name} convertido: Energia ${Math.round(nextBattery)}% · Banco de Bateria ${Math.round(nextBatteryBank)}%`,
+  };
+}
+
+export function transferBatteryBankToShipAction(
+  state: SurvivalResourcesState
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const bank = state.batteryBankPercent ?? 0;
+  if (bank <= 0.5) {
+    return {
+      ok: false,
+      state,
+      message: 'Banco de Baterias vazio — recarregue no Sol ou minere Hélio-3 / Enxofre / Titânio!',
+    };
+  }
+  if (state.batteryPercent >= 99.5) {
+    return {
+      ok: false,
+      state,
+      message: 'Energia Principal da Nave já está em 100%! O Banco de Baterias está guardando a reserva.',
+    };
+  }
+  const needed = 100 - state.batteryPercent;
+  const bankUsed = Math.min(bank, needed * 0.65);
+  const gained = Math.min(needed, bankUsed * 1.54);
+  const nextBattery = Math.min(100, Number((state.batteryPercent + gained).toFixed(1)));
+  const nextBank = Math.max(0, Number((bank - bankUsed).toFixed(1)));
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      batteryPercent: nextBattery,
+      batteryBankPercent: nextBank,
+    },
+    message: `Banco de Baterias transferiu +${Math.round(gained)}% para a Nave (Reserva no Banco: ${Math.round(nextBank)}%)`,
   };
 }

@@ -438,6 +438,7 @@ export interface SurvivalResourcesState {
   warpCells: number;
   maxWarpCells: number;
   batteryPercent: number;
+  batteryBankPercent: number;
   ecoCruiseMode: boolean;
 
   shipOxygenPercent: number;

@@ -49,6 +49,7 @@ interface BackpackModalProps {
   onConsumeWarpCell: () => void;
   onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
   onConsumeMineralForEnergy?: (resourceId: MiningResourceId) => void;
+  onTransferBatteryBank?: () => void;
   onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
   onSellAllCargo: () => void;
   onDiscardCargo: (resourceId: MiningResourceId) => void;
@@ -216,6 +217,7 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
   onConsumeWarpCell,
   onSynthesizeRecipe,
   onConsumeMineralForEnergy,
+  onTransferBatteryBank,
   onSellCargo,
   onSellAllCargo,
   onDiscardCargo,
@@ -458,11 +460,18 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
               <span className="text-slate-300">{totalMassKg.toFixed(1)} kg</span>
             </div>
 
-            {/* Ship Energy Pill */}
-            <div className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-300/45 flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-100">
+            {/* Ship Energy & Battery Bank Pill */}
+            <button
+              onClick={() => onTransferBatteryBank?.()}
+              className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 border border-amber-300/45 flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-100 transition-colors"
+              title="Energia Principal da Nave e Banco de Baterias de Reserva (Clique para transferir do Banco para a Nave)"
+            >
               <Zap className="w-3.5 h-3.5 text-amber-300" />
-              <span>Energia {Math.round(survival.batteryPercent)}%</span>
-            </div>
+              <span>
+                Energia {Math.round(survival.batteryPercent)}% · Banco{' '}
+                {Math.round(survival.batteryBankPercent ?? 85)}%
+              </span>
+            </button>
 
             {/* Credits Pill */}
             <div className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-400/35 flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-200">

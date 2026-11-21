@@ -110,6 +110,7 @@ interface SpacecraftCockpitHUDProps {
   onToggleMiningLaser: () => void;
   onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
   onConsumeMineralForEnergy?: (resourceId: MiningResourceId) => void;
+  onTransferBatteryBank?: () => void;
   onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
   onSellAllCargo: () => void;
   onDiscardCargo: (resourceId: MiningResourceId) => void;
@@ -149,6 +150,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   onToggleMiningLaser,
   onSynthesizeRecipe,
   onConsumeMineralForEnergy,
+  onTransferBatteryBank,
   onSellCargo,
   onSellAllCargo,
   onDiscardCargo,
@@ -157,6 +159,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   const [isShipMenuOpen, setIsShipMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ShipMenuTab>('systems');
   const [miningCatalogQuery, setMiningCatalogQuery] = useState('');
+  const [selectedAutopilotId, setSelectedAutopilotId] = useState<string>(
+    controlState.autopilotTargetId || 'mars'
+  );
   const [showTouchPad, setShowTouchPad] = useState(false);
   const [audioVol, setAudioVol] = useState(() => Math.round(spaceAudio.getMasterVolume() * 100));
 
@@ -232,19 +237,30 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
     forward: 0,
   });
 
+  useEffect(() => {
+    if (controlState.autopilotTargetId) {
+      setSelectedAutopilotId(controlState.autopilotTargetId);
+    }
+  }, [controlState.autopilotTargetId]);
+
   const autopilotTargets = useMemo(
-    () =>
-      ALL_CELESTIAL_BODIES.filter(
-        (b) =>
-          b.category === 'star' ||
-          b.category === 'planet' ||
-          b.category === 'dwarf_planet' ||
-          b.id === 'moon' ||
-          b.id === 'milky-way' ||
-          b.id === 'andromeda'
-      ),
+    () => ALL_CELESTIAL_BODIES.filter((b) => b.category !== 'galaxy'),
     []
   );
+
+  const startAutopilotTripTo = (targetId: string) => {
+    if (!targetId) return;
+    setSelectedAutopilotId(targetId);
+    spaceAudio.unlock();
+    spaceAudio.playAutopilotLock();
+    onUpdateControl((prev) => ({
+      ...prev,
+      autopilotTargetId: targetId,
+      brakeRequested: false,
+      throttle: 1.0,
+      boostActive: true,
+    }));
+  };
 
   const setVirtualAxis = (key: keyof VirtualSteerInput, value: number) => {
     steerRef.current = { ...steerRef.current, [key]: value };
@@ -528,9 +544,14 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       color: survival.warpEnergyPercent < 15 ? 'bg-rose-500' : 'bg-cyan-400',
                     },
                     {
-                      label: 'Energia da Nave (Bateria & Sol)',
+                      label: 'Energia da Nave (Bateria Principal)',
                       val: survival.batteryPercent,
                       color: 'bg-sky-400',
+                    },
+                    {
+                      label: 'Banco de Baterias (Reserva Armazenada)',
+                      val: survival.batteryBankPercent ?? 85,
+                      color: 'bg-amber-400',
                     },
                   ].map((bar) => (
                     <div key={bar.label} className="space-y-1">
@@ -547,17 +568,33 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     </div>
                   ))}
 
-                  {/* Photovoltaic Solar Proximity Recharge Telemetry */}
-                  <div className="rounded-lg bg-slate-950/75 border border-amber-400/35 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-amber-300 font-bold flex items-center gap-1">
-                      <Sun className="w-3.5 h-3.5" />
-                      <span>Recarga Solar: {Math.round(survival.solarHarvestKw)} kW</span>
-                    </span>
-                    <span className="text-emerald-300 font-bold">
-                      {survival.inPlanetaryShadow
-                        ? 'Sombra Planetária (0%/s)'
-                        : `+${(Math.pow(survival.solarHarvestKw / 95, 1.12) * 2.15).toFixed(1)}%/s`}
-                    </span>
+                  {/* Photovoltaic Solar Proximity Recharge Telemetry & Battery Bank Transfer */}
+                  <div className="rounded-lg bg-slate-950/75 border border-amber-400/35 px-2.5 py-2 space-y-1.5 text-[10px] font-mono">
+                    <div className="flex items-center justify-between">
+                      <span className="text-amber-300 font-bold flex items-center gap-1">
+                        <Sun className="w-3.5 h-3.5" />
+                        <span>Painel Solar: {Math.round(survival.solarHarvestKw)} kW</span>
+                      </span>
+                      <span className="text-emerald-300 font-bold">
+                        {survival.inPlanetaryShadow
+                          ? 'Sombra Planetária (0%/s)'
+                          : `+${Math.max(1.35, Math.pow(survival.solarHarvestKw / 95, 0.88) * 3.85).toFixed(1)}%/s`}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-slate-300 leading-snug font-sans">
+                      Quando a Energia chega a 100%, o excedente do Sol e da mineração é armazenado automaticamente no <strong>Banco de Baterias</strong>.
+                    </div>
+                    {onTransferBatteryBank && (
+                      <button
+                        onClick={onTransferBatteryBank}
+                        className="w-full py-1.5 px-2 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 font-bold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <BatteryCharging className="w-3.5 h-3.5" />
+                        <span>
+                          Transferir do Banco p/ Nave (Reserva: {Math.round(survival.batteryBankPercent ?? 85)}%)
+                        </span>
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono">
@@ -947,6 +984,68 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       <div className="text-[9px] text-sky-300/90 pt-0.5">
                         Dica: use o Radar [R] em órbita para destacar os 3 veios geológicos ricos na superfície.
                       </div>
+                    </div>
+                  </div>
+
+                  {/* 1B. WHERE & HOW TO MINE SHIP ENERGY & BATTERY BANK GUIDE */}
+                  <div className="bg-slate-900/85 border border-amber-400/40 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-amber-300 font-bold flex items-center gap-1.5">
+                        <BatteryCharging className="w-3.5 h-3.5" />
+                        ONDE MINERAR ENERGIA &amp; CARREGAR BANCO
+                      </span>
+                      <span className="text-emerald-300 font-bold">
+                        Banco {Math.round(survival.batteryBankPercent ?? 85)}%
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-300 leading-snug">
+                      Aproxime-se do astro (até <strong>6.8R</strong>) e aperte <strong>[X]</strong>. Todo minério extraído já repõe energia na hora e guarda o excedente no <strong>Banco de Baterias</strong>. Você também pode clicar em <strong>⚡+%</strong> no porão abaixo para injetar o minério no banco!
+                    </p>
+                    <div className="grid grid-cols-1 gap-1.5 text-[10px] font-mono">
+                      {[
+                        {
+                          id: 'moon',
+                          title: 'Lua (Mais próxima da Terra)',
+                          desc: 'Hélio-3 Solar (+45% Energia) & Titânio (+22%)',
+                        },
+                        {
+                          id: 'sun',
+                          title: 'Sol (Coroa Solar)',
+                          desc: 'Sifão Laser Direto (+22%/s Energia) + Hélio-3 (+45%)',
+                        },
+                        {
+                          id: 'mercury',
+                          title: 'Mercúrio',
+                          desc: 'Hélio-3 Polar (+45%) & Titânio (+22%) + Sol Forte',
+                        },
+                        {
+                          id: 'venus',
+                          title: 'Vênus & Lua Io',
+                          desc: 'Enxofre Vulcânico Li-S (+30% Energia / Banco)',
+                        },
+                        {
+                          id: 'jupiter',
+                          title: 'Júpiter & Saturno',
+                          desc: 'Hélio-3 Atmosférico Puro (+45% Energia / Banco)',
+                        },
+                      ].map((spot) => (
+                        <div
+                          key={spot.id}
+                          className="flex items-center justify-between gap-2 bg-slate-950/75 border border-white/10 rounded-lg px-2.5 py-1.5"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-white font-bold truncate">{spot.title}</div>
+                            <div className="text-[9px] text-amber-200 truncate">{spot.desc}</div>
+                          </div>
+                          <button
+                            onClick={() => startAutopilotTripTo(spot.id)}
+                            className="shrink-0 px-2 py-1 rounded-lg bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400/50 text-sky-100 text-[9px] font-bold flex items-center gap-1 transition-colors"
+                          >
+                            <Rocket className="w-3 h-3" />
+                            <span>Iniciar Viagem</span>
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
@@ -1474,46 +1573,121 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
               </>
             )}
 
-            {activeTab === 'navigation' && (
-              <>
-                {/* Autopilot Selector */}
-                <div className="bg-slate-900/75 border border-white/10 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-mono text-amber-300 flex items-center gap-1.5">
-                      <Navigation className="w-3.5 h-3.5" />
-                      PILOTO AUTOMÁTICO
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {telemetry.autopilotStatus}
-                    </span>
-                  </div>
-                  <select
-                    value={controlState.autopilotTargetId || ''}
-                    onChange={(e) =>
-                      onUpdateControl((prev) => ({
-                        ...prev,
-                        autopilotTargetId: e.target.value || null,
-                      }))
-                    }
-                    className="w-full bg-slate-950 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
-                  >
-                    <option value="">Piloto Manual (Voo Livre)</option>
-                    <option value="sat-orbital-gateway">Estação Espacial Orbital (Órbita da Terra)</option>
-                    {autopilotTargets.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                  {onDeployToStation && (
-                    <button
-                      onClick={onDeployToStation}
-                      className="w-full py-1.5 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/45 text-sky-100 text-[11px] font-semibold transition-colors"
+            {activeTab === 'navigation' && (() => {
+              const chosenId = selectedAutopilotId || controlState.autopilotTargetId || '';
+              const chosenBody =
+                chosenId && chosenId !== 'sat-orbital-gateway'
+                  ? ALL_CELESTIAL_BODIES.find((b) => b.id === chosenId)
+                  : null;
+              const chosenName =
+                chosenId === 'sat-orbital-gateway'
+                  ? 'Estação Espacial Orbital'
+                  : chosenBody?.name ?? '';
+              const chosenMiningProfile = chosenId && chosenId !== 'sat-orbital-gateway'
+                ? getBodyMiningProfile(chosenId)
+                : null;
+              const isCurrentlyTravelingToChosen =
+                Boolean(chosenId) &&
+                controlState.autopilotTargetId === chosenId &&
+                telemetry.autopilotStatus !== 'OFF';
+
+              return (
+                <>
+                  {/* Autopilot Selector + Explicit "Iniciar Viagem" Action */}
+                  <div className="bg-slate-900/75 border border-white/10 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-mono text-amber-300 flex items-center gap-1.5">
+                        <Navigation className="w-3.5 h-3.5" />
+                        PILOTO AUTOMÁTICO
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {telemetry.autopilotStatus}
+                      </span>
+                    </div>
+                    <select
+                      value={chosenId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedAutopilotId(val);
+                        if (!val) {
+                          onUpdateControl((prev) => ({
+                            ...prev,
+                            autopilotTargetId: null,
+                            boostActive: false,
+                          }));
+                        }
+                      }}
+                      className="w-full bg-slate-950 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-400"
                     >
-                      Aproximar da Estação Espacial Orbital
-                    </button>
-                  )}
-                </div>
+                      <option value="">Piloto Manual (Voo Livre)</option>
+                      <option value="sat-orbital-gateway">Estação Espacial Orbital (Órbita da Terra)</option>
+                      {autopilotTargets.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {chosenId && (
+                      <div className="rounded-xl bg-slate-950/80 border border-sky-400/40 p-2.5 space-y-2">
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <span className="text-slate-400">DESTINO SELECIONADO</span>
+                          <span className="text-white font-bold">{chosenName}</span>
+                        </div>
+                        {chosenMiningProfile && chosenMiningProfile.yields.length > 0 && (
+                          <div className="text-[9px] font-mono text-emerald-300 leading-snug">
+                            Recursos p/ Minerar Energia:{' '}
+                            {chosenMiningProfile.yields
+                              .map((y) => {
+                                const def = MINING_RESOURCES[y.resourceId];
+                                const ey = ENERGY_MINERAL_YIELDS[y.resourceId];
+                                return `${def.name.split(' ')[0]} (+${ey.batteryPct}%⚡)`;
+                              })
+                              .join(' · ')}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => startAutopilotTripTo(chosenId)}
+                            className="flex-1 py-2 px-3 rounded-xl bg-emerald-500/30 hover:bg-emerald-500/45 border border-emerald-400 text-emerald-100 text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                          >
+                            <Rocket className="w-3.5 h-3.5" />
+                            <span>
+                              {isCurrentlyTravelingToChosen
+                                ? `Em Viagem para ${chosenName}...`
+                                : `Iniciar Viagem para ${chosenName}`}
+                            </span>
+                          </button>
+                          {controlState.autopilotTargetId && (
+                            <button
+                              onClick={() =>
+                                onUpdateControl((prev) => ({
+                                  ...prev,
+                                  autopilotTargetId: null,
+                                  boostActive: false,
+                                  throttle: 0,
+                                  brakeRequested: true,
+                                }))
+                              }
+                              className="py-2 px-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/45 text-rose-100 text-[10px] font-mono font-bold transition-colors"
+                              title="Cancelar Piloto Automático"
+                            >
+                              Parar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {onDeployToStation && (
+                      <button
+                        onClick={onDeployToStation}
+                        className="w-full py-1.5 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/45 text-sky-100 text-[11px] font-semibold transition-colors"
+                      >
+                        Aproximar da Estação Espacial Orbital
+                      </button>
+                    )}
+                  </div>
 
                 {/* Interactive 360° Radar */}
                 <div className="bg-slate-900/75 border border-white/10 rounded-xl p-3 flex flex-col items-center gap-2.5">
@@ -1559,28 +1733,36 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     CORPOS CELESTES MAIS PRÓXIMOS
                   </div>
                   {telemetry.nearbyContacts.slice(0, 6).map((c) => (
-                    <button
+                    <div
                       key={c.id}
-                      onClick={() =>
-                        onUpdateControl((prev) => ({
-                          ...prev,
-                          autopilotTargetId: c.id,
-                        }))
-                      }
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors ${controlState.autopilotTargetId === c.id
+                      onClick={() => setSelectedAutopilotId(c.id)}
+                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${chosenId === c.id
                         ? 'bg-amber-500/20 border border-amber-400/50 text-amber-100'
                         : 'bg-white/5 hover:bg-white/10 text-slate-200'
                         }`}
                     >
-                      <span className="font-medium truncate">{c.name}</span>
-                      <span className="text-[10px] font-mono text-sky-300 shrink-0 ml-2">
-                        {c.distanceFormatted}
-                      </span>
-                    </button>
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{c.name}</div>
+                        <div className="text-[10px] font-mono text-sky-300">
+                          {c.distanceFormatted}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startAutopilotTripTo(c.id);
+                        }}
+                        className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/40 border border-emerald-400/50 text-emerald-100 text-[10px] font-mono font-bold flex items-center gap-1"
+                      >
+                        <Rocket className="w-3 h-3" />
+                        <span>Iniciar Viagem</span>
+                      </button>
+                    </div>
                   ))}
                 </div>
               </>
-            )}
+            );
+            })()}
 
             {activeTab === 'controls' && (
               <div className="space-y-2.5 text-slate-200">
@@ -1846,11 +2028,12 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     ? 'text-rose-300 font-bold animate-pulse'
                     : 'text-amber-200'
                 }
-                title="Energia Elétrica Principal da Nave (Recarrega pelo Sol ou Minerando Recursos de Energia)"
+                title="Energia Principal da Nave + Banco de Baterias de Reserva (Recarrega pelo Sol ou Minerando)"
               >
-                ENERGIA {Math.round(survival.batteryPercent)}%
-                {!survival.inPlanetaryShadow && survival.solarHarvestKw >= 35
-                  ? ` ☀+${(Math.pow(survival.solarHarvestKw / 95, 1.12) * 2.15).toFixed(1)}%/s`
+                ENERGIA {Math.round(survival.batteryPercent)}% · BANCO{' '}
+                {Math.round(survival.batteryBankPercent ?? 85)}%
+                {!survival.inPlanetaryShadow
+                  ? ` ☀+${Math.max(1.35, Math.pow(survival.solarHarvestKw / 95, 0.88) * 3.85).toFixed(1)}%/s`
                   : ''}
               </span>
               <span className="text-white/20">·</span>
