@@ -19,7 +19,11 @@ import {
   CHARACTER_CREW_CATALOG,
   SPACECRAFT_HANGAR_CATALOG,
 } from '../data/hangarCatalog';
-import { CharacterVariantId, SpacecraftVariantId } from '../types/astronomy';
+import {
+  CharacterVariantId,
+  MultiplayerConnectionStatus,
+  SpacecraftVariantId,
+} from '../types/astronomy';
 import { HangarCameraFocus } from '../utils/hangarBayModel';
 import { FlightControlPrefs } from '../utils/flightControlPrefs';
 import { QualityPreference, ResolvedQualityTier } from '../utils/performanceProfile';
@@ -60,6 +64,11 @@ interface MainMenuLobbyProps {
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onStartGame: () => void;
+  multiplayerRoomCode?: string;
+  multiplayerIsGlobal?: boolean;
+  multiplayerOnlineCount?: number;
+  multiplayerStatus?: MultiplayerConnectionStatus;
+  onOpenMultiplayer?: () => void;
 }
 
 const DESTINATION_OPTIONS: Array<{
@@ -150,6 +159,11 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
   isFullscreen,
   onToggleFullscreen,
   onStartGame,
+  multiplayerRoomCode = 'GLOBAL',
+  multiplayerIsGlobal = true,
+  multiplayerOnlineCount = 1,
+  multiplayerStatus = 'CONNECTING',
+  onOpenMultiplayer,
 }) => {
   const [activeTab, setActiveTab] = useState<HangarMenuTab>('mission');
 
@@ -334,6 +348,37 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                     </div>
                     <span className="text-[10px] font-mono text-cyan-300 shrink-0">Trocar →</span>
                   </button>
+
+                  {onOpenMultiplayer && (
+                    <button
+                      onClick={onOpenMultiplayer}
+                      className="p-3 rounded-2xl border border-emerald-400/35 bg-slate-900/75 hover:border-emerald-300/70 text-left flex items-center justify-between gap-3 transition-all"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className={`w-3 h-3 rounded-full shrink-0 ${
+                            multiplayerStatus === 'CONNECTED'
+                              ? 'bg-emerald-400 shadow-[0_0_10px_#34d399]'
+                              : 'bg-amber-400 animate-pulse'
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-mono uppercase text-emerald-300 font-bold">
+                            Multiplayer Online · {multiplayerOnlineCount} na sala
+                          </div>
+                          <div className="text-xs font-bold text-white truncate">
+                            {multiplayerIsGlobal
+                              ? '🌍 Mundo Global Compartilhado'
+                              : `🔒 Sala Privada: ${multiplayerRoomCode}`}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            Jogue com todos no mesmo universo ou crie sala privada
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-300 shrink-0">Salas →</span>
+                    </button>
+                  )}
                 </div>
               </section>
             </>

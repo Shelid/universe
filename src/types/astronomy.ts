@@ -617,3 +617,50 @@ export interface SceneBootProgress {
   ready: boolean;
 }
 
+export type MultiplayerMode = 'EXPLORE' | 'SPACECRAFT' | 'EVA';
+export type MultiplayerConnectionStatus = 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'OFFLINE';
+
+export interface RemotePlayerState {
+  id: string;
+  callsign: string;
+  mode: MultiplayerMode;
+  shipId: SpacecraftVariantId;
+  charId: CharacterVariantId;
+  anchorBodyId: string;
+  rx: number;
+  ry: number;
+  rz: number;
+  qx: number;
+  qy: number;
+  qz: number;
+  qw: number;
+  thr: number;
+  boost: boolean;
+  mining: boolean;
+  miningColor: string;
+  shipScale: number;
+  updatedAt: number;
+}
+
+export interface MultiplayerChatMessage {
+  id: string;
+  playerId: string;
+  callsign: string;
+  text: string;
+  ts: number;
+  system?: boolean;
+}
+
+export interface MultiplayerSeismicEvent {
+  id: string;
+  playerId: string;
+  callsign: string;
+  bodyId: string;
+  nx: number;
+  ny: number;
+  nz: number;
+  resourceId: MiningResourceId;
+  colorHex: string;
+  ts: number;
+}
+

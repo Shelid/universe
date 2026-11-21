@@ -108,10 +108,218 @@ function buildManifest(dir) {
   return { manifest, fileByHash };
 }
 
-const WORKER_SCRIPT = `
+const WORKER_SCRIPT = String.raw`
+import { DurableObject } from 'cloudflare:workers';
+
+function sanitizeRoomCode(raw) {
+  const cleaned = String(raw || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+  return cleaned || 'GLOBAL';
+}
+
+function sanitizeCallsign(raw) {
+  const cleaned = String(raw || '').replace(/[<>\r\n\t]/g, '').trim().slice(0, 22);
+  return cleaned || ('Piloto-' + Math.floor(1000 + Math.random() * 9000));
+}
+
+export class UniverseRoom extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.chatHistory = [];
+  }
+
+  getActivePlayers(excludeWs) {
+    const sockets = this.ctx.getWebSockets();
+    const list = [];
+    for (const ws of sockets) {
+      if (ws === excludeWs) continue;
+      const att = ws.deserializeAttachment();
+      if (att && att.id) list.push(att);
+    }
+    return list;
+  }
+
+  broadcast(payload, excludeWs) {
+    const serialized = JSON.stringify(payload);
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === excludeWs) continue;
+      try { ws.send(serialized); } catch {}
+    }
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const roomCode = sanitizeRoomCode(url.searchParams.get('room') || 'GLOBAL');
+
+    if (url.pathname.endsWith('/info')) {
+      const players = this.getActivePlayers();
+      return Response.json(
+        { roomCode, isGlobal: roomCode === 'GLOBAL', onlineCount: players.length },
+        { headers: { 'Access-Control-Allow-Origin': '*' } }
+      );
+    }
+
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return new Response('Expected WebSocket Upgrade', { status: 426 });
+    }
+
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+
+    const playerId = crypto.randomUUID().slice(0, 8);
+    const callsign = sanitizeCallsign(url.searchParams.get('callsign') || '');
+    const shipId = url.searchParams.get('shipId') || 'sr7-vanguard';
+    const charId = url.searchParams.get('charId') || 'cmd-artemis';
+
+    const initialAttachment = {
+      id: playerId,
+      callsign,
+      roomCode,
+      mode: 'EXPLORE',
+      shipId,
+      charId,
+      anchorBodyId: 'earth',
+      rx: 0, ry: 0, rz: 0,
+      qx: 0, qy: 0, qz: 0, qw: 1,
+      thr: 0,
+      boost: false,
+      mining: false,
+      miningColor: '#38bdf8',
+      shipScale: 0.00018,
+      updatedAt: Date.now(),
+    };
+
+    this.ctx.acceptWebSocket(server);
+    server.serializeAttachment(initialAttachment);
+
+    const existingPlayers = this.getActivePlayers(server);
+    try {
+      server.send(JSON.stringify({
+        type: 'welcome',
+        playerId,
+        roomCode,
+        isGlobal: roomCode === 'GLOBAL',
+        players: existingPlayers,
+        chatHistory: this.chatHistory.slice(-24),
+      }));
+    } catch {}
+
+    this.broadcast({ type: 'join', player: initialAttachment }, server);
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(ws, message) {
+    if (typeof message !== 'string') return;
+    let data;
+    try { data = JSON.parse(message); } catch { return; }
+    const att = ws.deserializeAttachment();
+    if (!att) return;
+
+    if (data.type === 'ping') {
+      try { ws.send(JSON.stringify({ type: 'pong', ts: Date.now() })); } catch {}
+      return;
+    }
+
+    if (data.type === 'state') {
+      const next = {
+        ...att,
+        callsign: typeof data.callsign === 'string' ? sanitizeCallsign(data.callsign) : att.callsign,
+        mode: (data.mode === 'SPACECRAFT' || data.mode === 'EVA' || data.mode === 'EXPLORE') ? data.mode : att.mode,
+        shipId: typeof data.shipId === 'string' ? data.shipId.slice(0, 32) : att.shipId,
+        charId: typeof data.charId === 'string' ? data.charId.slice(0, 32) : att.charId,
+        anchorBodyId: typeof data.anchorBodyId === 'string' ? data.anchorBodyId.slice(0, 32) : att.anchorBodyId,
+        rx: Number.isFinite(Number(data.rx)) ? Number(data.rx) : att.rx,
+        ry: Number.isFinite(Number(data.ry)) ? Number(data.ry) : att.ry,
+        rz: Number.isFinite(Number(data.rz)) ? Number(data.rz) : att.rz,
+        qx: Number.isFinite(Number(data.qx)) ? Number(data.qx) : att.qx,
+        qy: Number.isFinite(Number(data.qy)) ? Number(data.qy) : att.qy,
+        qz: Number.isFinite(Number(data.qz)) ? Number(data.qz) : att.qz,
+        qw: Number.isFinite(Number(data.qw)) ? Number(data.qw) : att.qw,
+        thr: Number.isFinite(Number(data.thr)) ? Number(data.thr) : 0,
+        boost: Boolean(data.boost),
+        mining: Boolean(data.mining),
+        miningColor: typeof data.miningColor === 'string' ? data.miningColor.slice(0, 16) : '#38bdf8',
+        shipScale: Number.isFinite(Number(data.shipScale)) ? Math.max(1e-7, Math.min(10, Number(data.shipScale))) : att.shipScale,
+        updatedAt: Date.now(),
+      };
+      ws.serializeAttachment(next);
+      this.broadcast({ type: 'state', player: next }, ws);
+      return;
+    }
+
+    if (data.type === 'chat') {
+      const rawText = String(data.text || '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 180);
+      if (!rawText) return;
+      const item = {
+        id: crypto.randomUUID().slice(0, 8),
+        playerId: att.id,
+        callsign: att.callsign,
+        text: rawText,
+        ts: Date.now(),
+      };
+      this.chatHistory.push(item);
+      if (this.chatHistory.length > 30) this.chatHistory.splice(0, this.chatHistory.length - 30);
+      this.broadcast({ type: 'chat', msg: item });
+      return;
+    }
+
+    if (data.type === 'seismic') {
+      const ev = {
+        id: crypto.randomUUID().slice(0, 8),
+        playerId: att.id,
+        callsign: att.callsign,
+        bodyId: typeof data.bodyId === 'string' ? data.bodyId.slice(0, 32) : 'earth',
+        nx: Number(data.nx) || 0,
+        ny: Number(data.ny) || 1,
+        nz: Number(data.nz) || 0,
+        resourceId: typeof data.resourceId === 'string' ? data.resourceId.slice(0, 32) : 'helium-3',
+        colorHex: typeof data.colorHex === 'string' ? data.colorHex.slice(0, 16) : '#38bdf8',
+        ts: Date.now(),
+      };
+      this.broadcast({ type: 'seismic', event: ev }, ws);
+    }
+  }
+
+  async webSocketClose(ws) {
+    const att = ws.deserializeAttachment();
+    try { ws.close(); } catch {}
+    if (att && att.id) {
+      this.broadcast({ type: 'leave', playerId: att.id, callsign: att.callsign }, ws);
+    }
+  }
+
+  async webSocketError(ws) {
+    const att = ws.deserializeAttachment();
+    try { ws.close(); } catch {}
+    if (att && att.id) {
+      this.broadcast({ type: 'leave', playerId: att.id, callsign: att.callsign }, ws);
+    }
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/ws/room/') || url.pathname.startsWith('/api/room/')) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          },
+        });
+      }
+      const parts = url.pathname.split('/').filter(Boolean);
+      const roomCode = sanitizeRoomCode(parts[2] || 'GLOBAL');
+      const id = env.UNIVERSE_ROOM.idFromName(roomCode);
+      const stub = env.UNIVERSE_ROOM.get(id);
+      const forwardUrl = new URL(request.url);
+      forwardUrl.searchParams.set('room', roomCode);
+      return stub.fetch(new Request(forwardUrl.toString(), request));
+    }
+
     if (request.method === 'OPTIONS' && url.pathname.startsWith('/models/')) {
       return new Response(null, {
         status: 204,
@@ -230,7 +438,23 @@ async function main() {
     }
   }
 
-  console.log('4/4 Publicando Worker e ativando rota pública na Cloudflare...');
+  console.log('4/4 Publicando Worker + Durable Object (Multiplayer) na Cloudflare...');
+  // Check whether DO migration tag v1 is already applied on this Worker script
+  let hasV1Migration = false;
+  try {
+    const settingsRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings`,
+      { headers: { Authorization: `Bearer ${API_TOKEN}` } }
+    );
+    const settingsJson = await settingsRes.json();
+    const curBindings = settingsJson?.result?.bindings || [];
+    hasV1Migration = curBindings.some(
+      (b) => b.type === 'durable_object_namespace' && b.class_name === 'UniverseRoom'
+    );
+  } catch {
+    hasV1Migration = false;
+  }
+
   const metadata = {
     main_module: 'worker.mjs',
     compatibility_date: '2026-03-01',
@@ -238,10 +462,25 @@ async function main() {
       jwt: completionJwt,
       config: {
         not_found_handling: 'single-page-application',
-        run_worker_first: ['/models/*'],
+        run_worker_first: ['/models/*', '/ws/*', '/api/*'],
       },
     },
-    bindings: [{ type: 'assets', name: 'ASSETS' }],
+    bindings: [
+      { type: 'assets', name: 'ASSETS' },
+      {
+        type: 'durable_object_namespace',
+        name: 'UNIVERSE_ROOM',
+        class_name: 'UniverseRoom',
+      },
+    ],
+    ...(hasV1Migration
+      ? {}
+      : {
+          migrations: {
+            new_tag: 'v1',
+            new_sqlite_classes: ['UniverseRoom'],
+          },
+        }),
   };
 
   const deployForm = new FormData();

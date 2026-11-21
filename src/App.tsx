@@ -6,9 +6,11 @@ import {
   EyeOff,
   Globe,
   Layers,
+  Lock,
   Menu,
   Radio,
   Satellite,
+  Users,
   X,
 } from 'lucide-react';
 import { spaceAudio } from './utils/spaceAudioEngine';
@@ -23,8 +25,12 @@ import {
   CabinStationId,
   MiningRecipeId,
   MiningResourceId,
+  MultiplayerChatMessage,
+  MultiplayerConnectionStatus,
+  MultiplayerSeismicEvent,
   PowerSubsystemId,
   PropagatedSatellite,
+  RemotePlayerState,
   SatelliteCategory,
   SatelliteRecord,
   ScaleMode,
@@ -101,6 +107,15 @@ import {
   VERIFIED_SATELLITE_CATALOG,
 } from './data/satellitesData';
 import { StationDeployCommand, UniverseCanvas } from './components/UniverseCanvas';
+import { MultiplayerPanel } from './components/MultiplayerPanel';
+import {
+  getInitialRoomCodeFromUrl,
+  loadSavedCallsign,
+  LocalMultiplayerBroadcast,
+  sanitizeRoomCodeClient,
+  saveCallsign,
+  UniverseMultiplayerClient,
+} from './utils/multiplayerClient';
 import { HangarCameraFocus } from './utils/hangarBayModel';
 import {
   FlightControlPrefs,
@@ -188,7 +203,25 @@ export function App() {
   const [isEarthSurfaceModalOpen, setIsEarthSurfaceModalOpen] = useState<boolean>(false);
   const [isMissionsModalOpen, setIsMissionsModalOpen] = useState<boolean>(false);
   const [isBackpackOpen, setIsBackpackOpen] = useState<boolean>(false);
+  const [isMultiplayerOpen, setIsMultiplayerOpen] = useState<boolean>(false);
   const [selectedLandmark, setSelectedLandmark] = useState<SurfaceLandmark | null>(null);
+
+  // Real-Time Multiplayer State (Cloudflare Durable Objects WebSocket — Global Open World + Private Rooms)
+  const [mpStatus, setMpStatus] = useState<MultiplayerConnectionStatus>('CONNECTING');
+  const [mpRoomCode, setMpRoomCode] = useState<string>(() => getInitialRoomCodeFromUrl());
+  const [mpIsGlobal, setMpIsGlobal] = useState<boolean>(() => getInitialRoomCodeFromUrl() === 'GLOBAL');
+  const [localPlayerId, setLocalPlayerId] = useState<string>('');
+  const [localCallsign, setLocalCallsign] = useState<string>(() => loadSavedCallsign());
+  const remotePlayersRef = useRef<Map<string, RemotePlayerState>>(new Map());
+  const [remotePlayersList, setRemotePlayersList] = useState<RemotePlayerState[]>([]);
+  const [chatMessages, setChatMessages] = useState<MultiplayerChatMessage[]>([]);
+  const [incomingSeismicEvent, setIncomingSeismicEvent] = useState<MultiplayerSeismicEvent | null>(null);
+  const [rendezvousPlayerCommand, setRendezvousPlayerCommand] = useState<{
+    seq: number;
+    player: RemotePlayerState;
+  } | null>(null);
+  const mpClientRef = useRef<UniverseMultiplayerClient | null>(null);
+  const lastRemoteUiSyncRef = useRef<number>(0);
 
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
@@ -883,6 +916,170 @@ export function App() {
     showSurvivalNotice('Progresso salvo resetado com sucesso! Novo jogo iniciado.');
   }, [handleSyncSurvivalState, showSurvivalNotice]);
 
+  // Connect Automatically to Shared Global World (or Private Room via ?sala=CODIGO)
+  useEffect(() => {
+    const syncUiList = (force = false) => {
+      const nowMs = performance.now();
+      if (!force && nowMs - lastRemoteUiSyncRef.current < 320) return;
+      lastRemoteUiSyncRef.current = nowMs;
+      setRemotePlayersList(Array.from(remotePlayersRef.current.values()));
+    };
+
+    const client = new UniverseMultiplayerClient({
+      onStatusChange: (status) => {
+        setMpStatus(status);
+      },
+      onWelcome: ({ playerId, roomCode, isGlobal, players, chatHistory }) => {
+        setLocalPlayerId(playerId);
+        setMpRoomCode(roomCode);
+        setMpIsGlobal(isGlobal);
+        remotePlayersRef.current.clear();
+        for (const p of players) {
+          if (p.id && p.id !== playerId) {
+            remotePlayersRef.current.set(p.id, p);
+          }
+        }
+        syncUiList(true);
+        setChatMessages([
+          ...chatHistory,
+          {
+            id: `sys-join-${Date.now()}`,
+            playerId: 'system',
+            callsign: 'Sistema',
+            text: isGlobal
+              ? 'Conectado ao Mundo Global Compartilhado! Todos os pilotos online jogam aqui.'
+              : `Conectado à Sala Privada ${roomCode}. Compartilhe o código ou link para amigos entrarem.`,
+            ts: Date.now(),
+            system: true,
+          },
+        ]);
+      },
+      onPlayerUpdate: (player, isNewJoin) => {
+        if (!player.id) return;
+        const prev = remotePlayersRef.current.get(player.id);
+        remotePlayersRef.current.set(player.id, player);
+        const significantUiDiff =
+          isNewJoin ||
+          !prev ||
+          prev.anchorBodyId !== player.anchorBodyId ||
+          prev.mode !== player.mode ||
+          prev.callsign !== player.callsign ||
+          prev.mining !== player.mining ||
+          prev.shipId !== player.shipId;
+        syncUiList(significantUiDiff);
+        if (isNewJoin) {
+          setChatMessages((old) => [
+            ...old.slice(-34),
+            {
+              id: `sys-in-${player.id}-${Date.now()}`,
+              playerId: 'system',
+              callsign: 'Sistema',
+              text: `${player.callsign} entrou na sala.`,
+              ts: Date.now(),
+              system: true,
+            },
+          ]);
+        }
+      },
+      onPlayerLeave: (playerId, callsign) => {
+        if (remotePlayersRef.current.has(playerId)) {
+          remotePlayersRef.current.delete(playerId);
+          syncUiList(true);
+          setChatMessages((old) => [
+            ...old.slice(-34),
+            {
+              id: `sys-out-${playerId}-${Date.now()}`,
+              playerId: 'system',
+              callsign: 'Sistema',
+              text: `${callsign} saiu da sala.`,
+              ts: Date.now(),
+              system: true,
+            },
+          ]);
+        }
+      },
+      onChatMessage: (msg) => {
+        setChatMessages((old) => [...old.slice(-34), msg]);
+      },
+      onSeismicEvent: (ev) => {
+        setIncomingSeismicEvent(ev);
+        const bodyName = getCelestialBody(ev.bodyId)?.name || ev.bodyId;
+        showSurvivalNotice(`Pulso Sísmico Cooperativo: ${ev.callsign} revelou Veio 3× em ${bodyName}!`);
+      },
+    });
+
+    mpClientRef.current = client;
+    client.connect(mpRoomCode, localCallsign, selectedShipId, selectedCharacterId);
+
+    return () => {
+      client.disconnect();
+      mpClientRef.current = null;
+    };
+    // Initial mount socket setup; room/identity changes are dispatched via methods below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    mpClientRef.current?.updateIdentity(localCallsign, selectedShipId, selectedCharacterId);
+  }, [localCallsign, selectedShipId, selectedCharacterId]);
+
+  const handleSwitchMultiplayerRoom = useCallback(
+    (nextRawCode: string) => {
+      const clean = sanitizeRoomCodeClient(nextRawCode);
+      setMpRoomCode(clean);
+      setMpIsGlobal(clean === 'GLOBAL');
+      remotePlayersRef.current.clear();
+      setRemotePlayersList([]);
+      mpClientRef.current?.switchRoom(clean);
+      try {
+        const u = new URL(window.location.href);
+        if (clean === 'GLOBAL') {
+          u.searchParams.delete('sala');
+          u.searchParams.delete('room');
+        } else {
+          u.searchParams.set('sala', clean);
+        }
+        window.history.replaceState({}, '', u.toString());
+      } catch {
+        // ignore URL update issues
+      }
+      showSurvivalNotice(
+        clean === 'GLOBAL'
+          ? 'Conectando ao Mundo Global Compartilhado...'
+          : `Entrando na Sala Privada: ${clean}`
+      );
+    },
+    [showSurvivalNotice]
+  );
+
+  const handleChangeCallsign = useCallback(
+    (nextName: string) => {
+      const saved = saveCallsign(nextName);
+      setLocalCallsign(saved);
+      mpClientRef.current?.updateIdentity(saved, selectedShipId, selectedCharacterId);
+      showSurvivalNotice(`Nome de piloto atualizado para: ${saved}`);
+    },
+    [selectedCharacterId, selectedShipId, showSurvivalNotice]
+  );
+
+  const handleEmitLocalMultiplayerState = useCallback((payload: LocalMultiplayerBroadcast) => {
+    mpClientRef.current?.sendLocalState(payload);
+  }, []);
+
+  const handleEmitLocalSeismicEvent = useCallback(
+    (ev: {
+      bodyId: string;
+      nx: number;
+      ny: number;
+      nz: number;
+      resourceId: MiningResourceId;
+      colorHex: string;
+    }) => {
+      mpClientRef.current?.sendSeismicEvent(ev);
+    },
+    []
+  );
+
   // Global Menu & EVA Hotkeys
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -891,6 +1088,7 @@ export function App() {
         if (e.key === 'Escape') {
           setIsCommandMenuOpen(false);
           setIsBackpackOpen(false);
+          setIsMultiplayerOpen(false);
         }
         return;
       }
@@ -1166,6 +1364,25 @@ export function App() {
     [cinematicTravelEnabled, selectedBodyId]
   );
 
+  const handleRendezvousWithPlayer = useCallback(
+    (rp: RemotePlayerState) => {
+      const targetBodyName = getCelestialBody(rp.anchorBodyId)?.name || rp.anchorBodyId;
+      setSelectedBodyId(rp.anchorBodyId);
+      if (playerMode === 'EXPLORE') {
+        handleSelectBody(rp.anchorBodyId, true);
+        showSurvivalNotice(`Viajando até a órbita de ${rp.callsign} em ${targetBodyName}...`);
+      } else {
+        if (playerMode === 'EVA') {
+          setEvaActive(false);
+          setSpacecraftControl((prev) => ({ ...prev, isActive: true, walkingInside: false }));
+        }
+        setRendezvousPlayerCommand({ seq: Date.now(), player: rp });
+        showSurvivalNotice(`Rendezvous orbital com ${rp.callsign} em ${targetBodyName}!`);
+      }
+    },
+    [handleSelectBody, playerMode, showSurvivalNotice]
+  );
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => { });
@@ -1240,6 +1457,11 @@ export function App() {
         onTriggerCabinStationAction={handleCabinStationAction}
         onDiscoverBody={handleDiscoverBody}
         onSeismicNotice={showSurvivalNotice}
+        remotePlayersRef={remotePlayersRef}
+        onEmitLocalMultiplayerState={handleEmitLocalMultiplayerState}
+        onEmitLocalSeismicEvent={handleEmitLocalSeismicEvent}
+        incomingSeismicEvent={incomingSeismicEvent}
+        rendezvousPlayerCommand={rendezvousPlayerCommand}
       />
 
       {/* 1B. CINEMATIC PRELOAD SPLASH SCREEN WITH LOGO */}
@@ -1292,12 +1514,45 @@ export function App() {
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
           onStartGame={handleStartFromLobby}
+          multiplayerRoomCode={mpRoomCode}
+          multiplayerIsGlobal={mpIsGlobal}
+          multiplayerOnlineCount={remotePlayersList.length + (mpStatus === 'CONNECTED' ? 1 : 0)}
+          multiplayerStatus={mpStatus}
+          onOpenMultiplayer={() => setIsMultiplayerOpen(true)}
         />
       )}
 
-      {/* 2. MINIMAL FLOATING CORNER MENU & CLEAN-SCREEN TOGGLE */}
+      {/* 2. MINIMAL FLOATING CORNER MENU, MULTIPLAYER PILL & CLEAN-SCREEN TOGGLE */}
       {!isMainMenuOpen && (
         <div className="pointer-events-auto fixed top-3 right-3 z-30 flex items-center gap-1.5">
+          {!isHudHidden && (
+            <button
+              onClick={() => setIsMultiplayerOpen(true)}
+              data-testid="multiplayer-open-btn"
+              className="menu-glass-surface flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:brightness-110 border border-emerald-400/45 text-xs font-semibold text-white shadow-lg transition-all"
+              title="Abrir Multiplayer (Mundo Global, Sala Privada, Pilotos & Rádio)"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  mpStatus === 'CONNECTED'
+                    ? 'bg-emerald-400'
+                    : mpStatus === 'CONNECTING' || mpStatus === 'RECONNECTING'
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-rose-400'
+                }`}
+              />
+              {mpIsGlobal ? (
+                <Users className="w-3.5 h-3.5 text-emerald-300" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span className="font-mono text-[11px]">
+                {mpIsGlobal ? 'Global' : mpRoomCode} ·{' '}
+                {remotePlayersList.length + (mpStatus === 'CONNECTED' ? 1 : 0)}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsHudHidden((v) => !v)}
             className={`p-2 rounded-full border backdrop-blur-xl transition-all ${isHudHidden
@@ -1743,6 +1998,23 @@ export function App() {
         onSellCargo={handleSellCargo}
         onSellAllCargo={handleSellAllCargo}
         onDiscardCargo={handleDiscardCargo}
+      />
+
+      {/* 10. REAL-TIME MULTIPLAYER MODAL (GLOBAL SHARED UNIVERSE + PRIVATE ROOMS + CHAT) */}
+      <MultiplayerPanel
+        isOpen={isMultiplayerOpen}
+        onClose={() => setIsMultiplayerOpen(false)}
+        status={mpStatus}
+        roomCode={mpRoomCode}
+        isGlobalRoom={mpIsGlobal}
+        localPlayerId={localPlayerId}
+        localCallsign={localCallsign}
+        onChangeCallsign={handleChangeCallsign}
+        onSwitchRoom={handleSwitchMultiplayerRoom}
+        remotePlayers={remotePlayersList}
+        chatMessages={chatMessages}
+        onSendChat={(text) => mpClientRef.current?.sendChat(text)}
+        onRendezvousWithPlayer={handleRendezvousWithPlayer}
       />
     </div>
   );

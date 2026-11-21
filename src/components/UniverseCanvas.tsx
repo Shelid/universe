@@ -7,8 +7,10 @@ import {
   CelestialBodyData,
   CharacterVariantId,
   MiningResourceId,
+  MultiplayerSeismicEvent,
   NearbySpacecraftContact,
   PropagatedSatellite,
+  RemotePlayerState,
   SatelliteCategory,
   ScaleMode,
   SceneBootProgress,
@@ -63,6 +65,11 @@ import { createAstronautCharacter3D, AstronautCharacterRefs } from '../utils/ast
 import { createOrbitalStation3DGroup } from '../utils/orbitalStationModel';
 import { createHangarBay3D, HangarCameraFocus } from '../utils/hangarBayModel';
 import { DEFAULT_FLIGHT_CONTROL_PREFS, FlightControlPrefs } from '../utils/flightControlPrefs';
+import { LocalMultiplayerBroadcast } from '../utils/multiplayerClient';
+import {
+  createRemotePlayerAvatar3D,
+  RemotePlayerAvatarHandle,
+} from '../utils/remotePlayerAvatar3D';
 import {
   createInitialSurvivalState,
   stepMiningSimulation,
@@ -140,6 +147,18 @@ interface UniverseCanvasProps {
     distanceAU: number
   ) => void;
   onSeismicNotice?: (message: string) => void;
+  remotePlayersRef?: React.MutableRefObject<Map<string, RemotePlayerState>>;
+  onEmitLocalMultiplayerState?: (state: LocalMultiplayerBroadcast) => void;
+  onEmitLocalSeismicEvent?: (ev: {
+    bodyId: string;
+    nx: number;
+    ny: number;
+    nz: number;
+    resourceId: MiningResourceId;
+    colorHex: string;
+  }) => void;
+  incomingSeismicEvent?: MultiplayerSeismicEvent | null;
+  rendezvousPlayerCommand?: { seq: number; player: RemotePlayerState } | null;
   bodySelectSeq?: number;
   hideHud?: boolean;
 }
@@ -390,6 +409,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   onTriggerCabinStationAction,
   onDiscoverBody,
   onSeismicNotice,
+  remotePlayersRef,
+  onEmitLocalMultiplayerState,
+  onEmitLocalSeismicEvent,
+  incomingSeismicEvent = null,
+  rendezvousPlayerCommand = null,
   bodySelectSeq = 0,
   hideHud = false,
 }) => {
@@ -451,6 +475,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     lobbyShowcaseActive,
     lobbyFocusTarget,
     flightControlPrefs,
+    incomingSeismicEvent,
+    rendezvousPlayerCommand,
   });
 
   const callbacksRef = useRef({
@@ -467,6 +493,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onTriggerCabinStationAction,
     onDiscoverBody,
     onSeismicNotice,
+    onEmitLocalMultiplayerState,
+    onEmitLocalSeismicEvent,
     onResolvedQualityChange,
     onBootProgress,
   });
@@ -505,6 +533,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       lobbyShowcaseActive,
       lobbyFocusTarget,
       flightControlPrefs,
+      incomingSeismicEvent,
+      rendezvousPlayerCommand,
     };
   });
 
@@ -523,6 +553,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onTriggerCabinStationAction,
       onDiscoverBody,
       onSeismicNotice,
+      onEmitLocalMultiplayerState,
+      onEmitLocalSeismicEvent,
       onResolvedQualityChange,
       onBootProgress,
     };
@@ -2107,6 +2139,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const projectileGroup = new THREE.Group();
     scene.add(projectileGroup);
 
+    // REAL-TIME MULTIPLAYER REMOTE PLAYERS GROUP (Zero-VRAM lightweight 3D ships + EVA avatars)
+    const remotePlayersGroup = new THREE.Group();
+    scene.add(remotePlayersGroup);
+    const remoteAvatarsMap = new Map<string, RemotePlayerAvatarHandle>();
+    const _remotePosTmp = new THREE.Vector3();
+    const _remoteQuatTmp = new THREE.Quaternion();
+    let lastHandledRendezvousSeq = 0;
+    let lastHandledSeismicId = '';
+
     interface ActivePulseBolt {
       mesh: THREE.Mesh;
       velocity: THREE.Vector3;
@@ -2719,6 +2760,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       satelliteGroup.visible = false;
       warpTunnelGroup.visible = false;
       projectileGroup.visible = false;
+      remotePlayersGroup.visible = false;
       seismicWaveMesh.visible = false;
       activeSatelliteOrbitLine.visible = false;
       ALL_CELESTIAL_BODIES.forEach((b) => {
@@ -4532,6 +4574,14 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             if (survivalStateRef) survivalStateRef.current = nextSurv;
             spaceAudio.playMiningYieldChime('RARE');
             cb.onSyncSurvivalState?.(nextSurv);
+            cb.onEmitLocalSeismicEvent?.({
+              bodyId: dominantBody.id,
+              nx: localImpactNormal.x,
+              ny: localImpactNormal.y,
+              nz: localImpactNormal.z,
+              resourceId: rarestYield.resourceId,
+              colorHex: rarestDef.colorHex,
+            });
             cb.onSeismicNotice?.(
               `Pulso Sísmico: Veio 3× revelado em ${dominantBody.name}!${
                 bonusQty > 0 ? ` +${bonusQty}x ${rarestDef.name}` : ''
@@ -5365,6 +5415,60 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cb.onSyncSurvivalState?.(postMiningSurv);
         }
 
+        // Handle 1-Click Multiplayer Rendezvous ("Encontrar Piloto") in Spacecraft Mode
+        const rendCmd = st.rendezvousPlayerCommand;
+        if (rendCmd && rendCmd.seq !== lastHandledRendezvousSeq) {
+          lastHandledRendezvousSeq = rendCmd.seq;
+          const rp = rendCmd.player;
+          const targetAnchorBody = getCelestialBody(rp.anchorBodyId);
+          const anchorWorldPos = bodyWorldPositions[targetAnchorBody.id];
+          if (anchorWorldPos) {
+            const anchorRad = Math.max(0.0002, getScaledRadius(targetAnchorBody, st.scaleMode));
+            const hasExactOffset = Math.hypot(rp.rx, rp.ry, rp.rz) > 1e-8;
+            if (hasExactOffset) {
+              const safeSide = Math.max(rp.shipScale * 14, anchorRad * 0.045);
+              sr7.rootGroup.position.set(
+                anchorWorldPos.x + rp.rx + safeSide,
+                anchorWorldPos.y + rp.ry + safeSide * 0.25,
+                anchorWorldPos.z + rp.rz
+              );
+            } else {
+              const sunlitDir = computeSunlitCameraOffsetDir(anchorWorldPos, targetAnchorBody.id);
+              sr7.rootGroup.position
+                .copy(anchorWorldPos)
+                .addScaledVector(sunlitDir, anchorRad * 2.85);
+            }
+            sr7.rootGroup.lookAt(anchorWorldPos);
+            shipVelocity.set(0, 0, 0);
+            shipAnchorMode = 'BODY';
+            shipAnchorBodyId = targetAnchorBody.id;
+            prevShipAnchorWorldPos.copy(anchorWorldPos);
+          }
+        }
+
+        // Broadcast Local Spacecraft Multiplayer Position Relative to Dominant Planet (~15 Hz throttled in client)
+        const mpAnchorWorld = bodyWorldPositions[dominantBody.id];
+        if (mpAnchorWorld && cb.onEmitLocalMultiplayerState) {
+          cb.onEmitLocalMultiplayerState({
+            mode: 'SPACECRAFT',
+            shipId: st.selectedShipId || 'sr7-vanguard',
+            charId: st.selectedCharacterId || 'cmd-artemis',
+            anchorBodyId: dominantBody.id,
+            rx: sr7.rootGroup.position.x - mpAnchorWorld.x,
+            ry: sr7.rootGroup.position.y - mpAnchorWorld.y,
+            rz: sr7.rootGroup.position.z - mpAnchorWorld.z,
+            qx: sr7.rootGroup.quaternion.x,
+            qy: sr7.rootGroup.quaternion.y,
+            qz: sr7.rootGroup.quaternion.z,
+            qw: sr7.rootGroup.quaternion.w,
+            thr: Math.abs(effectiveThrottle),
+            boost: boosting,
+            mining: postMiningSurv.mining.isDrilling,
+            miningColor: miningStep.effectiveColorHex,
+            shipScale: currentShipScale,
+          });
+        }
+
         const computedShipZoom: ZoomLevel =
           distFromOrigin > galThresholds.fadeEnd
             ? 'COSMIC_GALAXY'
@@ -6056,6 +6160,148 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         _planetViewPos.copy(saturnWorldPos).applyMatrix4(camera.matrixWorldInverse);
       }
 
+      // MULTIPLAYER: Sync 3D Remote Players, Shared Cooperative Seismic Veins, and EVA/Explore Presence
+      if (st.evaActive && cb.onEmitLocalMultiplayerState) {
+        const evaAnchorPos = bodyWorldPositions[selectedBody.id] || bodyWorldPositions['earth'];
+        const evaAnchorId = bodyWorldPositions[selectedBody.id] ? selectedBody.id : 'earth';
+        if (evaAnchorPos) {
+          cb.onEmitLocalMultiplayerState({
+            mode: 'EVA',
+            shipId: st.selectedShipId || 'sr7-vanguard',
+            charId: st.selectedCharacterId || 'cmd-artemis',
+            anchorBodyId: evaAnchorId,
+            rx: astronaut.rootGroup.position.x - evaAnchorPos.x,
+            ry: astronaut.rootGroup.position.y - evaAnchorPos.y,
+            rz: astronaut.rootGroup.position.z - evaAnchorPos.z,
+            qx: astronaut.rootGroup.quaternion.x,
+            qy: astronaut.rootGroup.quaternion.y,
+            qz: astronaut.rootGroup.quaternion.z,
+            qw: astronaut.rootGroup.quaternion.w,
+            thr: 0,
+            boost: false,
+            mining: false,
+            miningColor: '#38bdf8',
+            shipScale: currentShipScale,
+          });
+        }
+      } else if (!st.spacecraftControl.isActive && !st.lobbyShowcaseActive && cb.onEmitLocalMultiplayerState) {
+        const expAnchorPos = bodyWorldPositions[selectedBody.id];
+        if (expAnchorPos && selectedBody.category !== 'galaxy') {
+          cb.onEmitLocalMultiplayerState({
+            mode: 'EXPLORE',
+            shipId: st.selectedShipId || 'sr7-vanguard',
+            charId: st.selectedCharacterId || 'cmd-artemis',
+            anchorBodyId: selectedBody.id,
+            rx: 0,
+            ry: 0,
+            rz: 0,
+            qx: 0,
+            qy: 0,
+            qz: 0,
+            qw: 1,
+            thr: 0,
+            boost: false,
+            mining: false,
+            miningColor: '#38bdf8',
+            shipScale: currentShipScale,
+          });
+        }
+      }
+
+      // Apply Incoming Shared Cooperative Seismic Vein Event from Remote Friends!
+      const incSeismic = st.incomingSeismicEvent;
+      if (incSeismic && incSeismic.id !== lastHandledSeismicId) {
+        lastHandledSeismicId = incSeismic.id;
+        const sBody = getCelestialBody(incSeismic.bodyId);
+        const sPos = bodyWorldPositions[incSeismic.bodyId];
+        const sNode = bodyNodes[incSeismic.bodyId];
+        if (sPos && sNode) {
+          const sRad = getScaledRadius(sBody, st.scaleMode);
+          sNode.spinMesh.updateWorldMatrix(true, false);
+          _tmpV6
+            .set(incSeismic.nx, incSeismic.ny, incSeismic.nz)
+            .normalize()
+            .applyQuaternion(sNode.spinMesh.getWorldQuaternion(_tmpQuat1))
+            .normalize();
+          seismicWaveMesh.position.copy(sPos).addScaledVector(_tmpV6, sRad * 1.008);
+          seismicWaveMesh.quaternion.setFromUnitVectors(_tmpV5.set(0, 0, 1), _tmpV6);
+          seismicWaveMaxRadius = Math.max(currentShipScale * 5.2, sRad * 0.24);
+          seismicWaveAge = 0;
+          seismicWaveMat.color.set(incSeismic.colorHex || '#38bdf8');
+          seismicWaveMesh.visible = true;
+
+          if (activeHotspotsBodyId === incSeismic.bodyId) {
+            const resDef = MINING_RESOURCES[incSeismic.resourceId] || MINING_RESOURCES['helium-3'];
+            const sharedHotspot = {
+              id: `${incSeismic.bodyId}-coop-seismic`,
+              bodyId: incSeismic.bodyId,
+              label: `Veio 3× (${incSeismic.callsign} · ${resDef.name})`,
+              resourceId: incSeismic.resourceId,
+              localNormal: { x: incSeismic.nx, y: incSeismic.ny, z: incSeismic.nz },
+              multiplier: 3.0,
+              radiusRad: 0.68,
+              colorHex: incSeismic.colorHex || resDef.colorHex,
+            };
+            activeHotspotsList = [
+              sharedHotspot,
+              ...activeHotspotsList.filter((h) => h.id !== sharedHotspot.id),
+            ];
+          }
+        }
+      }
+
+      // Render & Interpolate Remote Player 3D Ships / EVA Avatars
+      remotePlayersGroup.visible = !st.lobbyShowcaseActive;
+      const remoteMap = remotePlayersRef?.current;
+      if (remoteMap && !st.lobbyShowcaseActive) {
+        // Remove disconnected players
+        for (const [pid, avatar] of remoteAvatarsMap.entries()) {
+          if (!remoteMap.has(pid)) {
+            remotePlayersGroup.remove(avatar.rootGroup);
+            avatar.dispose();
+            remoteAvatarsMap.delete(pid);
+          }
+        }
+        // Create or update connected players (visible when in SPACECRAFT or EVA mode!)
+        remoteMap.forEach((rp, pid) => {
+          const anchorWorld = bodyWorldPositions[rp.anchorBodyId];
+          const isRenderableInSpace =
+            Boolean(anchorWorld) &&
+            (rp.mode === 'SPACECRAFT' || rp.mode === 'EVA') &&
+            Math.hypot(rp.rx, rp.ry, rp.rz) > 1e-9;
+
+          let avatar = remoteAvatarsMap.get(pid);
+          if (!isRenderableInSpace) {
+            if (avatar) avatar.rootGroup.visible = false;
+            return;
+          }
+          if (!avatar) {
+            avatar = createRemotePlayerAvatar3D(rp);
+            remotePlayersGroup.add(avatar.rootGroup);
+            remoteAvatarsMap.set(pid, avatar);
+          }
+          avatar.rootGroup.visible = true;
+          _remotePosTmp.set(
+            anchorWorld.x + rp.rx,
+            anchorWorld.y + rp.ry,
+            anchorWorld.z + rp.rz
+          );
+          _remoteQuatTmp.set(rp.qx, rp.qy, rp.qz, rp.qw).normalize();
+          const anchorBodyObj = getCelestialBody(rp.anchorBodyId);
+          const anchorRad = getScaledRadius(anchorBodyObj, st.scaleMode);
+          avatar.updateVisuals(
+            rp,
+            _remotePosTmp,
+            _remoteQuatTmp,
+            dt,
+            clockTime,
+            anchorWorld,
+            anchorRad,
+            camera.position
+          );
+        });
+      }
+
       asteroidBeltShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
       kuiperBeltShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
       saturnBoulderShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
@@ -6552,6 +6798,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       pulseBoltMat.dispose();
       seismicWaveGeo.dispose();
       seismicWaveMat.dispose();
+      remoteAvatarsMap.forEach((avatar) => avatar.dispose());
+      remoteAvatarsMap.clear();
       activeSatelliteOrbitLineGeo.dispose();
       activeSatelliteOrbitLineMat.dispose();
       loadedTextures.forEach((tex) => tex.dispose());
