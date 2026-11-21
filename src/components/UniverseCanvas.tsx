@@ -2109,53 +2109,33 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       metalness: 0.85,
     });
 
-    // 5 Destructible Crystal-Vein Meteorites + 3 Pirate Sentinel Drones around the active planet
-    for (let ti = 0; ti < 8; ti++) {
-      const isDrone = ti >= 5;
+    // 5 Peaceful Destructible Crystal-Vein Meteorites around the active planet (No enemy drones!)
+    for (let ti = 0; ti < 5; ti++) {
       const grp = new THREE.Group();
       const coreMat = new THREE.MeshBasicMaterial({
-        color: isDrone ? '#f43f5e' : '#38bdf8',
+        color: '#38bdf8',
         transparent: true,
         opacity: 0.92,
       });
 
-      if (isDrone) {
-        const chassis = new THREE.Mesh(droneChassisGeo, droneChassisMat);
-        const wings = new THREE.Mesh(droneWingGeo, droneChassisMat);
-        const eye = new THREE.Mesh(droneEyeGeo, coreMat);
-        eye.position.z = 0.26;
-        const halo = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: firePlumeTex,
-            color: '#fb7185',
-            transparent: true,
-            opacity: 0.75,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-          })
-        );
-        halo.scale.setScalar(1.35);
-        grp.add(chassis, wings, eye, halo);
-      } else {
-        const rock = new THREE.Mesh(meteorRockGeo, meteorRockMat);
-        const crystal = new THREE.Mesh(meteorCrystalGeo, coreMat);
-        crystal.rotation.set(0.6, 0.8, 0.3);
-        grp.add(rock, crystal);
-      }
+      const rock = new THREE.Mesh(meteorRockGeo, meteorRockMat);
+      const crystal = new THREE.Mesh(meteorCrystalGeo, coreMat);
+      crystal.rotation.set(0.6, 0.8, 0.3);
+      grp.add(rock, crystal);
 
       combatEncounterGroup.add(grp);
       orbitalCombatTargets.push({
-        kind: isDrone ? 'SENTINEL_DRONE' : 'CRYSTAL_METEOR',
+        kind: 'CRYSTAL_METEOR',
         group: grp,
         coreMat,
-        orbitAngle: (ti / 8) * Math.PI * 2,
-        orbitSpeed: isDrone ? 0.22 + (ti % 3) * 0.06 : 0.09 + (ti % 4) * 0.04,
-        distOffsetMult: isDrone ? 14.0 + (ti - 5) * 5.5 : 10.5 + ti * 3.8,
-        heightOffsetMult: ((ti % 3) - 1) * 3.2,
-        hp: isDrone ? 2.0 : 1.0,
-        maxHp: isDrone ? 2.0 : 1.0,
+        orbitAngle: (ti / 5) * Math.PI * 2,
+        orbitSpeed: 0.08 + (ti % 4) * 0.035,
+        distOffsetMult: 10.5 + ti * 3.8,
+        heightOffsetMult: ((ti % 3) - 1) * 3.0,
+        hp: 1.0,
+        maxHp: 1.0,
         respawnTimer: 0,
-        fireCooldown: 2.5 + ti * 0.9,
+        fireCooldown: 999,
       });
     }
 

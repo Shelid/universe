@@ -41,6 +41,7 @@ import {
 } from './types/astronomy';
 import {
   adjustPowerPips,
+  buyShopItemWithCreditsAction,
   calibrateReactorO2Action,
   completeSpaceContractAction,
   consumeFoodRation,
@@ -733,6 +734,21 @@ export function App() {
   const handleCompleteContract = useCallback(
     (contractId: string) => {
       const res = completeSpaceContractAction(survivalRef.current, contractId);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) {
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleBuyShopItem = useCallback(
+    (shopItemId: string) => {
+      const res = buyShopItemWithCreditsAction(survivalRef.current, shopItemId);
       handleSyncSurvivalState(res.state);
       spaceAudio.unlock();
       if (res.ok) {
@@ -1597,6 +1613,7 @@ export function App() {
         onSynthesizeRecipe={handleSynthesizeRecipe}
         onFuseMinerals={handleFuseMinerals}
         onUpgradeShipSystem={handleUpgradeShipSystem}
+        onBuyShopItem={handleBuyShopItem}
         onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
         onTransferBatteryBank={handleTransferBatteryBank}
         onSellCargo={handleSellCargo}

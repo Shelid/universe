@@ -1300,7 +1300,7 @@ export function fuseMineralsAction(
 
 /**
  * Upgrades a ship subsystem (Porão, Laser, Banco de Bateria, Canhão de Pulso [F], Motor de Dobra)
- * spending Space Credits (CR) and 1 required mineral for that tier.
+ * directly in the Inventory Shop spending Space Credits (CR)!
  */
 export function upgradeShipSystemAction(
   state: SurvivalResourcesState,
@@ -1321,32 +1321,14 @@ export function upgradeShipSystemAction(
 
   const stepIndex = curLevel - 1;
   const creditCost = Math.round(def.baseCostCredits * Math.pow(1.55, stepIndex));
-  const reqMineral =
-    def.mineralRequirementPerLevel[
-      Math.min(stepIndex, def.mineralRequirementPerLevel.length - 1)
-    ];
-  const reqDef = MINING_RESOURCES[reqMineral.resourceId];
-  const ownedMineral = state.cargoInventory[reqMineral.resourceId] ?? 0;
 
   if (state.spaceCredits < creditCost) {
     return {
       ok: false,
       state,
-      message: `Créditos insuficientes: requer ${creditCost} CR (você tem ${state.spaceCredits} CR).`,
+      message: `Moedas insuficientes: requer ${creditCost} CR (você tem ${state.spaceCredits} CR).`,
     };
   }
-  if (ownedMineral < reqMineral.amount) {
-    return {
-      ok: false,
-      state,
-      message: `Requer ${reqMineral.amount}x ${reqDef.name} (${reqDef.formula}) — minere ou crie na Fusão Mineral!`,
-    };
-  }
-
-  const nextInventory = { ...state.cargoInventory };
-  const rem = ownedMineral - reqMineral.amount;
-  if (rem <= 0) delete nextInventory[reqMineral.resourceId];
-  else nextInventory[reqMineral.resourceId] = rem;
 
   const nextLevel = curLevel + 1;
   const nextUpgrades = { ...curUpgrades, [systemId]: nextLevel };
@@ -1358,13 +1340,191 @@ export function upgradeShipSystemAction(
     state: {
       ...state,
       spaceCredits: state.spaceCredits - creditCost,
-      cargoInventory: nextInventory,
       cargoCapacityUnits: nextCargoCap,
       shipUpgrades: nextUpgrades,
       batteryPercent: systemId === 'batteryBank' ? 100 : state.batteryPercent,
       batteryBankPercent: systemId === 'batteryBank' ? 100 : state.batteryBankPercent,
     },
-    message: `Upgrade Concluído: ${def.name} Nível ${nextLevel} (${def.getLevelBenefitLabel(nextLevel)})!`,
+    message: `Compra Concluída na Loja: ${def.name} Nível ${nextLevel} (${def.getLevelBenefitLabel(nextLevel)})!`,
+  };
+}
+
+export interface CreditShopItem {
+  id: string;
+  category: 'SUPPLY' | 'MINERAL';
+  name: string;
+  subtitle: string;
+  costCredits: number;
+  iconPath: string;
+  colorHex: string;
+  resourceId?: MiningResourceId;
+  resourceQty?: number;
+}
+
+export const CREDIT_SHOP_ITEMS: CreditShopItem[] = [
+  {
+    id: 'shop-fuel-pack',
+    category: 'SUPPLY',
+    name: 'Abastecimento de Combustível (+60%)',
+    subtitle: 'Injeta propelente de hidrazina direto nos tanques da nave',
+    costCredits: 85,
+    iconPath: '/images/items/hydrazine-fuel.webp',
+    colorHex: '#f97316',
+  },
+  {
+    id: 'shop-warp-pack',
+    category: 'SUPPLY',
+    name: 'Recarga de Dobra (+60% Dobra + 1 Célula)',
+    subtitle: 'Abastece o núcleo de dobra espacial e adiciona +1 Célula reserva',
+    costCredits: 150,
+    iconPath: '/images/items/he3-warp-cell.webp',
+    colorHex: '#e879f9',
+  },
+  {
+    id: 'shop-energy-bank',
+    category: 'SUPPLY',
+    name: 'Carga Total de Energia & Banco (100%)',
+    subtitle: 'Carrega 100% da Energia Principal e 100% do Banco de Baterias',
+    costCredits: 95,
+    iconPath: '/images/items/sulfur-compounds.webp',
+    colorHex: '#facc15',
+  },
+  {
+    id: 'shop-repair-hull',
+    category: 'SUPPLY',
+    name: 'Blindagem Total & +2 Kits de Reparo',
+    subtitle: 'Restaura 100% do Casco da nave e entrega +2 Kits Ti-6Al-4V',
+    costCredits: 125,
+    iconPath: '/images/items/titanium-plates.webp',
+    colorHex: '#818cf8',
+  },
+  {
+    id: 'shop-pilot-pack',
+    category: 'SUPPLY',
+    name: 'Kit de Sobrevivência (+2 Águas, +2 Rações, 100% O₂)',
+    subtitle: 'Restaura Fome, Sede, Oxigênio e adiciona provisões à mochila',
+    costCredits: 90,
+    iconPath: '/images/items/biomass-ration.webp',
+    colorHex: '#10b981',
+  },
+  {
+    id: 'shop-helium3',
+    category: 'MINERAL',
+    name: 'Lote 2× Isótopo Hélio-3 Solar',
+    subtitle: 'Minério energético raro (+45% Energia/un ou para Fusão)',
+    costCredits: 220,
+    iconPath: '/images/items/helium-3.webp',
+    colorHex: '#3b82f6',
+    resourceId: 'helium-3',
+    resourceQty: 2,
+  },
+  {
+    id: 'shop-platinum',
+    category: 'MINERAL',
+    name: 'Lote 2× Metais do Grupo da Platina',
+    subtitle: 'Catalisador nobre raro para Fusão Mineral e Superligas',
+    costCredits: 270,
+    iconPath: '/images/items/platinum-group.webp',
+    colorHex: '#e2e8f0',
+    resourceId: 'platinum-group',
+    resourceQty: 2,
+  },
+  {
+    id: 'shop-void-crystal',
+    category: 'MINERAL',
+    name: '1× Cristal de Vácuo Quântico (Lendário)',
+    subtitle: 'Cristal hiperbarométrico (+65% Energia/Banco ou Fusão)',
+    costCredits: 380,
+    iconPath: '/images/items/exotic-silicates.webp',
+    colorHex: '#38bdf8',
+    resourceId: 'void-crystal',
+    resourceQty: 1,
+  },
+  {
+    id: 'shop-plasma-core',
+    category: 'MINERAL',
+    name: '1× Núcleo de Plasma Estelar (Lendário)',
+    subtitle: 'Esfera de plasma condensado (+85% Energia/Banco ou Fusão)',
+    costCredits: 490,
+    iconPath: '/images/items/helium-3.webp',
+    colorHex: '#fde047',
+    resourceId: 'solar-plasma-core',
+    resourceQty: 1,
+  },
+  {
+    id: 'shop-hypercrystal',
+    category: 'MINERAL',
+    name: '1× Hipercristal de Andrômeda (Supremo)',
+    subtitle: 'Restaura 100% da Energia + 100% do Banco + 60% Dobra',
+    costCredits: 860,
+    iconPath: '/images/items/interstellar-resonator.webp',
+    colorHex: '#e879f9',
+    resourceId: 'andromeda-hypercrystal',
+    resourceQty: 1,
+  },
+];
+
+export function buyShopItemWithCreditsAction(
+  state: SurvivalResourcesState,
+  shopItemId: string
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const item = CREDIT_SHOP_ITEMS.find((i) => i.id === shopItemId);
+  if (!item) {
+    return { ok: false, state, message: 'Item da loja não encontrado.' };
+  }
+  if (state.spaceCredits < item.costCredits) {
+    return {
+      ok: false,
+      state,
+      message: `Moedas insuficientes: custa ${item.costCredits} CR (você tem ${state.spaceCredits} CR).`,
+    };
+  }
+
+  let nextState: SurvivalResourcesState = {
+    ...state,
+    spaceCredits: state.spaceCredits - item.costCredits,
+  };
+
+  if (item.category === 'MINERAL' && item.resourceId) {
+    const qty = item.resourceQty ?? 1;
+    const used = getTotalCargoUnits(state.cargoInventory);
+    if (used + qty > state.cargoCapacityUnits) {
+      return {
+        ok: false,
+        state,
+        message: 'Porão cheio! Amplie o Porão na Loja ou funda minérios antes de comprar.',
+      };
+    }
+    const nextInv = { ...state.cargoInventory };
+    nextInv[item.resourceId] = (nextInv[item.resourceId] ?? 0) + qty;
+    nextState = {
+      ...nextState,
+      cargoInventory: nextInv,
+    };
+  } else if (item.id === 'shop-fuel-pack') {
+    nextState.fuelPercent = Math.min(100, Number((state.fuelPercent + 60).toFixed(1)));
+  } else if (item.id === 'shop-warp-pack') {
+    nextState.warpEnergyPercent = Math.min(100, Number((state.warpEnergyPercent + 60).toFixed(1)));
+    nextState.warpCells = Math.min(12, state.warpCells + 1);
+  } else if (item.id === 'shop-energy-bank') {
+    nextState.batteryPercent = 100;
+    nextState.batteryBankPercent = 100;
+  } else if (item.id === 'shop-repair-hull') {
+    nextState.hullIntegrity = 100;
+    nextState.repairKits = Math.min(12, state.repairKits + 2);
+  } else if (item.id === 'shop-pilot-pack') {
+    nextState.waterFlasks = Math.min(12, state.waterFlasks + 2);
+    nextState.foodRations = Math.min(12, state.foodRations + 2);
+    nextState.hungerPercent = 100;
+    nextState.thirstPercent = 100;
+    nextState.shipOxygenPercent = 100;
+    nextState.evaOxygenPercent = 100;
+  }
+
+  return {
+    ok: true,
+    state: nextState,
+    message: `Comprado na Loja: ${item.name} (-${item.costCredits} CR)!`,
   };
 }
 
