@@ -125,16 +125,15 @@ function resolveWsUrl(
   shipId: SpacecraftVariantId,
   charId: CharacterVariantId
 ): string {
-  const isLocal =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.protocol === 'file:';
   const envBase = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_MP_WS_BASE;
+  // Always route WebSockets to our Cloudflare Durable Objects Edge Server so players on
+  // Cloudflare Workers, Netlify, localhost, or any custom domain share the EXACT same live world!
+  const isWorkersOrigin = window.location.hostname.endsWith('.workers.dev');
   const base =
     envBase ||
-    (isLocal
-      ? `wss://${PROD_WS_HOST}`
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`);
+    (isWorkersOrigin
+      ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+      : `wss://${PROD_WS_HOST}`);
 
   const params = new URLSearchParams({
     callsign,
