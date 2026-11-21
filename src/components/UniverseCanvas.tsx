@@ -176,7 +176,11 @@ const REAL_PLANET_TEXTURE_URLS_HIGH: Record<string, PlanetTextureConfig> = {
   jupiter: { diffuse: '/textures/jupiter_4k.jpg' },
   saturn: { diffuse: '/textures/saturn_4k.jpg' },
   uranus: { diffuse: '/textures/uranus_2k.jpg' },
-  neptune: { diffuse: '/textures/neptune_2k.jpg' },
+  neptune: {
+    diffuse: '/textures/neptune_2k.jpg',
+    clouds: '/textures/earth_clouds_sss_4k.jpg',
+    aux: '/textures/venus_atmo_4k.jpg',
+  },
   ceres: { diffuse: '/textures/moon_4k.jpg' },
   pluto: { diffuse: '/textures/mercury_4k.jpg' },
   haumea: { diffuse: '/textures/moon_4k.jpg' },
@@ -236,7 +240,11 @@ const REAL_PLANET_TEXTURE_URLS_LOW: Record<string, PlanetTextureConfig> = {
   jupiter: { diffuse: '/textures/jupiter_2k.jpg' },
   saturn: { diffuse: '/textures/saturn_2k.jpg' },
   uranus: { diffuse: '/textures/uranus_2k.jpg' },
-  neptune: { diffuse: '/textures/neptune_2k.jpg' },
+  neptune: {
+    diffuse: '/textures/neptune_2k.jpg',
+    clouds: '/textures/earth_clouds_1024.png',
+    aux: '/textures/venus_atmo_2k.jpg',
+  },
   ceres: { diffuse: '/textures/moon_2k.jpg' },
   pluto: { diffuse: '/textures/mercury_2k.jpg' },
   haumea: { diffuse: '/textures/moon_2k.jpg' },
@@ -1311,76 +1319,84 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(ceresAsteroidCluster);
       }
 
-      // SATURN & EXOTIC RINGED WORLDS SPECIAL EXPERIENCE: High-Definition Cassini Ring Shader + Sculpted 3D Asteroid & Crystal Fragments
+      // SATURN, NEPTUNE & EXOTIC RINGED WORLDS SPECIAL EXPERIENCE: High-Definition Cassini / JWST Ring Shader
       let saturnRingShaderMesh: THREE.Mesh | undefined;
       let saturnRingShaderMat: THREE.ShaderMaterial | undefined;
       let saturnBouldersGroup: THREE.Group | undefined;
 
       if (
         body.id === 'saturn' ||
+        body.id === 'neptune' ||
         body.id === 'krystallos-v' ||
         body.id === 'aether-ix' ||
         body.id === 'chronos-prime'
       ) {
         const innerR =
-          body.id === 'krystallos-v'
-            ? 1.24
-            : body.id === 'aether-ix'
-              ? 1.28
-              : body.id === 'chronos-prime'
-                ? 1.22
-                : 1.18;
+          body.id === 'neptune'
+            ? 1.38
+            : body.id === 'krystallos-v'
+              ? 1.24
+              : body.id === 'aether-ix'
+                ? 1.28
+                : body.id === 'chronos-prime'
+                  ? 1.22
+                  : 1.18;
         const outerR =
-          body.id === 'krystallos-v'
-            ? 2.38
-            : body.id === 'aether-ix'
-              ? 2.48
-              : body.id === 'chronos-prime'
-                ? 2.65
-                : 2.42;
+          body.id === 'neptune'
+            ? 2.32
+            : body.id === 'krystallos-v'
+              ? 2.38
+              : body.id === 'aether-ix'
+                ? 2.48
+                : body.id === 'chronos-prime'
+                  ? 2.65
+                  : 2.42;
         const ringTintHex =
-          body.id === 'krystallos-v'
-            ? '#7dd3fc'
-            : body.id === 'aether-ix'
-              ? '#fde047'
-              : body.id === 'chronos-prime'
-                ? '#e879f9'
-                : '#ffffff';
+          body.id === 'neptune'
+            ? '#93c5fd'
+            : body.id === 'krystallos-v'
+              ? '#7dd3fc'
+              : body.id === 'aether-ix'
+                ? '#fde047'
+                : body.id === 'chronos-prime'
+                  ? '#e879f9'
+                  : '#ffffff';
         const ringGeo = new THREE.RingGeometry(innerR, outerR, perf.ringSegments, 10);
-        saturnRingShaderMat = createSaturnRingsShaderMaterial(1.0, ringTintHex);
+        saturnRingShaderMat = createSaturnRingsShaderMaterial(
+          1.0,
+          ringTintHex,
+          body.id === 'neptune'
+        );
         saturnRingShaderMat.uniforms.uInnerRadius.value = innerR;
         saturnRingShaderMat.uniforms.uOuterRadius.value = outerR;
         saturnRingShaderMesh = new THREE.Mesh(ringGeo, saturnRingShaderMat);
         saturnRingShaderMesh.rotation.x = Math.PI / 2;
         tiltGroup.add(saturnRingShaderMesh);
 
-        saturnBouldersGroup = new THREE.Group();
-        populateSaturnRing3DAsteroidFragments(
-          saturnBouldersGroup,
-          saturnBoulderShaderMat,
-          innerR,
-          outerR,
-          perf.saturnBouldersCount
-        );
-        tiltGroup.add(saturnBouldersGroup);
+        if (body.id !== 'neptune') {
+          saturnBouldersGroup = new THREE.Group();
+          populateSaturnRing3DAsteroidFragments(
+            saturnBouldersGroup,
+            saturnBoulderShaderMat,
+            innerR,
+            outerR,
+            perf.saturnBouldersCount
+          );
+          tiltGroup.add(saturnBouldersGroup);
+        }
       }
 
-      if (body.id === 'uranus' || body.id === 'neptune' || body.id === 'haumea') {
+      if (body.id === 'uranus' || body.id === 'haumea') {
         const uRingGeo = new THREE.RingGeometry(
           body.id === 'haumea' ? 1.55 : 1.32,
-          body.id === 'uranus' ? 1.95 : body.id === 'haumea' ? 1.82 : 1.78,
+          body.id === 'uranus' ? 1.95 : 1.82,
           perf.tier === 'low' ? 56 : 88
         );
         const uRingMat = new THREE.MeshBasicMaterial({
-          color:
-            body.id === 'uranus'
-              ? '#67e8f9'
-              : body.id === 'haumea'
-                ? '#e2e8f0'
-                : '#60a5fa',
+          color: body.id === 'uranus' ? '#67e8f9' : '#e2e8f0',
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: body.id === 'uranus' ? 0.24 : body.id === 'haumea' ? 0.35 : 0.14,
+          opacity: body.id === 'uranus' ? 0.24 : 0.35,
         });
         const uRingMesh = new THREE.Mesh(uRingGeo, uRingMat);
         uRingMesh.rotation.x = Math.PI / 2;
@@ -2079,100 +2095,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       blending: THREE.AdditiveBlending,
     });
 
-    // 3D ORBITAL BALLISTIC METEORITES & PIRATE SENTINEL DRONES (Gives full gameplay purpose to Pulse Cannon [F] & Shields!)
-    const combatEncounterGroup = new THREE.Group();
-    combatEncounterGroup.visible = false;
-    scene.add(combatEncounterGroup);
-
-    interface OrbitalCombatTarget {
-      kind: 'CRYSTAL_METEOR' | 'SENTINEL_DRONE';
-      group: THREE.Group;
-      coreMat: THREE.MeshBasicMaterial;
-      orbitAngle: number;
-      orbitSpeed: number;
-      distOffsetMult: number;
-      heightOffsetMult: number;
-      hp: number;
-      maxHp: number;
-      respawnTimer: number;
-      fireCooldown: number;
-    }
-
-    const orbitalCombatTargets: OrbitalCombatTarget[] = [];
-    const meteorRockGeo = new THREE.DodecahedronGeometry(0.45, 0);
-    const meteorCrystalGeo = new THREE.OctahedronGeometry(0.56, 0);
-    const droneChassisGeo = new THREE.OctahedronGeometry(0.38, 1);
-    const droneWingGeo = new THREE.BoxGeometry(1.15, 0.06, 0.32);
-    const droneEyeGeo = new THREE.SphereGeometry(0.18, 10, 10);
-
-    const meteorRockMat = new THREE.MeshStandardMaterial({
-      color: '#334155',
-      roughness: 0.72,
-      metalness: 0.28,
-    });
-    const droneChassisMat = new THREE.MeshStandardMaterial({
-      color: '#1e293b',
-      roughness: 0.32,
-      metalness: 0.85,
-    });
-
-    // 5 Peaceful Destructible Crystal-Vein Meteorites around the active planet (No enemy drones!)
-    for (let ti = 0; ti < 5; ti++) {
-      const grp = new THREE.Group();
-      const coreMat = new THREE.MeshBasicMaterial({
-        color: '#38bdf8',
-        transparent: true,
-        opacity: 0.92,
-      });
-
-      const rock = new THREE.Mesh(meteorRockGeo, meteorRockMat);
-      const crystal = new THREE.Mesh(meteorCrystalGeo, coreMat);
-      crystal.rotation.set(0.6, 0.8, 0.3);
-      grp.add(rock, crystal);
-
-      combatEncounterGroup.add(grp);
-      orbitalCombatTargets.push({
-        kind: 'CRYSTAL_METEOR',
-        group: grp,
-        coreMat,
-        orbitAngle: (ti / 5) * Math.PI * 2,
-        orbitSpeed: 0.08 + (ti % 4) * 0.035,
-        distOffsetMult: 10.5 + ti * 3.8,
-        heightOffsetMult: ((ti % 3) - 1) * 3.0,
-        hp: 1.0,
-        maxHp: 1.0,
-        respawnTimer: 0,
-        fireCooldown: 999,
-      });
-    }
-
-    // Sentinel Drone red laser line & 3D combat explosion flash sprite
-    const sentinelLaserGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, 0, 1),
-    ]);
-    const sentinelLaserMat = new THREE.LineBasicMaterial({
-      color: '#f43f5e',
-      transparent: true,
-      opacity: 0.9,
-    });
-    const sentinelLaserLine = new THREE.Line(sentinelLaserGeo, sentinelLaserMat);
-    sentinelLaserLine.visible = false;
-    scene.add(sentinelLaserLine);
-    let sentinelLaserVisualTimer = 0;
-
-    const combatExplosionSpriteMat = new THREE.SpriteMaterial({
-      map: firePlumeTex,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.NormalBlending,
-      depthWrite: false,
-    });
-    const combatExplosionSprite = new THREE.Sprite(combatExplosionSpriteMat);
-    combatExplosionSprite.visible = false;
-    scene.add(combatExplosionSprite);
-    let combatExplosionAge = 99;
-
     // 6-DOF Spacecraft Flight Physics State
     const pressedKeys = new Set<string>();
     const shipVelocity = new THREE.Vector3();
@@ -2752,9 +2674,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       satelliteGroup.visible = false;
       warpTunnelGroup.visible = false;
       projectileGroup.visible = false;
-      combatEncounterGroup.visible = false;
-      sentinelLaserLine.visible = false;
-      combatExplosionSprite.visible = false;
       activeSatelliteOrbitLine.visible = false;
       ALL_CELESTIAL_BODIES.forEach((b) => {
         const node = bodyNodes[b.id];
@@ -2950,9 +2869,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         miningStreamInstanced.visible = false;
         miningEjectaInstanced.visible = false;
         hotspotGroup.visible = false;
-        combatEncounterGroup.visible = false;
-        sentinelLaserLine.visible = false;
-        combatExplosionSprite.visible = false;
       }
 
       // Multi-Scale Hierarchy Cross-Fade Factors based on distance from Solar System origin (0, 0, 0)
@@ -4422,103 +4338,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.updateProjectionMatrix();
         }
 
-        // 5. Twin Ventral Plasma Pulse Cannons [F], Orbital Crystal Meteorites & Pirate Sentinel Drones Combat
-        const showCombatTargets = !isWalkingInside && bestProxRatio < 18.0;
-        combatEncounterGroup.visible = showCombatTargets;
-
-        if (showCombatTargets) {
-          const domProfile = getBodyMiningProfile(dominantBody.id);
-          const crystalHex = domProfile.yields[0]
-            ? MINING_RESOURCES[domProfile.yields[0].resourceId].colorHex
-            : '#38bdf8';
-
-          for (let ti = 0; ti < orbitalCombatTargets.length; ti++) {
-            const tgt = orbitalCombatTargets[ti];
-            if (tgt.respawnTimer > 0) {
-              tgt.respawnTimer -= dt;
-              tgt.group.visible = false;
-              if (tgt.respawnTimer <= 0) {
-                tgt.hp = tgt.maxHp;
-                tgt.orbitAngle += 2.1;
-                tgt.group.visible = true;
-              }
-              continue;
-            }
-            tgt.group.visible = true;
-            tgt.orbitAngle += tgt.orbitSpeed * dt;
-            const ringR = currentShipScale * tgt.distOffsetMult;
-            const hOff =
-              currentShipScale *
-              (tgt.heightOffsetMult + Math.sin(clockTime * 1.2 + ti * 1.4) * 1.8);
-
-            // Orbit around the ship's local orbital zone so targets are always reachable & fun to shoot with Pulse [F]
-            tgt.group.position.set(
-              sr7.rootGroup.position.x + Math.cos(tgt.orbitAngle) * ringR,
-              sr7.rootGroup.position.y + hOff,
-              sr7.rootGroup.position.z + Math.sin(tgt.orbitAngle) * ringR
-            );
-            const targetMeshScale =
-              currentShipScale * (tgt.kind === 'SENTINEL_DRONE' ? 0.85 : 0.95);
-            tgt.group.scale.setScalar(targetMeshScale);
-
-            if (tgt.kind === 'CRYSTAL_METEOR') {
-              tgt.coreMat.color.set(crystalHex);
-              tgt.group.rotation.x += dt * 0.9;
-              tgt.group.rotation.y += dt * 1.2;
-            } else {
-              tgt.group.lookAt(sr7.rootGroup.position);
-              tgt.fireCooldown -= dt;
-              // Sentinel Drones fire plasma laser at the ship when in orbital zone (testing Shields!)
-              if (tgt.fireCooldown <= 0 && bestProxRatio < 8.5) {
-                tgt.fireCooldown = 5.5 + (ti % 3) * 1.8;
-                const posAttr = sentinelLaserGeo.getAttribute('position') as THREE.BufferAttribute;
-                posAttr.setXYZ(0, tgt.group.position.x, tgt.group.position.y, tgt.group.position.z);
-                posAttr.setXYZ(
-                  1,
-                  sr7.rootGroup.position.x,
-                  sr7.rootGroup.position.y,
-                  sr7.rootGroup.position.z
-                );
-                posAttr.needsUpdate = true;
-                sentinelLaserLine.visible = true;
-                sentinelLaserVisualTimer = 0.28;
-
-                // Shields absorb 88% of sentinel laser fire!
-                const curS = activeSurvivalRef.current;
-                if (sc.shieldsOn && curS.batteryPercent > 2) {
-                  activeSurvivalRef.current = {
-                    ...curS,
-                    batteryPercent: Math.max(0, Number((curS.batteryPercent - 0.8).toFixed(1))),
-                  };
-                } else {
-                  activeSurvivalRef.current = {
-                    ...curS,
-                    hullIntegrity: Math.max(5, Number((curS.hullIntegrity - 2.4).toFixed(1))),
-                  };
-                }
-              }
-            }
-          }
-        }
-
-        if (sentinelLaserVisualTimer > 0) {
-          sentinelLaserVisualTimer -= dt;
-          if (sentinelLaserVisualTimer <= 0) {
-            sentinelLaserLine.visible = false;
-          }
-        }
-
-        if (combatExplosionAge < 0.55) {
-          combatExplosionAge += dt;
-          const prog = combatExplosionAge / 0.55;
-          combatExplosionSprite.visible = true;
-          combatExplosionSprite.scale.setScalar(currentShipScale * (1.2 + prog * 3.4));
-          combatExplosionSpriteMat.opacity = (1.0 - prog) * 0.96;
-          combatExplosionSpriteMat.rotation = clockTime * 4.5;
-        } else {
-          combatExplosionSprite.visible = false;
-        }
-
+        // 5. Twin Ventral Plasma Pulse Cannons [F] (Free-Flight Tactical Plasma Discharge — No enemies spawned)
         if (sc.firePulseCount > lastFirePulseCount) {
           lastFirePulseCount = sc.firePulseCount;
           muzzleFlashAlpha = 1.0;
@@ -4528,27 +4348,6 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             Math.max(currentShipScale * 115, currentSpeed * 1.8 + currentShipScale * 110) *
             (1 + (pulseLvl - 1) * 0.18);
 
-          // Smart target lock: aim at closest Crystal Meteorite or Sentinel Drone within forward cone
-          let lockedTarget: OrbitalCombatTarget | null = null;
-          let bestLockScore = Infinity;
-          if (showCombatTargets) {
-            for (const tgt of orbitalCombatTargets) {
-              if (tgt.respawnTimer > 0 || !tgt.group.visible) continue;
-              _tmpV6.subVectors(tgt.group.position, sr7.rootGroup.position);
-              const d = _tmpV6.length();
-              if (d < 1e-7 || d > currentShipScale * 48) continue;
-              _tmpV6.divideScalar(d);
-              const dot = shipForward.dot(_tmpV6);
-              if (dot > 0.25) {
-                const score = d * (1.35 - dot);
-                if (score < bestLockScore) {
-                  bestLockScore = score;
-                  lockedTarget = tgt;
-                }
-              }
-            }
-          }
-
           sr7.hullGroup.updateWorldMatrix(true, false);
           sr7.muzzlePositionsLocal.forEach((muzzleLocal) => {
             const boltMesh = new THREE.Mesh(pulseBoltGeo, pulseBoltMat);
@@ -4556,93 +4355,20 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             _tmpV5.copy(muzzleLocal);
             sr7.hullGroup.localToWorld(_tmpV5);
             boltMesh.position.copy(_tmpV5);
-            if (lockedTarget) {
-              _tmpV4.subVectors(lockedTarget.group.position, _tmpV5).normalize();
-              boltMesh.lookAt(lockedTarget.group.position);
-              _tmpV4.multiplyScalar(boltSpeed);
-            } else {
-              sr7.hullGroup.getWorldQuaternion(boltMesh.quaternion);
-              _tmpV4.copy(shipForward).multiplyScalar(boltSpeed);
-            }
+            sr7.hullGroup.getWorldQuaternion(boltMesh.quaternion);
+            _tmpV4.copy(shipForward).multiplyScalar(boltSpeed);
             projectileGroup.add(boltMesh);
             activePulseBolts.push({ mesh: boltMesh, velocity: _tmpV4.clone(), age: 0 });
           });
         }
         muzzleFlashAlpha = Math.max(0, muzzleFlashAlpha - dt * 7.5);
 
-        const pulseDamage = 1.0 + ((activeSurvivalRef.current.shipUpgrades?.pulseCannon ?? 1) - 1) * 0.65;
-        const hitRadius = currentShipScale * 2.15;
-
         for (let i = activePulseBolts.length - 1; i >= 0; i--) {
           const bolt = activePulseBolts[i];
           bolt.age += dt;
           bolt.mesh.position.addScaledVector(bolt.velocity, dt);
 
-          let hitSomething = false;
-          if (showCombatTargets) {
-            for (const tgt of orbitalCombatTargets) {
-              if (tgt.respawnTimer > 0 || !tgt.group.visible) continue;
-              if (bolt.mesh.position.distanceTo(tgt.group.position) <= hitRadius) {
-                hitSomething = true;
-                tgt.hp -= pulseDamage;
-                combatExplosionSprite.position.copy(tgt.group.position);
-                combatExplosionAge = 0;
-
-                if (tgt.hp <= 0) {
-                  tgt.respawnTimer = tgt.kind === 'SENTINEL_DRONE' ? 9.5 : 6.0;
-                  tgt.group.visible = false;
-
-                  // Award rare mineral drop + Space Credits directly to cargo hold!
-                  const curS = activeSurvivalRef.current;
-                  const usedUnits = Object.values(curS.cargoInventory).reduce(
-                    (acc, v) => acc + (v ?? 0),
-                    0
-                  );
-                  const domProf = getBodyMiningProfile(dominantBody.id);
-                  const dropPool: MiningResourceId[] =
-                    tgt.kind === 'SENTINEL_DRONE'
-                      ? ['void-crystal', 'helium-3', 'platinum-group', 'solar-plasma-core']
-                      : domProf.yields.length > 0
-                        ? domProf.yields.map((y) => y.resourceId)
-                        : ['helium-3', 'titanium-ilmenite', 'void-crystal'];
-                  const pickedRes =
-                    dropPool[Math.floor(Math.abs(Math.sin(clockTime * 37.3 + i)) * dropPool.length)] ||
-                    'helium-3';
-                  const pulseBonusQty = Math.min(
-                    Math.max(0, curS.cargoCapacityUnits - usedUnits),
-                    (tgt.kind === 'SENTINEL_DRONE' ? 2 : 3) +
-                      Math.floor(((curS.shipUpgrades?.pulseCannon ?? 1) - 1) * 0.75)
-                  );
-                  const creditBonus =
-                    (tgt.kind === 'SENTINEL_DRONE' ? 320 : 115) +
-                    ((curS.shipUpgrades?.pulseCannon ?? 1) - 1) * 65;
-
-                  const nextInv = { ...curS.cargoInventory };
-                  if (pulseBonusQty > 0) {
-                    nextInv[pickedRes] = (nextInv[pickedRes] ?? 0) + pulseBonusQty;
-                  }
-                  const nextSurv: SurvivalResourcesState = {
-                    ...curS,
-                    cargoInventory: nextInv,
-                    totalMinedUnits: curS.totalMinedUnits + pulseBonusQty,
-                    spaceCredits: curS.spaceCredits + creditBonus,
-                    batteryPercent: Math.min(100, curS.batteryPercent + 12),
-                    destroyedTargetsCount: (curS.destroyedTargetsCount ?? 0) + 1,
-                  };
-                  activeSurvivalRef.current = nextSurv;
-                  if (survivalStateRef) survivalStateRef.current = nextSurv;
-                  spaceAudio.playMiningYieldChime(
-                    tgt.kind === 'SENTINEL_DRONE' ? 'EXOTIC' : 'RARE'
-                  );
-                  lastSurvivalSync = now;
-                  cb.onSyncSurvivalState?.(nextSurv);
-                }
-                break;
-              }
-            }
-          }
-
-          if (hitSomething || bolt.age > 2.2) {
+          if (bolt.age > 2.2) {
             projectileGroup.remove(bolt.mesh);
             activePulseBolts.splice(i, 1);
           }

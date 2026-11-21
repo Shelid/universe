@@ -425,6 +425,7 @@ export function createPlanetSurfaceMaterial(
           uHasDiffuseMap > 0.5 &&
           (uShaderType == 1 ||
             uShaderType == 4 ||
+            uShaderType == 8 ||
             uShaderType == 11 ||
             (uShaderType >= 15 && uShaderType <= 20))
         ) {
@@ -465,19 +466,26 @@ export function createPlanetSurfaceMaterial(
           uHasDiffuseMap > 0.5 &&
           (uShaderType == 1 ||
             uShaderType == 4 ||
+            uShaderType == 8 ||
             uShaderType == 11 ||
             (uShaderType >= 15 && uShaderType <= 20))
         ) {
-          // Real 4K Crater, Mountain & Crystalline relief derived directly from NASA 4K mosaic luminance gradients!
+          // Real 4K Crater, Mountain, Cloud Ridge & Crystalline relief derived directly from luminance gradients!
           float h0 = dot(sampledDiffuse, vec3(0.333));
           float hx = dot(sampledDiffuseRight, vec3(0.333)) - h0;
           float hy = dot(sampledDiffuseUp, vec3(0.333)) - h0;
+          if (uShaderType == 8 && uHasCloudsMap > 0.5) {
+            // Blend 4K high-altitude methane cirrus elevation into normal perturbation for Neptune
+            float ch0 = dot(sampledClouds, vec3(0.333));
+            float chShadow = dot(sampledCloudsShadow, vec3(0.333));
+            hx += (ch0 - chShadow) * 0.45;
+          }
           float bumpStrength = (uShaderType == 16 || uShaderType == 20)
             ? 3.8
             : (uShaderType == 15 || uShaderType == 17 || uShaderType == 18)
               ? 3.2
-              : (uShaderType == 4)
-                ? 2.2
+              : (uShaderType == 4 || uShaderType == 8)
+                ? 2.4
                 : 3.2;
           N = normalize(baseN - (T * hx + B * hy) * bumpStrength);
         }
@@ -704,14 +712,147 @@ export function createPlanetSurfaceMaterial(
         }
 
         // =========================================================================
-        // 7: URANUS & 8: NEPTUNE — 2K VOYAGER 2 / HUBBLE MAPS
+        // 7: URANUS — 2K VOYAGER 2 / HUBBLE MAP
         // =========================================================================
-        else if (uShaderType == 7 || uShaderType == 8) {
+        else if (uShaderType == 7) {
           if (uHasDiffuseMap > 0.5) {
             albedo = sampledDiffuse * 1.05;
           } else {
             albedo = uPrimaryColor;
           }
+        }
+
+        // =========================================================================
+        // 8: NEPTUNE — 4K HYBRID VOYAGER 2 / HUBBLE / JWST SUPERSONIC ICE GIANT
+        // =========================================================================
+        else if (uShaderType == 8) {
+          float lat = p.y;
+          // 4K anisotropic zonal shear flow across supersonic equatorial & mid-latitude jet streams
+          float jetWave = sin(lat * 16.0) * 0.045 + sin(lat * 38.0 + 1.2) * 0.018;
+          vec2 flowUv = vec2(
+            fract(vUv.x - uTime * 0.00042 + jetWave),
+            clamp(vUv.y + sin(vUv.x * 12.566) * 0.004, 0.005, 0.995)
+          );
+          vec3 atmoChevron = uHasAuxMap > 0.5 ? texture2D(uAuxMap, flowUv).rgb : vec3(0.5);
+          float auxChevronLum = dot(atmoChevron, vec3(0.333));
+
+          vec3 jetDomain = vec3(p.x * 3.6 + sin(lat * 10.0) * 0.55, lat * 20.0, p.z * 3.6 + cos(lat * 10.0) * 0.55);
+          float turbMacro = fbm(jetDomain + vec3(uTime * 0.004, 0.0, -uTime * 0.003));
+          float turbFine = fbm(vec3(p.x * 9.5 + turbMacro * 1.4, lat * 46.0, p.z * 9.5 - turbMacro * 1.4));
+          float zonalStreaks = sin(lat * 44.0 + turbMacro * 3.4 + auxChevronLum * 2.2) * 0.5 + 0.5;
+          float fineJets = sin(lat * 112.0 + turbFine * 4.2) * 0.5 + 0.5;
+
+          // Deep cobalt & cerulean tropospheric methane color spectrum
+          vec3 abyssalCobalt = vec3(0.035, 0.105, 0.42);
+          vec3 deepUltramarine = vec3(0.07, 0.23, 0.68);
+          vec3 royalCerulean = vec3(0.14, 0.42, 0.88);
+          vec3 icyAzure = vec3(0.32, 0.68, 0.98);
+          vec3 basePhoto = uHasDiffuseMap > 0.5 ? sampledDiffuse : royalCerulean;
+          float basePhotoLum = dot(basePhoto, vec3(0.299, 0.587, 0.114));
+
+          float bandMix = clamp(
+            zonalStreaks * 0.48 + fineJets * 0.22 + auxChevronLum * 0.30 + (basePhotoLum - 0.42) * 0.45,
+            0.0,
+            1.0
+          );
+          vec3 tropoColor = mix(deepUltramarine, royalCerulean, smoothstep(0.18, 0.58, bandMix));
+          tropoColor = mix(tropoColor, icyAzure, smoothstep(0.58, 0.92, bandMix) * 0.72);
+          tropoColor = mix(tropoColor, basePhoto * 1.06, 0.24);
+
+          // South & North Polar dark ultramarine vortex collars + bright polar hood
+          float polarAbs = abs(lat);
+          float polarVortexCollar = smoothstep(0.68, 0.84, polarAbs) * (1.0 - smoothstep(0.86, 0.95, polarAbs));
+          float polarHex = sin(atan(p.z, p.x) * 6.0 + turbMacro * 2.0) * 0.5 + 0.5;
+          tropoColor = mix(tropoColor, abyssalCobalt, polarVortexCollar * (0.42 + 0.22 * polarHex));
+          tropoColor = mix(tropoColor, vec3(0.46, 0.78, 1.0), smoothstep(0.88, 0.98, polarAbs) * 0.35);
+
+          // Iconic Great Dark Spot (GDS at ~-20°S) & Dark Spot 2 (DS2 at ~-55°S) with swirling internal eyewall
+          float driftLon = uTime * 0.0025;
+          vec3 gdsCenter = normalize(vec3(cos(0.45 + driftLon) * 0.94, -0.34, sin(0.45 + driftLon) * 0.94));
+          vec3 gdsTangE = normalize(cross(vec3(0.0, 1.0, 0.0), gdsCenter));
+          vec3 gdsTangN = cross(gdsCenter, gdsTangE);
+          float gdsE = dot(p - gdsCenter, gdsTangE) / 0.27;
+          float gdsN = dot(p - gdsCenter, gdsTangN) / 0.145;
+          float gdsR = sqrt(gdsE * gdsE + gdsN * gdsN + 1e-5);
+          float gdsSwirl = fbm(vec3(gdsE * 4.5 + gdsN * 1.8, gdsN * 5.0 - gdsE * 1.5, 1.4));
+          float gdsCoreMask = 1.0 - smoothstep(0.42, 1.05, gdsR + gdsSwirl * 0.14);
+          float gdsRimGlow = smoothstep(0.85, 1.02, gdsR) * (1.0 - smoothstep(1.02, 1.38, gdsR));
+          tropoColor = mix(tropoColor, vec3(0.025, 0.068, 0.28), gdsCoreMask * 0.92);
+          tropoColor = mix(tropoColor, icyAzure, gdsRimGlow * 0.42);
+
+          // Bright White Orographic Methane Ice Cap crowning the GDS northern/eastern eyewall
+          float gdsOrographic =
+            exp(-pow((gdsE - 0.22) * 1.8, 2.0) - pow((gdsN - 0.72) * 2.9, 2.0)) *
+            smoothstep(0.36, 0.78, ridgedFbm(p * 18.0 + vec3(turbFine)));
+
+          // Dark Spot 2 (DS2 at ~-55°S) with luminous bright core
+          vec3 ds2Center = normalize(vec3(cos(2.65 - driftLon * 1.3) * 0.57, -0.82, sin(2.65 - driftLon * 1.3) * 0.57));
+          vec3 ds2TangE = normalize(cross(vec3(0.0, 1.0, 0.0), ds2Center));
+          vec3 ds2TangN = cross(ds2Center, ds2TangE);
+          float ds2E = dot(p - ds2Center, ds2TangE) / 0.17;
+          float ds2N = dot(p - ds2Center, ds2TangN) / 0.105;
+          float ds2R = sqrt(ds2E * ds2E + ds2N * ds2N + 1e-5);
+          float ds2Mask = 1.0 - smoothstep(0.45, 1.02, ds2R);
+          float ds2BrightEye = 1.0 - smoothstep(0.05, 0.36, ds2R);
+          tropoColor = mix(tropoColor, vec3(0.03, 0.075, 0.30), ds2Mask * 0.85);
+
+          // High-Altitude White Methane Ice Cirrus ("Scooter" & Stratospheric Filaments) + Drop Shadows
+          float cloudsTex = uHasCloudsMap > 0.5 ? dot(sampledClouds, vec3(0.333)) : 0.0;
+          float cloudsShadowTex = uHasCloudsMap > 0.5 ? dot(sampledCloudsShadow, vec3(0.333)) : 0.0;
+          vec3 cirrusDomain = vec3(p.x * 2.4 + turbMacro * 0.65, lat * 12.5, p.z * 2.4 - turbMacro * 0.65);
+          float cirrusNoise = ridgedFbm(cirrusDomain + vec3(uTime * 0.006, 0.0, 0.0));
+          float cirrusStreak = pow(smoothstep(0.60, 0.90, cirrusNoise * 0.68 + cloudsTex * 0.42), 1.6);
+
+          // Longitude-localized "Scooter" bright diamond-shaped methane storm around -42°S
+          vec3 scooterCenter = normalize(vec3(cos(1.38 + driftLon * 1.8) * 0.74, -0.67, sin(1.38 + driftLon * 1.8) * 0.74));
+          float scooterMask = exp(-pow(distance(p, scooterCenter) * 9.5, 2.0)) * smoothstep(0.28, 0.78, cloudsTex * 0.7 + cirrusNoise * 0.5);
+
+          float latCirrusMask = smoothstep(0.88, 0.48, polarAbs) * (0.35 + 0.65 * sin(lat * 18.0 + 0.8) * sin(lat * 18.0 + 0.8));
+          float cirrusDensity = clamp(
+            cirrusStreak * latCirrusMask * 0.95 + gdsOrographic * 1.15 + scooterMask * 1.1 + ds2BrightEye * 0.85,
+            0.0,
+            1.0
+          );
+
+          // Real solar-offset drop shadows cast by high methane cirrus onto lower blue clouds (Voyager 2 effect!)
+          vec3 shadowShiftP = cirrusDomain + vec3(0.06, -0.04, 0.05);
+          float cirrusShadowOffset = pow(
+            smoothstep(0.60, 0.90, ridgedFbm(shadowShiftP + vec3(uTime * 0.006, 0.0, 0.0)) * 0.68 + cloudsShadowTex * 0.42),
+            1.6
+          );
+          float dropShadow = clamp((cirrusShadowOffset * latCirrusMask + gdsOrographic * 0.65) - cirrusDensity * 0.75, 0.0, 1.0);
+          tropoColor *= (1.0 - dropShadow * 0.48);
+
+          // Crisp 4K Perturbed Normal over cloud ridges & storm collars
+          N = normalize(N + T * ((cirrusDensity - cirrusShadowOffset) * 0.42) + B * ((turbFine - 0.5) * 0.26));
+          NdotL = dot(N, L);
+          dayFactor = smoothstep(-0.12, 0.22, NdotL);
+
+          vec3 whiteMethaneIce = vec3(0.95, 0.985, 1.0);
+          albedo = mix(tropoColor, whiteMethaneIce, cirrusDensity * 0.92);
+
+          // High-altitude methane ice sparkle & subtle upper-haze specular sheen
+          specularStrength = 0.08 + cirrusDensity * 0.14;
+          shininess = 28.0 + cirrusDensity * 24.0;
+
+          // Rich cerulean-cobalt Rayleigh limb haze & faint deep geomagnetic aurora in polar bands
+          float nepLimb = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.25);
+          float sunLimb = smoothstep(-0.28, 0.45, baseNdotL);
+          float magPolar = abs(dot(p, normalize(vec3(0.68, 0.68, 0.26))));
+          float auroralBelt = smoothstep(0.76, 0.86, magPolar) * (1.0 - smoothstep(0.90, 0.97, magPolar));
+          float auroralCurtain = pow(smoothstep(0.56, 0.88, fbm(p * 11.0 + vec3(0.0, uTime * 0.05, 0.0))), 2.0);
+          vec3 faintAurora = vec3(0.18, 0.82, 0.95) * auroralBelt * auroralCurtain * smoothstep(0.15, -0.25, baseNdotL) * 0.38;
+
+          vec3 specHaze = vec3(0.86, 0.95, 1.0) * pow(max(dot(N, H), 0.0), shininess) * specularStrength * dayFactor;
+          vec3 litNeptune =
+            albedo * (0.032 + 1.03 * mix(baseDayFactor, dayFactor, 0.74)) +
+            specHaze +
+            vec3(0.22, 0.62, 1.0) * nepLimb * (0.14 + 0.86 * sunLimb) * 0.72 +
+            vec3(0.42, 0.36, 0.95) * twilightFactor * 0.22 +
+            faintAurora;
+
+          gl_FragColor = vec4(litNeptune, 1.0);
+          return;
         }
 
         // =========================================================================
@@ -1111,7 +1252,8 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
  */
 export function createSaturnRingsShaderMaterial(
   saturnRadiusSceneUnits: number,
-  ringTintHex = '#ffffff'
+  ringTintHex = '#ffffff',
+  isDelicateNeptuneRings = false
 ): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -1123,6 +1265,7 @@ export function createSaturnRingsShaderMaterial(
       uInnerRadius: { value: saturnRadiusSceneUnits * 1.18 },
       uOuterRadius: { value: saturnRadiusSceneUnits * 2.42 },
       uRingTint: { value: new THREE.Color(ringTintHex) },
+      uRingStyle: { value: isDelicateNeptuneRings ? 1.0 : 0.0 },
     },
     transparent: true,
     depthWrite: false,
@@ -1145,6 +1288,7 @@ export function createSaturnRingsShaderMaterial(
       uniform float uInnerRadius;
       uniform float uOuterRadius;
       uniform vec3 uRingTint;
+      uniform float uRingStyle;
 
       varying vec3 vViewPos;
       varying vec3 vLocalPos;
@@ -1154,51 +1298,71 @@ export function createSaturnRingsShaderMaterial(
         float t = clamp((r - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
         if (t <= 0.0 || t >= 1.0) discard;
 
-        float wave1 = sin(t * 620.0) * 0.5 + 0.5;
-        float wave2 = cos(t * 210.0 + sin(t * 45.0) * 2.0) * 0.5 + 0.5;
-        float wave3 = sin(t * 1450.0) * 0.5 + 0.5;
-        float microStructure = 0.78 + 0.14 * wave1 + 0.08 * wave3;
-
         vec3 ringColor = vec3(0.88, 0.81, 0.68);
         float alpha = 0.0;
 
-        // D Ring (0.00 - 0.085)
-        if (t < 0.085) {
-          alpha = smoothstep(0.0, 0.075, t) * 0.14 * microStructure;
-          ringColor = vec3(0.58, 0.53, 0.47);
-        }
-        // C Ring / Crepe Ring (0.085 - 0.305)
-        else if (t < 0.305) {
-          alpha = (0.26 + 0.12 * wave2) * microStructure;
-          ringColor = mix(vec3(0.64, 0.59, 0.52), vec3(0.76, 0.70, 0.60), wave1);
-        }
-        // B Ring (0.305 - 0.635): Dense, brilliant crystalline water ice
-        else if (t < 0.635) {
-          float bEdge = smoothstep(0.305, 0.33, t) * (1.0 - smoothstep(0.62, 0.635, t));
-          alpha = (0.82 + 0.16 * wave2) * bEdge * microStructure;
-          ringColor = mix(vec3(0.85, 0.77, 0.63), vec3(0.98, 0.93, 0.82), 0.45 + 0.55 * wave2);
-        }
-        // CASSINI DIVISION (0.635 - 0.695): 4,700 km resonance gap with faint Huygens ringlet
-        else if (t < 0.695) {
-          float huygensRinglet = exp(-pow((t - 0.652) * 220.0, 2.0)) * 0.28;
-          alpha = 0.03 + huygensRinglet;
-          ringColor = vec3(0.52, 0.48, 0.44);
-        }
-        // A Ring (0.695 - 0.945): With sharp Encke Gap (0.875) & Keeler Gap (0.936)
-        else if (t < 0.945) {
-          float enckeGap = 1.0 - smoothstep(0.011, 0.002, abs(t - 0.875)) * 0.96;
-          float keelerGap = 1.0 - smoothstep(0.004, 0.001, abs(t - 0.936)) * 0.98;
-          alpha = (0.62 + 0.08 * wave1) * enckeGap * keelerGap * microStructure;
-          ringColor = mix(vec3(0.80, 0.75, 0.66), vec3(0.91, 0.86, 0.78), wave2 * 0.5);
-        }
-        // F Ring (0.978 - 0.992): Narrow braided shepherd ring
-        else {
-          float fRing = exp(-pow((t - 0.984) * 160.0, 2.0));
-          alpha = fRing * 0.75;
-          ringColor = vec3(0.94, 0.91, 0.85);
+        if (uRingStyle > 0.5) {
+          // Neptune JWST / Voyager 2 Delicate Ring System: Galle, Le Verrier, Lassell, Arago & Adams Resonant Arcs
+          float galleBand = smoothstep(0.01, 0.07, t) * (1.0 - smoothstep(0.14, 0.22, t)) * 0.14;
+          float leVerrier = exp(-pow((t - 0.34) * 145.0, 2.0)) * 0.54;
+          float lassellSheet = smoothstep(0.35, 0.42, t) * (1.0 - smoothstep(0.64, 0.72, t)) * (0.09 + 0.04 * sin(t * 240.0));
+          float aragoRing = exp(-pow((t - 0.72) * 180.0, 2.0)) * 0.28;
+          float adamsBase = exp(-pow((t - 0.89) * 165.0, 2.0));
+
+          float theta = atan(vLocalPos.y, vLocalPos.x);
+          float arcFraternite = exp(-pow(theta - 0.65, 2.0) * 10.0);
+          float arcEgalite = exp(-pow(theta - 1.12, 2.0) * 18.0);
+          float arcLiberte = exp(-pow(theta - 1.48, 2.0) * 24.0);
+          float arcCourage = exp(-pow(theta - 1.85, 2.0) * 30.0);
+          float resonantArcBoost = clamp(0.35 + 0.65 * (arcFraternite + arcEgalite + arcLiberte + arcCourage), 0.35, 1.0);
+
+          float microDust = 0.82 + 0.18 * sin(t * 520.0);
+          alpha = clamp((galleBand + leVerrier + lassellSheet + aragoRing + adamsBase * resonantArcBoost * 0.78) * microDust, 0.0, 0.85);
+          ringColor = mix(vec3(0.48, 0.74, 0.98), vec3(0.84, 0.94, 1.0), smoothstep(0.3, 0.9, t));
+        } else {
+          float wave1 = sin(t * 620.0) * 0.5 + 0.5;
+          float wave2 = cos(t * 210.0 + sin(t * 45.0) * 2.0) * 0.5 + 0.5;
+          float wave3 = sin(t * 1450.0) * 0.5 + 0.5;
+          float microStructure = 0.78 + 0.14 * wave1 + 0.08 * wave3;
+
+          // D Ring (0.00 - 0.085)
+          if (t < 0.085) {
+            alpha = smoothstep(0.0, 0.075, t) * 0.14 * microStructure;
+            ringColor = vec3(0.58, 0.53, 0.47);
+          }
+          // C Ring / Crepe Ring (0.085 - 0.305)
+          else if (t < 0.305) {
+            alpha = (0.26 + 0.12 * wave2) * microStructure;
+            ringColor = mix(vec3(0.64, 0.59, 0.52), vec3(0.76, 0.70, 0.60), wave1);
+          }
+          // B Ring (0.305 - 0.635): Dense, brilliant crystalline water ice
+          else if (t < 0.635) {
+            float bEdge = smoothstep(0.305, 0.33, t) * (1.0 - smoothstep(0.62, 0.635, t));
+            alpha = (0.82 + 0.16 * wave2) * bEdge * microStructure;
+            ringColor = mix(vec3(0.85, 0.77, 0.63), vec3(0.98, 0.93, 0.82), 0.45 + 0.55 * wave2);
+          }
+          // CASSINI DIVISION (0.635 - 0.695): 4,700 km resonance gap with faint Huygens ringlet
+          else if (t < 0.695) {
+            float huygensRinglet = exp(-pow((t - 0.652) * 220.0, 2.0)) * 0.28;
+            alpha = 0.03 + huygensRinglet;
+            ringColor = vec3(0.52, 0.48, 0.44);
+          }
+          // A Ring (0.695 - 0.945): With sharp Encke Gap (0.875) & Keeler Gap (0.936)
+          else if (t < 0.945) {
+            float enckeGap = 1.0 - smoothstep(0.011, 0.002, abs(t - 0.875)) * 0.96;
+            float keelerGap = 1.0 - smoothstep(0.004, 0.001, abs(t - 0.936)) * 0.98;
+            alpha = (0.62 + 0.08 * wave1) * enckeGap * keelerGap * microStructure;
+            ringColor = mix(vec3(0.80, 0.75, 0.66), vec3(0.91, 0.86, 0.78), wave2 * 0.5);
+          }
+          // F Ring (0.978 - 0.992): Narrow braided shepherd ring
+          else {
+            float fRing = exp(-pow((t - 0.984) * 160.0, 2.0));
+            alpha = fRing * 0.75;
+            ringColor = vec3(0.94, 0.91, 0.85);
+          }
         }
 
-        // Real-time shadow of Saturn cast onto the rings in View Space
+        // Real-time shadow of planet cast onto the rings in View Space
         vec3 toSun = normalize(uSunViewPosition - vViewPos);
         vec3 fromPlanet = vViewPos - uPlanetViewPosition;
         float proj = dot(fromPlanet, toSun);

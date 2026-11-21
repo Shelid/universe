@@ -46,7 +46,7 @@ export const POWER_PRESETS: Record<
     pips: { engines: 4, shields: 1, weapons: 1, lifeSupport: 2 },
   },
   DEFENSE: {
-    label: 'Combate',
+    label: 'Escudos',
     pips: { engines: 2, shields: 3, weapons: 2, lifeSupport: 1 },
   },
   SURVIVAL: {

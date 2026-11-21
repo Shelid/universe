@@ -1348,8 +1348,8 @@ export const SHIP_UPGRADE_DEFINITIONS: Record<
       { resourceId: 'platinum-group', amount: 1 },
       { resourceId: 'solar-plasma-core', amount: 1 },
     ],
-    getLevelBenefitLabel: (lvl) => `Dano & Saque Balístico: +${(lvl - 1) * 45}%`,
-    description: 'Destrói Meteoros de Cristal e Drones Sentinelas com mais dano e multiplica os minérios dropados!',
+    getLevelBenefitLabel: (lvl) => `Potência do Pulso: +${(lvl - 1) * 45}%`,
+    description: 'Potencializa a descarga e velocidade dos Canhões de Pulso de Plasma [F] da nave.',
   },
   warpDrive: {
     id: 'warpDrive',

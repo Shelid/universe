@@ -814,7 +814,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       [
                         { id: 'engines', label: 'Motores', color: 'bg-amber-400' },
                         { id: 'shields', label: 'Escudos', color: 'bg-indigo-400' },
-                        { id: 'weapons', label: 'Armas / Laser', color: 'bg-rose-400' },
+                        { id: 'weapons', label: 'Laser & Sistemas', color: 'bg-rose-400' },
                         { id: 'lifeSupport', label: 'Sup. Vida / O₂', color: 'bg-emerald-400' },
                       ] as const
                     ).map((sub) => {
@@ -2454,7 +2454,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 }))
               }
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 text-[10px] font-bold font-mono transition-colors"
-              title="Disparar Canhões de Pulso de Plasma em Meteoros de Cristal e Drones Sentinelas (Tecla F)"
+              title="Disparar Canhões de Pulso de Plasma (Tecla F)"
             >
               <Crosshair className="w-3 h-3" />
               <span>Pulso [F]</span>
