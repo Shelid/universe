@@ -1860,6 +1860,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         });
       } else if (e.code === 'KeyC') {
         lastManualOrbitTimestamp = 0;
+        const TAU = Math.PI * 2;
+        cockpitLookYaw = (((cockpitLookYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
+        externalLookYaw = (((externalLookYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
         cockpitLookTargetYaw = 0;
         cockpitLookTargetPitch = 0;
         cockpitFovTargetOffset = 0;
@@ -1976,7 +1979,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitLastLookY = e.clientY;
           cockpitLookTargetYaw = isWalking
             ? cockpitLookTargetYaw - dx * 0.0046
-            : THREE.MathUtils.clamp(cockpitLookTargetYaw + dx * 0.0046, -2.95, 2.95);
+            : cockpitLookTargetYaw + dx * 0.0046;
           cockpitLookTargetPitch = THREE.MathUtils.clamp(
             cockpitLookTargetPitch + (isWalking ? -dy : dy) * 0.0044,
             -1.32,
@@ -1993,13 +1996,11 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           cockpitLastLookX = e.clientX;
           cockpitLastLookY = e.clientY;
           lastManualOrbitTimestamp = performance.now();
-          externalLookTargetYaw = isWalking
-            ? externalLookTargetYaw - dx * 0.0055
-            : THREE.MathUtils.clamp(externalLookTargetYaw - dx * 0.0055, -2.85, 2.85);
+          externalLookTargetYaw = externalLookTargetYaw - dx * 0.0058;
           externalLookTargetPitch = THREE.MathUtils.clamp(
-            externalLookTargetPitch - dy * 0.0048,
-            isWalking ? -1.05 : -1.15,
-            isWalking ? 0.55 : 1.25
+            externalLookTargetPitch - dy * 0.005,
+            isWalking ? -1.05 : -1.48,
+            isWalking ? 0.55 : 1.48
           );
         }
       }
@@ -2134,6 +2135,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
     const handleDoubleClick = () => {
       if (stateRef.current.spacecraftControl.isActive) {
+        const TAU = Math.PI * 2;
+        cockpitLookYaw = (((cockpitLookYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
+        externalLookYaw = (((externalLookYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
         cockpitLookTargetYaw = 0;
         cockpitLookTargetPitch = 0;
         cockpitFovTargetOffset = 0;
@@ -2170,15 +2174,15 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       cockpitLastLookX = e.touches[0].clientX;
       cockpitLastLookY = e.touches[0].clientY;
       if (isCockpitLooking) {
-        cockpitLookTargetYaw = THREE.MathUtils.clamp(cockpitLookTargetYaw + dx * 0.0052, -2.95, 2.95);
+        cockpitLookTargetYaw = cockpitLookTargetYaw + dx * 0.0052;
         cockpitLookTargetPitch = THREE.MathUtils.clamp(cockpitLookTargetPitch + dy * 0.005, -1.32, 1.48);
       } else if (isExternalLooking) {
         lastManualOrbitTimestamp = performance.now();
-        externalLookTargetYaw = THREE.MathUtils.clamp(externalLookTargetYaw - dx * 0.0055, -2.85, 2.85);
+        externalLookTargetYaw = externalLookTargetYaw - dx * 0.0058;
         externalLookTargetPitch = THREE.MathUtils.clamp(
-          externalLookTargetPitch - dy * 0.0048,
-          -1.15,
-          1.25
+          externalLookTargetPitch - dy * 0.005,
+          -1.48,
+          1.48
         );
       }
     };
@@ -3138,6 +3142,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 0.0000028,
                 0.00175
               );
+              currentShipScale = initScale;
+              sr7.rootGroup.scale.setScalar(currentShipScale);
               const spawnDir = computeSunlitCameraOffsetDir(targetPos, selectedBody.id);
               const spawnDist =
                 selectedBody.category === 'galaxy'
@@ -3893,6 +3899,9 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         if (curRecenter !== prevRecenterTrigger) {
           prevRecenterTrigger = curRecenter;
           lastManualOrbitTimestamp = 0;
+          const TAU = Math.PI * 2;
+          cockpitLookYaw = (((cockpitLookYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
+          externalLookYaw = (((externalLookYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
           cockpitLookTargetYaw = 0;
           cockpitLookTargetPitch = 0;
           cockpitFovTargetOffset = 0;
@@ -4046,34 +4055,16 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             hasExternalCamQuat = true;
           }
 
-          // Smoothly auto-center chase look behind tail when actively piloting
-          const secondsSinceManualOrbit = (now - lastManualOrbitTimestamp) / 1000;
-          if (
-            !isExternalLooking &&
-            (isSteeringActively || wHeld || secondsSinceManualOrbit > 1.8)
-          ) {
-            const recenterSpeed = isSteeringActively || wHeld ? 4.8 : 2.2;
-            externalLookTargetYaw = THREE.MathUtils.lerp(
-              externalLookTargetYaw,
-              0,
-              Math.min(1, dt * recenterSpeed)
-            );
-            externalLookTargetPitch = THREE.MathUtils.lerp(
-              externalLookTargetPitch,
-              0,
-              Math.min(1, dt * recenterSpeed)
-            );
-          }
-
+          // Preserve user's 360° external orbit angle freely around the spacecraft (press C or double-click to recenter)
           externalLookYaw = THREE.MathUtils.lerp(
             externalLookYaw,
             externalLookTargetYaw,
-            Math.min(1, dt * 12)
+            Math.min(1, dt * 14)
           );
           externalLookPitch = THREE.MathUtils.lerp(
             externalLookPitch,
             externalLookTargetPitch,
-            Math.min(1, dt * 12)
+            Math.min(1, dt * 14)
           );
           externalZoomMult = THREE.MathUtils.lerp(
             externalZoomMult,
@@ -4089,8 +4080,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           const finalChaseQuat = _tmpQuat1.premultiply(externalCamQuat);
 
           const chaseDist = (7.95 + boostBlend * 1.65) * externalZoomMult * currentShipScale;
-          const chaseHeight = (1.56 + angVelPitch * 0.06) * currentShipScale;
-          const chaseSideLag = -angVelYaw * 0.14 * currentShipScale;
+          const chaseHeight = (1.35 + angVelPitch * 0.05) * currentShipScale;
+          const chaseSideLag = -angVelYaw * 0.12 * currentShipScale;
 
           _tmpV4.set(chaseSideLag, chaseHeight, chaseDist).applyQuaternion(finalChaseQuat);
           camera.position.copy(sr7.rootGroup.position).add(_tmpV4);
@@ -4103,9 +4094,10 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             );
           }
 
-          // Frame full starfighter from nose to aft thruster plumes cleanly above the bottom HUD strip
+          // Center orbit look-at target on spacecraft body so 360° view stays centered from front, sides, top, bottom & rear
+          const forwardFocusOffset = -0.55 * Math.cos(externalLookYaw) * currentShipScale;
           _tmpV5
-            .set(0, -0.04 * currentShipScale, -1.15 * currentShipScale)
+            .set(0, 0.06 * currentShipScale, forwardFocusOffset)
             .applyQuaternion(sr7.rootGroup.quaternion)
             .add(sr7.rootGroup.position);
           _tmpV6.set(0, 1, 0).applyQuaternion(finalChaseQuat).normalize();
@@ -4242,7 +4234,12 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           );
         }
         if (miningStep.minedUnitsThisTick > 0) {
-          spaceAudio.playMiningYieldChime();
+          const minedDef = miningStep.minedResourceId
+            ? MINING_RESOURCES[miningStep.minedResourceId]
+            : null;
+          spaceAudio.playMiningYieldChime(minedDef?.rarity ?? 'COMMON');
+          lastSurvivalSync = now;
+          cb.onSyncSurvivalState?.(postMiningSurv);
         }
 
         // Render 3D Orbital Laser Beam, Surface Ablation Crater & Helical Upward Ore Stream

@@ -1095,7 +1095,7 @@ export function App() {
           {!isHudHidden && (
             <button
               onClick={() => openMenuOnTab('hangar')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950/75 hover:bg-slate-900 border border-sky-400/40 text-xs font-semibold text-white backdrop-blur-xl shadow-lg transition-all"
+              className="menu-glass-surface flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:brightness-110 border border-sky-300/45 text-xs font-semibold text-white shadow-lg transition-all"
               title="Abrir Menu de Jogo, Modos, Hangar & Planetas (M)"
             >
               <Menu className="w-3.5 h-3.5 text-sky-300" />
@@ -1110,7 +1110,7 @@ export function App() {
         <div className="pointer-events-none fixed left-3 right-3 sm:left-auto sm:right-4 top-14 z-20 flex flex-col items-end gap-2">
           {/* Selected Satellite Quick Card */}
           {selectedBodyId === 'earth' && currentSelectedSatellite && (
-            <div className="pointer-events-auto w-full sm:w-80 max-w-sm bg-slate-950/90 backdrop-blur-2xl border border-sky-400/50 rounded-2xl p-3.5 shadow-2xl space-y-2">
+            <div className="menu-glass-surface pointer-events-auto w-full sm:w-80 max-w-sm border border-sky-300/45 rounded-2xl p-3.5 shadow-2xl space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase text-sky-400 flex items-center gap-1">
                   <Satellite className="w-3.5 h-3.5" />
@@ -1167,7 +1167,7 @@ export function App() {
           )}
 
           {isQuickCardOpen && (
-            <div className="pointer-events-auto w-full sm:w-80 max-w-sm bg-slate-950/85 backdrop-blur-2xl border border-white/15 rounded-2xl p-3.5 shadow-2xl space-y-2.5">
+            <div className="menu-glass-surface pointer-events-auto w-full sm:w-80 max-w-sm border border-sky-300/40 rounded-2xl p-3.5 shadow-2xl space-y-2.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-[10px] font-mono uppercase tracking-wider text-sky-400 truncate">

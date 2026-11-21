@@ -261,9 +261,9 @@ export const EarthSurfaceExplorerModal: React.FC<EarthSurfaceExplorerModalProps>
     (showNasaClouds && zoom > 9);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex flex-col animate-fadeIn">
+    <div className="menu-glass-surface fixed inset-0 z-50 flex flex-col animate-fadeIn">
       {/* Top Telemetry Header */}
-      <div className="h-14 border-b border-white/10 bg-slate-900/80 px-5 flex items-center justify-between">
+      <div className="menu-glass-header h-14 border-b border-sky-200/20 px-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400">
             <Globe className="w-4 h-4" />

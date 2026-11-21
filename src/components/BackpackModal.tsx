@@ -371,18 +371,18 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-5 bg-slate-950/78 backdrop-blur-lg animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-5 bg-slate-900/48 backdrop-blur-md animate-fadeIn"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
       data-testid="backpack-modal"
     >
-      <div className="relative w-full max-w-6xl h-[90vh] max-h-[820px] rounded-3xl border border-cyan-400/30 bg-[#070d19]/95 shadow-[0_24px_80px_rgba(2,6,23,0.92)] flex flex-col overflow-hidden text-slate-100">
+      <div className="menu-glass-surface relative w-full max-w-6xl h-[90vh] max-h-[820px] rounded-3xl border border-sky-300/40 flex flex-col overflow-hidden text-slate-100">
         {/* Subtle Top Decorative Gradient Accent */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/70 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-300/85 to-transparent" />
 
         {/* HEADER BAR */}
-        <div className="shrink-0 px-4 py-3.5 sm:px-6 border-b border-white/10 bg-slate-950/70 flex flex-wrap items-center justify-between gap-3">
+        <div className="menu-glass-header shrink-0 px-4 py-3.5 sm:px-6 border-b border-sky-200/20 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.2)]">
               <Backpack className="w-5 h-5 text-cyan-300" />
@@ -459,7 +459,7 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
         )}
 
         {/* FILTER TOOLBAR */}
-        <div className="shrink-0 px-4 py-2.5 sm:px-6 border-b border-white/10 bg-slate-900/50 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="menu-glass-subbar shrink-0 px-4 py-2.5 sm:px-6 border-b border-sky-200/15 flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [

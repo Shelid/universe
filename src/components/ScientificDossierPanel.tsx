@@ -143,9 +143,9 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
   ];
 
   return (
-    <aside className="w-full sm:w-[430px] md:w-[465px] max-h-[calc(100dvh-9rem)] sm:max-h-[calc(100vh-5.5rem)] bg-slate-950/92 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden z-30">
+    <aside className="menu-glass-surface w-full sm:w-[430px] md:w-[465px] max-h-[calc(100dvh-9rem)] sm:max-h-[calc(100vh-5.5rem)] border border-sky-300/35 rounded-2xl flex flex-col overflow-hidden z-30">
       {/* Header Banner */}
-      <div className="p-3.5 sm:p-4 border-b border-white/10 bg-gradient-to-r from-slate-900/95 via-slate-900/80 to-slate-950/90 relative">
+      <div className="menu-glass-header p-3.5 sm:p-4 border-b border-sky-200/20 relative">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -183,11 +183,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
               onToggleInterior(nextVal);
               if (nextVal) setActiveTab('INTERIOR');
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-              isExploringInterior
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${isExploringInterior
                 ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
                 : 'bg-white/5 border-white/15 text-slate-200 hover:bg-white/10 hover:border-sky-400/50'
-            }`}
+              }`}
           >
             <Layers className="w-3.5 h-3.5 text-amber-400" />
             <span>{isExploringInterior ? 'Fechar Corte Interno 3D' : 'Explorar Interior 3D'}</span>
@@ -206,11 +205,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
           {body.id === 'venus' && (
             <button
               onClick={() => onToggleVenusRadar(!venusRadarMode)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                venusRadarMode
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${venusRadarMode
                   ? 'bg-orange-500/25 border-orange-400 text-orange-200'
                   : 'bg-white/5 border-white/15 text-slate-200 hover:bg-white/10'
-              }`}
+                }`}
             >
               <Radio className="w-3.5 h-3.5 text-orange-400" />
               <span>
@@ -225,11 +223,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
                 onToggleSaturnRingDive(!saturnRingDiveMode);
                 if (!saturnRingDiveMode) setActiveTab('MOONS_RINGS');
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                saturnRingDiveMode
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${saturnRingDiveMode
                   ? 'bg-amber-500/25 border-amber-400 text-amber-200'
                   : 'bg-white/5 border-white/15 text-slate-200 hover:bg-white/10'
-              }`}
+                }`}
             >
               <Disc className="w-3.5 h-3.5 text-amber-300" />
               <span>
@@ -264,11 +261,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
                   onToggleInterior(true);
                 }
               }}
-              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                isActive
+              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] font-medium transition-all ${isActive
                   ? 'bg-sky-500/25 text-sky-200 border border-sky-400/50 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
-              }`}
+                }`}
             >
               {tab.icon}
               <span className="truncate">{tab.label}</span>
@@ -437,11 +433,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
                       <button
                         key={lm.id}
                         onClick={() => onSelectLandmark(isSelected ? null : lm)}
-                        className={`w-full text-left p-2.5 rounded-xl border transition-all ${
-                          isSelected
+                        className={`w-full text-left p-2.5 rounded-xl border transition-all ${isSelected
                             ? 'bg-amber-500/20 border-amber-400 text-white'
                             : 'bg-slate-900/60 border-white/10 text-slate-200 hover:border-amber-400/50'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-semibold text-amber-200">
@@ -499,11 +494,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
                       <div
                         key={cat}
                         onClick={() => onToggleSatelliteCategory(cat)}
-                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all text-xs ${
-                          enabled
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all text-xs ${enabled
                             ? 'bg-slate-950/90 border-white/20 text-white'
                             : 'bg-slate-950/30 border-white/5 text-slate-500'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-2">
                           <span
@@ -532,11 +526,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
                         <button
                           key={sat.id}
                           onClick={() => onSelectSatellite(isSel ? null : sat)}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
-                            isSel
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between transition-all ${isSel
                               ? 'bg-sky-500/25 border-sky-400 text-white'
                               : 'bg-slate-950/60 border-white/5 text-slate-300 hover:border-white/20'
-                          }`}
+                            }`}
                         >
                           <div className="truncate pr-2">
                             <span className="font-semibold">{sat.name.split('—')[0]}</span>
@@ -692,11 +685,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
               </div>
               <button
                 onClick={() => onToggleInterior(!isExploringInterior)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-all ${
-                  isExploringInterior
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-all ${isExploringInterior
                     ? 'bg-amber-500 text-slate-950'
                     : 'bg-slate-800 text-amber-300 border border-amber-400/40'
-                }`}
+                  }`}
               >
                 {isExploringInterior ? 'Corte 3D Ativo' : 'Ativar Corte 3D'}
               </button>
@@ -728,11 +720,10 @@ export const ScientificDossierPanel: React.FC<ScientificDossierPanelProps> = ({
                   <div
                     key={layer.id}
                     onClick={() => onSelectInteriorLayer(layer.id)}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
-                      isSelected
+                    className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${isSelected
                         ? 'bg-slate-900 border-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.2)]'
                         : 'bg-slate-900/65 border-white/10 hover:border-white/25'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">

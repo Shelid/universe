@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Atom,
@@ -157,6 +157,55 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   const [showTouchPad, setShowTouchPad] = useState(false);
   const [audioVol, setAudioVol] = useState(() => Math.round(spaceAudio.getMasterVolume() * 100));
 
+  // Discreet Mined Item Pickup Toast Feed (shows each extracted mineral with artwork, name & formula)
+  const [minedToasts, setMinedToasts] = useState<
+    Array<{
+      uid: number;
+      resourceId: MiningResourceId;
+      addedQty: number;
+      totalOwned: number;
+    }>
+  >([]);
+  const prevCargoRef = useRef<Partial<Record<MiningResourceId, number>>>({
+    ...survival.cargoInventory,
+  });
+  const toastUidRef = useRef(1);
+
+  useEffect(() => {
+    const prev = prevCargoRef.current;
+    const curr = survival.cargoInventory;
+    const newlyAdded: Array<{
+      uid: number;
+      resourceId: MiningResourceId;
+      addedQty: number;
+      totalOwned: number;
+    }> = [];
+
+    for (const res of MINING_RESOURCE_LIST) {
+      const prevQty = prev[res.id] ?? 0;
+      const currQty = curr[res.id] ?? 0;
+      if (currQty > prevQty) {
+        const uid = toastUidRef.current++;
+        newlyAdded.push({
+          uid,
+          resourceId: res.id,
+          addedQty: currQty - prevQty,
+          totalOwned: currQty,
+        });
+      }
+    }
+    prevCargoRef.current = { ...curr };
+
+    if (newlyAdded.length > 0) {
+      setMinedToasts((old) => [...old, ...newlyAdded].slice(-4));
+      const idsToRemove = new Set(newlyAdded.map((item) => item.uid));
+      const timer = window.setTimeout(() => {
+        setMinedToasts((old) => old.filter((item) => !idsToRemove.has(item.uid)));
+      }, 3400);
+      return () => window.clearTimeout(timer);
+    }
+  }, [survival.cargoInventory]);
+
   const steerRef = useRef<VirtualSteerInput>({
     pitch: 0,
     yaw: 0,
@@ -202,7 +251,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between select-none">
       {/* MINIMAL SHIP PILL BAR: ESSENTIAL CAMERA, CABIN WALK & SHIP MENU */}
       <div className="px-3 pt-3 sm:px-4 sm:pt-3 pr-28 sm:pr-36 flex flex-col items-start gap-1.5">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/72 backdrop-blur-xl border border-white/15 rounded-full px-2.5 py-1 shadow-xl">
+        <div className="menu-glass-surface pointer-events-auto flex flex-wrap items-center gap-1.5 border border-sky-300/35 rounded-full px-2.5 py-1 shadow-xl">
           <span
             className="w-2 h-2 rounded-full animate-pulse ml-0.5"
             style={{ backgroundColor: activeShipAccent, boxShadow: `0 0 8px ${activeShipAccent}` }}
@@ -412,23 +461,23 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
 
       {/* DEDICATED SHIP INFORMATION & SYSTEMS MENU DRAWER */}
       {isShipMenuOpen && (
-        <div className="pointer-events-auto fixed right-3 top-14 sm:top-16 bottom-16 w-[calc(100%-1.5rem)] sm:w-[410px] z-40 bg-slate-950/92 backdrop-blur-2xl border border-sky-500/35 rounded-2xl shadow-[0_16px_50px_rgba(2,6,23,0.95)] flex flex-col overflow-hidden">
+        <div className="menu-glass-surface pointer-events-auto fixed right-3 top-14 sm:top-16 bottom-16 w-[calc(100%-1.5rem)] sm:w-[410px] z-40 border border-sky-300/40 rounded-2xl flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-slate-900/50">
+          <div className="menu-glass-header px-4 py-3 border-b border-sky-200/20 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Rocket className="w-4 h-4 text-sky-400" />
+              <Rocket className="w-4 h-4 text-sky-300" />
               <div>
                 <h2 className="text-xs font-bold tracking-wider text-white font-mono uppercase">
                   CENTRAL — {activeShipName}
                 </h2>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-slate-200">
                   Sistemas, Sobrevivência, Mineração & Química, Radar
                 </p>
               </div>
             </div>
             <button
               onClick={() => setIsShipMenuOpen(false)}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-colors"
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white transition-colors"
               title="Fechar Menu"
             >
               <X className="w-4 h-4" />
@@ -436,7 +485,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           </div>
 
           {/* Menu Tabs */}
-          <div className="grid grid-cols-5 border-b border-white/10 text-[10px] font-mono bg-slate-900/30">
+          <div className="menu-glass-subbar grid grid-cols-5 border-b border-sky-200/15 text-[10px] font-mono">
             {[
               { id: 'systems' as const, label: 'Sistemas' },
               { id: 'survival' as const, label: 'Sobrev.' },
@@ -1672,6 +1721,64 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
         </div>
       )}
 
+      {/* DISCREET MINED ITEM PICKUP TOAST STACK (Appears smoothly as each mineral unit is extracted) */}
+      {minedToasts.length > 0 && (
+        <div
+          className="pointer-events-none fixed left-3.5 bottom-24 sm:bottom-20 z-30 flex flex-col gap-1.5 max-w-[270px]"
+          data-testid="mined-toast-stack"
+        >
+          {minedToasts.map((toast) => {
+            const def = MINING_RESOURCES[toast.resourceId];
+            return (
+              <div
+                key={toast.uid}
+                onClick={() => onOpenBackpack?.()}
+                className="menu-glass-surface pointer-events-auto cursor-pointer animate-mining-toast flex items-center gap-2.5 px-2.5 py-1.5 rounded-2xl border border-cyan-300/45 shadow-lg hover:border-cyan-200 transition-all"
+                style={{
+                  boxShadow: `0 10px 26px rgba(4, 12, 28, 0.55), inset 0 0 16px ${def.colorHex}26`,
+                }}
+                data-testid={`mined-toast-${toast.resourceId}`}
+                title="Clique para inspecionar na Mochila [I]"
+              >
+                <div
+                  className="relative w-9 h-9 rounded-xl overflow-hidden bg-[#060b16] border border-white/20 shrink-0"
+                  style={{ boxShadow: `0 0 12px ${def.colorHex}55` }}
+                >
+                  <img
+                    src={RESOURCE_IMAGE_PATHS[toast.resourceId]}
+                    alt={def.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 font-mono">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-[11px] font-bold text-white truncate">
+                      +{toast.addedQty} {def.name}
+                    </span>
+                    <span
+                      className="px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0"
+                      style={{
+                        backgroundColor: `${def.colorHex}28`,
+                        color: '#e0f2fe',
+                        border: `1px solid ${def.colorHex}66`,
+                      }}
+                    >
+                      {def.formula.split(' ')[0]}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[9px] text-slate-200 mt-0.5">
+                    <span>No porão: {toast.totalOwned} un</span>
+                    <span className="text-emerald-300 font-semibold">
+                      +{def.creditValue * toast.addedQty} CR
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* CLEAN SLIM BOTTOM FLIGHT PILL + SURVIVAL MINI-BAR (Leaves ~93% of Viewport Unobstructed!) */}
       <div className="pb-3 px-3 flex flex-col items-center gap-1.5">
         {controlState.walkingInside &&
@@ -1699,7 +1806,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           })()}
 
         {!controlState.walkingInside && (
-          <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 bg-slate-950/75 backdrop-blur-xl border border-white/10 rounded-full px-3 py-1 shadow-lg text-[10px] font-mono">
+          <div className="menu-glass-surface pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 border border-sky-300/30 rounded-full px-3 py-1 shadow-lg text-[10px] font-mono">
             <button
               onClick={() => {
                 setActiveTab('survival');
@@ -1817,7 +1924,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
         )}
 
         {controlState.walkingInside ? (
-          <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-slate-950/82 backdrop-blur-xl border border-emerald-400/35 rounded-full px-4 py-1.5 shadow-xl text-[11px] font-mono text-slate-200">
+          <div className="menu-glass-surface pointer-events-auto flex flex-wrap items-center justify-center gap-2 sm:gap-3 border border-emerald-400/45 rounded-full px-4 py-1.5 shadow-xl text-[11px] font-mono text-slate-100">
             <span className="text-emerald-300 font-bold">CABINE (A PÉ)</span>
             <span className="text-white/25">·</span>
             <span>W/A/S/D Mover</span>
@@ -1839,7 +1946,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             </button>
           </div>
         ) : (
-          <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-slate-950/78 backdrop-blur-xl border border-white/15 rounded-full px-3.5 py-1.5 shadow-xl max-w-full">
+          <div className="menu-glass-surface pointer-events-auto flex items-center gap-2 sm:gap-3 border border-sky-300/35 rounded-full px-3.5 py-1.5 shadow-xl max-w-full">
             <div className="text-[11px] font-mono text-white font-bold whitespace-nowrap">
               {telemetry.speedFormatted}
             </div>

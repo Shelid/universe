@@ -1315,25 +1315,39 @@ class SpaceAudioEngine {
     src.start(now, 0.05, 0.28);
   }
 
-  public playMiningYieldChime(): void {
+  public playMiningYieldChime(
+    rarity: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EXOTIC' = 'COMMON'
+  ): void {
     this.unlock();
     if (!this.ctx || !this.compressor || this.muted) return;
     const now = this.ctx.currentTime;
-    [587.33, 880, 1174.66].forEach((freq, i) => {
+    const chord =
+      rarity === 'EXOTIC'
+        ? [659.25, 987.77, 1318.51, 1760]
+        : rarity === 'RARE'
+          ? [587.33, 880, 1174.66, 1567.98]
+          : rarity === 'UNCOMMON'
+            ? [523.25, 783.99, 1046.5]
+            : [493.88, 739.99, 987.77];
+
+    chord.forEach((freq, i) => {
       if (!this.ctx || !this.compressor) return;
-      const t = now + i * 0.045;
+      const t = now + i * 0.042;
       const osc = this.ctx.createOscillator();
-      osc.type = 'triangle';
+      osc.type = i === chord.length - 1 ? 'sine' : 'triangle';
       osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.015, t + 0.22);
+
       const g = this.ctx.createGain();
       g.gain.setValueAtTime(0.001, t);
-      g.gain.linearRampToValueAtTime(0.055, t + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.24);
+      g.gain.linearRampToValueAtTime(0.072, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0004, t + 0.28);
+
       osc.connect(g);
       g.connect(this.compressor);
       if (this.echoBus) g.connect(this.echoBus);
       osc.start(t);
-      osc.stop(t + 0.26);
+      osc.stop(t + 0.3);
     });
   }
 

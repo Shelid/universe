@@ -67,35 +67,35 @@ const DESTINATION_OPTIONS: Array<{
   icon: React.FC<{ className?: string }>;
   accentClass: string;
 }> = [
-  {
-    id: 'EXPLORE',
-    title: 'Explorar Universo',
-    subtitle: 'Planetas, Luas & Via Láctea 1:1',
-    icon: Globe,
-    accentClass: 'border-sky-400 bg-sky-500/20 text-sky-100 shadow-[0_0_20px_rgba(56,189,248,0.22)]',
-  },
-  {
-    id: 'STATION_ORBIT',
-    title: 'Estação Orbital',
-    subtitle: 'Vista Externa 3D em Órbita da Terra',
-    icon: Satellite,
-    accentClass: 'border-cyan-400 bg-cyan-500/20 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.24)]',
-  },
-  {
-    id: 'SPACECRAFT_COCKPIT',
-    title: 'Pilotar Nave',
-    subtitle: 'Decolar na Cabine 4K 6-DOF',
-    icon: Rocket,
-    accentClass: 'border-amber-400 bg-amber-500/20 text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.22)]',
-  },
-  {
-    id: 'EVA_STATION',
-    title: 'Astronauta (EVA)',
-    subtitle: 'Flutuar no Exterior da Estação',
-    icon: User,
-    accentClass: 'border-emerald-400 bg-emerald-500/20 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.22)]',
-  },
-];
+    {
+      id: 'EXPLORE',
+      title: 'Explorar Universo',
+      subtitle: 'Planetas, Luas & Via Láctea 1:1',
+      icon: Globe,
+      accentClass: 'border-sky-400 bg-sky-500/20 text-sky-100 shadow-[0_0_20px_rgba(56,189,248,0.22)]',
+    },
+    {
+      id: 'STATION_ORBIT',
+      title: 'Estação Orbital',
+      subtitle: 'Vista Externa 3D em Órbita da Terra',
+      icon: Satellite,
+      accentClass: 'border-cyan-400 bg-cyan-500/20 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.24)]',
+    },
+    {
+      id: 'SPACECRAFT_COCKPIT',
+      title: 'Pilotar Nave',
+      subtitle: 'Decolar na Cabine 4K 6-DOF',
+      icon: Rocket,
+      accentClass: 'border-amber-400 bg-amber-500/20 text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.22)]',
+    },
+    {
+      id: 'EVA_STATION',
+      title: 'Astronauta (EVA)',
+      subtitle: 'Flutuar no Exterior da Estação',
+      icon: User,
+      accentClass: 'border-emerald-400 bg-emerald-500/20 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.22)]',
+    },
+  ];
 
 const StatBar: React.FC<{ label: string; value: number; color: string }> = ({
   label,
@@ -175,14 +175,14 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
     <div className="pointer-events-none fixed inset-0 z-40 flex flex-col sm:flex-row justify-between">
       {/* Subtle left studio vignette gradient so Hangar text reads crisply while 3D Galpão gleams on right */}
       <div
-        className="pointer-events-none absolute inset-y-0 left-0 w-full sm:w-[540px] bg-gradient-to-r from-[#040812]/88 via-[#040812]/48 to-transparent"
+        className="pointer-events-none absolute inset-y-0 left-0 w-full sm:w-[540px] bg-gradient-to-r from-slate-900/55 via-slate-900/25 to-transparent"
         aria-hidden="true"
       />
 
       {/* Left AAA Pre-Game Hangar Command Menu */}
-      <aside className="pointer-events-auto relative z-10 w-full sm:w-[430px] lg:w-[465px] h-full sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:my-4 sm:ml-4 bg-[#050a16]/88 sm:bg-[#050a16]/84 backdrop-blur-2xl border-r sm:border border-sky-400/30 sm:rounded-3xl shadow-[0_24px_90px_rgba(0,0,0,0.92)] flex flex-col overflow-hidden">
+      <aside className="menu-glass-surface pointer-events-auto relative z-10 w-full sm:w-[430px] lg:w-[465px] h-full sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:my-4 sm:ml-4 backdrop-blur-2xl border-r sm:border border-sky-300/40 sm:rounded-3xl flex flex-col overflow-hidden">
         {/* Game Brand Header */}
-        <div className="px-4 sm:px-5 py-3.5 border-b border-white/10 bg-gradient-to-r from-slate-950/90 via-sky-950/35 to-slate-950/90 flex items-center justify-between gap-3">
+        <div className="menu-glass-header px-4 sm:px-5 py-3.5 border-b border-sky-200/20 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <UniverseLogo
               size="sm"
@@ -210,11 +210,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
             </button>
             <button
               onClick={onToggleAudioMuted}
-              className={`p-2 rounded-xl border transition-all shrink-0 ${
-                isAudioMuted
+              className={`p-2 rounded-xl border transition-all shrink-0 ${isAudioMuted
                   ? 'bg-slate-900/90 border-white/10 text-slate-400 hover:text-white'
                   : 'bg-emerald-500/18 border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/30'
-              }`}
+                }`}
               title={isAudioMuted ? 'Ativar Áudio Espacial' : 'Silenciar Áudio'}
             >
               {isAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
@@ -223,7 +222,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
         </div>
 
         {/* Hangar Navigation Tabs */}
-        <div className="grid grid-cols-4 gap-1 px-3 py-2 border-b border-white/10 bg-slate-950/65">
+        <div className="menu-glass-subbar grid grid-cols-4 gap-1 px-3 py-2 border-b border-sky-200/15">
           {([
             { id: 'mission', label: 'Missão', icon: Globe },
             { id: 'ships', label: 'Naves', icon: Rocket },
@@ -237,11 +236,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => handleTabSelect(tab.id)}
-                  className={`py-2 px-1.5 rounded-xl border text-[11px] font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 transition-all ${
-                    active
+                  className={`py-2 px-1.5 rounded-xl border text-[11px] font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 transition-all ${active
                       ? 'bg-sky-500/22 border-sky-400/70 text-white shadow-[0_0_14px_rgba(56,189,248,0.2)]'
                       : 'bg-white/[0.03] border-white/5 text-slate-400 hover:text-white hover:bg-white/10'
-                  }`}
+                    }`}
                 >
                   <Icon className={`w-3.5 h-3.5 ${active ? 'text-sky-300' : ''}`} />
                   <span className="truncate">{tab.label}</span>
@@ -268,11 +266,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                       <button
                         key={opt.id}
                         onClick={() => onChangeStartDestination(opt.id)}
-                        className={`text-left p-2.5 rounded-2xl border transition-all flex flex-col gap-1 ${
-                          active
+                        className={`text-left p-2.5 rounded-2xl border transition-all flex flex-col gap-1 ${active
                             ? opt.accentClass
                             : 'bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/25 hover:bg-slate-900'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <Icon className="w-4 h-4" />
@@ -356,11 +353,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                         onSelectShip(ship.id);
                         onChangeLobbyFocusTarget('SHIP');
                       }}
-                      className={`w-full p-3 rounded-2xl border text-left transition-all space-y-2 ${
-                        active
+                      className={`w-full p-3 rounded-2xl border text-left transition-all space-y-2 ${active
                           ? 'bg-slate-900 border-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.22)]'
                           : 'bg-slate-950/75 border-white/10 hover:border-white/25'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -413,11 +409,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                         onSelectCharacter(char.id);
                         onChangeLobbyFocusTarget('CHARACTER');
                       }}
-                      className={`w-full p-3 rounded-2xl border text-left transition-all space-y-2 ${
-                        active
+                      className={`w-full p-3 rounded-2xl border text-left transition-all space-y-2 ${active
                           ? 'bg-slate-900 border-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.22)]'
                           : 'bg-slate-950/75 border-white/10 hover:border-white/25'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -469,11 +464,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                         invertPitchArrows: !flightControlPrefs.invertPitchArrows,
                       })
                     }
-                    className={`w-full px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 text-xs transition-all ${
-                      flightControlPrefs.invertPitchArrows
+                    className={`w-full px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 text-xs transition-all ${flightControlPrefs.invertPitchArrows
                         ? 'bg-sky-500/20 border-sky-400/60 text-sky-100'
                         : 'bg-slate-950/75 border-white/10 text-slate-200'
-                    }`}
+                      }`}
                   >
                     <div>
                       <div className="font-semibold">Subir / Descer (Setas ↑ / ↓)</div>
@@ -495,11 +489,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                         invertRollArrows: !flightControlPrefs.invertRollArrows,
                       })
                     }
-                    className={`w-full px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 text-xs transition-all ${
-                      flightControlPrefs.invertRollArrows
+                    className={`w-full px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 text-xs transition-all ${flightControlPrefs.invertRollArrows
                         ? 'bg-amber-500/20 border-amber-400/60 text-amber-100'
                         : 'bg-slate-950/75 border-white/10 text-slate-200'
-                    }`}
+                      }`}
                   >
                     <div>
                       <div className="font-semibold">Inclinar Asas 360° (Setas ← / →)</div>
@@ -543,11 +536,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                       <button
                         key={q.id}
                         onClick={() => onChangeQuality(q.id)}
-                        className={`py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${
-                          active
+                        className={`py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${active
                             ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100'
                             : 'bg-slate-950/75 border-white/10 text-slate-300 hover:border-white/25'
-                        }`}
+                          }`}
                       >
                         {q.label}
                       </button>
@@ -591,11 +583,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                     <button
                       key={item.label}
                       onClick={item.toggle}
-                      className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${
-                        item.val
+                      className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${item.val
                           ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
                           : 'bg-slate-950/75 border-white/10 text-slate-400'
-                      }`}
+                        }`}
                     >
                       {item.val ? '✓ ' : ''}
                       {item.label}
@@ -608,7 +599,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
         </div>
 
         {/* Hero Launch Action */}
-        <div className="p-4 sm:px-5 sm:py-4 border-t border-white/10 bg-slate-950/92 space-y-2">
+        <div className="menu-glass-subbar p-4 sm:px-5 sm:py-4 border-t border-sky-200/20 space-y-2">
           <button
             onClick={onStartGame}
             className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-sky-400 via-cyan-300 to-sky-400 hover:brightness-110 active:scale-[0.99] text-slate-950 font-display font-bold text-sm tracking-wider uppercase flex items-center justify-center gap-2.5 shadow-[0_0_32px_rgba(56,189,248,0.45)] transition-all"
@@ -616,7 +607,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
             <Play className="w-4 h-4 fill-slate-950" />
             <span>Iniciar Missão</span>
           </button>
-          <p className="text-[10px] font-mono text-center text-slate-400 truncate">
+          <p className="text-[10px] font-mono text-center text-slate-200 truncate">
             {activeShip.name} · {activeChar.name} · {activeDest.title}
           </p>
         </div>
@@ -624,7 +615,7 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
 
       {/* Top-Right Galpão Camera Inspection & Pressurization Pill */}
       <div className="pointer-events-none hidden md:flex flex-col items-end justify-between p-5 z-10">
-        <div className="pointer-events-auto bg-slate-950/78 backdrop-blur-xl border border-white/12 rounded-2xl px-4 py-2.5 text-right shadow-xl space-y-2">
+        <div className="menu-glass-surface pointer-events-auto border border-sky-300/35 rounded-2xl px-4 py-2.5 text-right space-y-2">
           <div>
             <div className="text-[10px] font-mono uppercase tracking-widest text-amber-300">
               GALPÃO 01 · SETOR DE PREPARAÇÃO
@@ -651,11 +642,10 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                 <button
                   key={cam.id}
                   onClick={() => onChangeLobbyFocusTarget(cam.id)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-semibold transition-all ${
-                    active
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-semibold transition-all ${active
                       ? 'bg-sky-500/25 border-sky-400 text-sky-100'
                       : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'
-                  }`}
+                    }`}
                 >
                   <Icon className="w-3 h-3" />
                   <span>{cam.label}</span>

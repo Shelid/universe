@@ -231,13 +231,17 @@ export const CELESTIAL_MINING_PROFILES: Record<string, CatalogCelestialMiningPro
   },
   earth: {
     bodyId: 'earth',
-    bodyTypeLabel: 'Planeta Natal Protegido',
-    extractable: false,
-    restrictionReason: 'Tratado Orbital da Terra: ablação por laser na atmosfera/biosfera é proibida.',
-    extractionMethod: 'Protegido — reabasteça ou venda minérios na Estação Orbital',
-    hardnessFactor: 1,
+    bodyTypeLabel: 'Planeta Telúrico Oceânico & Crosta Silicatada',
+    extractable: true,
+    extractionMethod: 'Micro-ablação orbital controlada em cordilheiras basálticas e captação de gelo estratosférico',
+    hardnessFactor: 0.85,
     laserColorHex: '#38bdf8',
-    yields: [],
+    yields: [
+      { resourceId: 'water-ice', weight: 0.36, purity: 0.96, veinNote: 'Cristais de gelo polar e alta troposfera' },
+      { resourceId: 'silicate-regolith', weight: 0.30, purity: 0.90, veinNote: 'Escudos continentais de quartzo-basalto' },
+      { resourceId: 'iron-nickel', weight: 0.20, purity: 0.88, veinNote: 'Formações ferríferas bandadas' },
+      { resourceId: 'titanium-ilmenite', weight: 0.14, purity: 0.86, veinNote: 'Areias minerais ricas em ilmenita' },
+    ],
   },
   mercury: {
     bodyId: 'mercury',

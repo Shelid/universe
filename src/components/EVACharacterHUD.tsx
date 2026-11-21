@@ -98,7 +98,7 @@ export const EVACharacterHUD: React.FC<EVACharacterHUDProps> = ({
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-2.5 sm:p-4">
       {/* Top EVA Action Pill */}
       <div className="flex flex-col items-start gap-1.5 pt-0.5 pr-28">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/78 backdrop-blur-xl border border-cyan-400/35 rounded-full px-3 py-1.5 shadow-xl">
+        <div className="menu-glass-surface pointer-events-auto flex flex-wrap items-center gap-1.5 border border-cyan-300/45 rounded-full px-3 py-1.5 shadow-xl">
           <div className="flex items-center gap-1.5 pr-2 border-r border-white/10">
             <User className="w-3.5 h-3.5 text-cyan-400" />
             <span className="text-[11px] font-mono font-bold text-cyan-100 uppercase">

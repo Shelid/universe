@@ -35,10 +35,10 @@ export const MissionsExplorerModal: React.FC<MissionsExplorerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xl flex items-center justify-center p-4 animate-fadeIn">
-      <div className="w-full max-w-5xl h-[82vh] bg-slate-900/95 border border-white/15 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-900/48 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+      <div className="menu-glass-surface w-full max-w-5xl h-[82vh] border border-sky-300/35 rounded-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 bg-slate-950/80 flex items-center justify-between">
+        <div className="menu-glass-header px-6 py-4 border-b border-sky-200/20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400">
               <Rocket className="w-5 h-5" />

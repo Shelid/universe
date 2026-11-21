@@ -255,10 +255,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-5 bg-slate-950/78 backdrop-blur-lg">
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-[#060b16]/95 border border-sky-400/35 rounded-3xl shadow-[0_28px_100px_rgba(0,0,0,0.92)] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-5 bg-slate-900/48 backdrop-blur-md">
+      <div className="menu-glass-surface relative w-full max-w-4xl max-h-[90vh] border border-sky-300/40 rounded-3xl flex flex-col overflow-hidden">
         {/* Tactical HUD Header */}
-        <div className="px-4 sm:px-6 py-3.5 border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900/90 to-slate-950 flex flex-wrap items-center justify-between gap-3">
+        <div className="menu-glass-header px-4 sm:px-6 py-3.5 border-b border-sky-200/20 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center shadow-[0_0_20px_rgba(56,189,248,0.2)]">
               <Rocket className="w-5 h-5 text-sky-300" />
