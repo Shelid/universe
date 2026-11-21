@@ -12,6 +12,7 @@ import {
 } from '../types/astronomy';
 import {
   CatalogOrbitalHotspot,
+  ENERGY_MINERAL_YIELDS,
   getBodyMiningProfile,
   MINING_RECIPES_BY_ID,
   MINING_RESOURCES,
@@ -288,14 +289,16 @@ export function stepSurvivalSimulation(
     refuelSource = 'ORBITAL_STATION';
   } else if (isGasGiant && p.nearestSurfaceRatio < 4.5 && p.mode === 'SPACECRAFT') {
     refuelSource = 'GAS_GIANT_SCOOP';
-  } else if (p.sunDistanceUnits < 32 && !p.inPlanetaryShadow) {
+  } else if (p.sunDistanceUnits < 72 && !p.inPlanetaryShadow) {
     refuelSource = 'SOLAR_CORONA';
   }
 
-  // 2. Solar irradiance & planetary shadow physics
+  // 2. Solar irradiance & inverse-distance solar charging (1 AU = 149.59787 units)
+  // The closer to the Sun, the faster the photovoltaic & thermal collectors recharge ship energy!
+  const sunDistAU = Math.max(0.035, p.sunDistanceUnits / 149.59787);
   const solarFluxKw = p.inPlanetaryShadow
     ? 2
-    : Math.min(180, Math.max(4, 180 / Math.pow(Math.max(1, p.sunDistanceUnits / 24), 1.35)));
+    : Math.min(480, Math.max(4, Math.round(98 / Math.pow(sunDistAU, 1.38))));
 
   const lifePips = state.powerPips.lifeSupport;
   const shieldPips = state.powerPips.shields;
@@ -317,8 +320,8 @@ export function stepSurvivalSimulation(
       warpEnergy -= 3.9 * ecoMult * warpEfficiency * dt;
       fuel -= 0.34 * ecoMult * fuelEfficiency * dt;
     } else {
-      // Very subtle reactor trickle so Warp Fuel mainly requires mining & combining Células de Dobra D-³He
-      const warpRegen = (solarFluxKw > 55 ? 0.12 : 0.04) + engPips * 0.025;
+      // Subtle reactor trickle + faster solar corona warp induction when close to the Sun
+      const warpRegen = (solarFluxKw > 140 ? 0.26 : solarFluxKw > 75 ? 0.11 : 0.04) + engPips * 0.025;
       warpEnergy = Math.min(100, warpEnergy + warpRegen * dt);
     }
   } else if (p.mode === 'EXPLORE') {
@@ -337,12 +340,16 @@ export function stepSurvivalSimulation(
     fuel = Math.min(100, fuel + 4.6 * dt);
     warpEnergy = Math.min(100, warpEnergy + 1.35 * dt);
   } else if (refuelSource === 'SOLAR_CORONA') {
-    battery = Math.min(100, battery + 12 * dt);
-    warpEnergy = Math.min(100, warpEnergy + 1.15 * dt);
+    // Close solar approach (< 0.48 AU): accelerated solar collector recharge scaling inversely with distance!
+    const coronaProximityBoost = THREE_CLAMP((72 - p.sunDistanceUnits) / 14, 0.8, 4.8);
+    battery = Math.min(100, battery + 5.5 * coronaProximityBoost * dt);
+    warpEnergy = Math.min(100, warpEnergy + 0.85 * coronaProximityBoost * dt);
   }
 
-  // 5. Ship Energy (Battery & Reactor Power Bus Balance)
-  const batteryGen = solarFluxKw * 0.038 + (fuel > 1 ? 0.68 : 0.08);
+  // 5. Ship Energy (Photovoltaic Solar Collectors + Reactor Power Bus Balance)
+  // Closer to the Sun -> higher solarFluxKw -> much faster battery recharge!
+  const solarChargeRate = p.inPlanetaryShadow ? 0 : Math.pow(solarFluxKw / 95, 1.12) * 2.15;
+  const batteryGen = solarChargeRate + (fuel > 1 ? 0.55 : 0.08);
   const batteryLoad =
     0.32 +
     (p.mode === 'SPACECRAFT' ? Math.abs(p.throttle) * 0.45 : 0) +
@@ -863,16 +870,20 @@ export function stepMiningSimulation(
     (0.46 * weaponsMult * proximityFactor * hotspotMult) / hardness;
   const beamPowerKw = Math.round(320 * weaponsMult * proximityFactor);
 
-  // Energy & thermal load during active laser ablation
-  const batteryDrain = (1.35 + prev.powerPips.weapons * 0.22) * dt;
+  // Energy & thermal load during active laser ablation (or direct Solar Corona energy harvesting!)
+  const isSolarSiphon = bodyId === 'sun';
+  const batteryDrain = isSolarSiphon
+    ? -16.5 * dt // Siphoning the Sun directly recharges Ship Energy rapidly!
+    : (1.15 + prev.powerPips.weapons * 0.18) * dt;
   const radiatorMitigation = prev.radiatorsDeployed ? 0.42 : 1.0;
-  const heatGain = 4.6 * weaponsMult * radiatorMitigation * dt;
+  const heatGain = (isSolarSiphon ? 6.2 : 4.2) * weaponsMult * radiatorMitigation * dt;
 
   let nextProgress = prev.mining.extractionProgress01 + extractionRatePerSec * dt;
   let minedUnitsThisTick = 0;
   let minedResourceId: MiningResourceId | null = null;
   const nextInventory = { ...prev.cargoInventory };
   let nextTotalMined = prev.totalMinedUnits;
+  let minedEnergyBonusPct = 0;
 
   const activeRes =
     matchedHotspot?.resourceId ??
@@ -893,6 +904,14 @@ export function stepMiningSimulation(
       nextTotalMined += whole;
       minedUnitsThisTick = whole;
       minedResourceId = picked;
+
+      // Mining energy resources automatically channels thermoelectric/fusion energy into the ship's battery!
+      const energyYield = ENERGY_MINERAL_YIELDS[picked];
+      if (energyYield) {
+        minedEnergyBonusPct = energyYield.batteryPct * 0.38 * whole;
+      } else {
+        minedEnergyBonusPct = 3.5 * whole;
+      }
     } else {
       nextProgress = 0.99;
     }
@@ -901,11 +920,15 @@ export function stepMiningSimulation(
   const resName = MINING_RESOURCES[minedResourceId ?? activeRes].name;
   const nextReactorTemp = Math.min(138, prev.reactorTempC + heatGain);
   const nextHullTemp = Math.min(115, prev.hullTempC + heatGain * 0.28);
+  const nextBattery = Math.max(
+    0,
+    Math.min(100, Number((prev.batteryPercent - batteryDrain + minedEnergyBonusPct).toFixed(2)))
+  );
 
   return {
     state: {
       ...prev,
-      batteryPercent: Math.max(0, Number((prev.batteryPercent - batteryDrain).toFixed(2))),
+      batteryPercent: nextBattery,
       reactorTempC: Number(nextReactorTemp.toFixed(1)),
       hullTempC: Number(nextHullTemp.toFixed(1)),
       cargoInventory: nextInventory,
@@ -924,9 +947,11 @@ export function stepMiningSimulation(
         extractionRatePerSec: Number(extractionRatePerSec.toFixed(2)),
         extractionProgress01: Number(nextProgress.toFixed(3)),
         lastMinedResourceId: minedResourceId ?? prev.mining.lastMinedResourceId,
-        statusMessage: matchedHotspot
-          ? `VEIO RICO (${hotspotMult.toFixed(1)}x): ${matchedHotspot.label} · ${resName}`
-          : `Extraindo ${resName} de ${bodyName}...`,
+        statusMessage: isSolarSiphon
+          ? `SIFÃO SOLAR ATIVO (+16%/s Energia): Coletando ${resName}...`
+          : matchedHotspot
+            ? `VEIO RICO (${hotspotMult.toFixed(1)}x): ${matchedHotspot.label} · ${resName}`
+            : `Extraindo ${resName} de ${bodyName}...`,
       },
     },
     minedUnitsThisTick,
@@ -1085,5 +1110,50 @@ export function discardCargoUnitAction(
   return {
     ...state,
     cargoInventory: nextInventory,
+  };
+}
+
+export function consumeMineralForEnergyAction(
+  state: SurvivalResourcesState,
+  resourceId: MiningResourceId
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const owned = state.cargoInventory[resourceId] ?? 0;
+  if (owned <= 0) {
+    return { ok: false, state, message: 'Sem unidades desse recurso energético no porão.' };
+  }
+  const energyYield = ENERGY_MINERAL_YIELDS[resourceId];
+  if (!energyYield) {
+    return {
+      ok: false,
+      state,
+      message: 'Este minério requer combinação na Máquina de Bordo para gerar energia.',
+    };
+  }
+  const def = MINING_RESOURCES[resourceId];
+  const nextInventory = { ...state.cargoInventory };
+  const rem = owned - 1;
+  if (rem <= 0) delete nextInventory[resourceId];
+  else nextInventory[resourceId] = rem;
+
+  const nextBattery = Math.min(100, Number((state.batteryPercent + energyYield.batteryPct).toFixed(1)));
+  const nextWarp = Math.min(
+    100,
+    Number((state.warpEnergyPercent + (energyYield.warpPct ?? 0)).toFixed(1))
+  );
+  const nextFuel = Math.min(
+    100,
+    Number((state.fuelPercent + (energyYield.fuelPct ?? 0)).toFixed(1))
+  );
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cargoInventory: nextInventory,
+      batteryPercent: nextBattery,
+      warpEnergyPercent: nextWarp,
+      fuelPercent: nextFuel,
+    },
+    message: `${def.name} convertido no reator: ${energyYield.label} (Energia em ${Math.round(nextBattery)}%)`,
   };
 }

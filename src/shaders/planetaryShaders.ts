@@ -524,11 +524,16 @@ export function createPlanetSurfaceMaterial(
           vec3 cloudDayColor = mix(vec3(0.98, 0.99, 1.0), vec3(1.0, 0.78, 0.58), twilightFactor * 0.45);
           albedo = mix(albedo, cloudDayColor, cloudDensity * 0.92);
 
-          // 4. Dual-Lobe Ocean Specular Sun-Glint (Silky water sheen + crisp solar reflection)
+          // 4. Triple-Lobe Physically-Based Ocean Specular Sun-Glint (Solar gold core + broad sky sheen + micro-wave sparkle)
           float oceanMask = isOcean * (1.0 - cloudDensity * 0.88);
-          float broadGlint = pow(max(dot(N, H), 0.0), 16.0) * 0.24;
-          float sharpGlint = pow(max(dot(N, H), 0.0), 76.0) * 0.52;
-          extraSpecular = vec3(0.75, 0.90, 1.0) * (broadGlint + sharpGlint) * oceanMask * baseDayFactor;
+          float broadGlint = pow(max(dot(N, H), 0.0), 14.0) * 0.26;
+          float midGlint = pow(max(dot(N, H), 0.0), 64.0) * 0.48;
+          float solarCoreGlint = pow(max(dot(N, H), 0.0), 240.0) * 0.95;
+          extraSpecular =
+            (vec3(0.68, 0.88, 1.0) * (broadGlint + midGlint) +
+             vec3(1.0, 0.96, 0.86) * solarCoreGlint) *
+            oceanMask *
+            baseDayFactor;
           specularStrength = 0.0;
 
           // 5. 4K NASA Black Marble City Lights on the Night Side (Zero fake polka-dots!)
@@ -541,16 +546,18 @@ export function createPlanetSurfaceMaterial(
             nightEmission = cityGold * crispLights * nightMask * (1.0 - cloudDensity * 0.72) * 2.1;
           }
 
-          // 6. Rayleigh Sky-Blue Atmospheric Scattering across sunlit globe & limb
-          vec3 rayleighSky = vec3(0.20, 0.60, 1.0);
-          float limbScatter = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.35);
-          float sunwardHorizon = smoothstep(-0.28, 0.45, baseNdotL);
+          // 6. Rayleigh & Mie Atmospheric Scattering + Backlit Crescent Halo across sunlit globe & limb
+          vec3 rayleighSky = vec3(0.22, 0.62, 1.0);
+          float limbScatter = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.25);
+          float sunwardHorizon = smoothstep(-0.32, 0.48, baseNdotL);
+          float forwardMie = pow(max(dot(V, -L), 0.0), 3.5) * limbScatter * smoothstep(-0.45, 0.25, baseNdotL);
 
           vec3 litEarth =
-            albedo * (0.035 + 0.965 * mix(baseDayFactor, dayFactor, 0.65)) +
+            albedo * (0.025 + 1.02 * mix(baseDayFactor, dayFactor, 0.72)) +
             extraSpecular +
-            rayleighSky * limbScatter * sunwardHorizon * 0.78 +
-            vec3(0.95, 0.48, 0.20) * twilightFactor * (0.12 + cloudDensity * 0.14) +
+            rayleighSky * limbScatter * sunwardHorizon * 0.86 +
+            vec3(1.0, 0.62, 0.28) * forwardMie * 0.65 +
+            vec3(0.98, 0.46, 0.18) * twilightFactor * (0.16 + cloudDensity * 0.18) +
             nightEmission;
 
           gl_FragColor = vec4(litEarth, 1.0);
@@ -714,11 +721,19 @@ export function createPlanetSurfaceMaterial(
         }
 
         float spec = pow(max(dot(N, H), 0.0), shininess) * specularStrength * dayFactor;
-        vec3 atmosphereRim = uAtmosphereColor * fresnel * (dayFactor * 0.55 + twilightFactor * 0.75);
-        vec3 twilightTint = vec3(0.96, 0.44, 0.18) * twilightFactor * 0.12;
+        float forwardCrescent = pow(max(dot(V, -L), 0.0), 3.6) * fresnel * smoothstep(-0.42, 0.28, baseNdotL);
+        vec3 atmosphereRim =
+          uAtmosphereColor * fresnel * (dayFactor * 0.62 + twilightFactor * 0.85) +
+          mix(uAtmosphereColor, vec3(1.0, 0.72, 0.38), 0.45) * forwardCrescent * 0.75;
+        vec3 twilightTint = vec3(0.98, 0.46, 0.18) * twilightFactor * 0.15;
+
+        // Subsurface glacial scattering on icy moons & Kuiper bodies
+        float iceSubsurface = (uShaderType == 12 || uShaderType == 9)
+          ? smoothstep(-0.28, 0.35, NdotL) * (1.0 - dayFactor) * 0.16
+          : 0.0;
 
         vec3 litColor =
-          albedo * (0.045 + 0.955 * dayFactor) +
+          albedo * (0.028 + 1.02 * dayFactor + iceSubsurface) +
           twilightTint +
           vec3(1.0, 0.98, 0.94) * spec +
           atmosphereRim +
@@ -764,11 +779,16 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
         vec3 V = normalize(-vViewPos);
 
         float viewDot = abs(dot(N, V));
-        float rim = pow(clamp(1.0 - viewDot, 0.0, 1.0), 2.8);
-        float sunLight = smoothstep(-0.25, 0.45, dot(N, L));
-        float alpha = rim * (0.06 + 0.94 * sunLight) * 0.88;
+        float rim = pow(clamp(1.0 - viewDot, 0.0, 1.0), 2.5);
+        float NdotL = dot(N, L);
+        float sunLight = smoothstep(-0.32, 0.48, NdotL);
+        float twilight = smoothstep(-0.35, 0.02, NdotL) * (1.0 - smoothstep(0.02, 0.38, NdotL));
+        float forwardHalo = pow(max(dot(V, -L), 0.0), 4.0) * rim * smoothstep(-0.48, 0.25, NdotL);
 
-        gl_FragColor = vec4(uAtmosphereColor * 1.25, alpha);
+        vec3 haloCol = mix(uAtmosphereColor * 1.32, vec3(1.0, 0.62, 0.28), twilight * 0.48 + forwardHalo * 0.35);
+        float alpha = (rim * (0.05 + 0.95 * sunLight) + forwardHalo * 0.45) * 0.92;
+
+        gl_FragColor = vec4(haloCol, clamp(alpha, 0.0, 1.0));
       }
     `,
   });

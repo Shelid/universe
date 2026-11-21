@@ -49,6 +49,7 @@ import {
 import { ALL_CELESTIAL_BODIES } from '../data/solarSystemData';
 import {
   CRAFTING_RECIPES,
+  ENERGY_MINERAL_YIELDS,
   getBodyMiningProfile,
   MINING_RESOURCE_LIST,
   MINING_RESOURCES,
@@ -108,6 +109,7 @@ interface SpacecraftCockpitHUDProps {
   onCabinStationInteract: () => void;
   onToggleMiningLaser: () => void;
   onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
+  onConsumeMineralForEnergy?: (resourceId: MiningResourceId) => void;
   onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
   onSellAllCargo: () => void;
   onDiscardCargo: (resourceId: MiningResourceId) => void;
@@ -146,6 +148,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   onCabinStationInteract,
   onToggleMiningLaser,
   onSynthesizeRecipe,
+  onConsumeMineralForEnergy,
   onSellCargo,
   onSellAllCargo,
   onDiscardCargo,
@@ -525,7 +528,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       color: survival.warpEnergyPercent < 15 ? 'bg-rose-500' : 'bg-cyan-400',
                     },
                     {
-                      label: 'Bateria Auxiliar',
+                      label: 'Energia da Nave (Bateria & Sol)',
                       val: survival.batteryPercent,
                       color: 'bg-sky-400',
                     },
@@ -543,6 +546,19 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       </div>
                     </div>
                   ))}
+
+                  {/* Photovoltaic Solar Proximity Recharge Telemetry */}
+                  <div className="rounded-lg bg-slate-950/75 border border-amber-400/35 px-2.5 py-1.5 flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-amber-300 font-bold flex items-center gap-1">
+                      <Sun className="w-3.5 h-3.5" />
+                      <span>Recarga Solar: {Math.round(survival.solarHarvestKw)} kW</span>
+                    </span>
+                    <span className="text-emerald-300 font-bold">
+                      {survival.inPlanetaryShadow
+                        ? 'Sombra Planetária (0%/s)'
+                        : `+${(Math.pow(survival.solarHarvestKw / 95, 1.12) * 2.15).toFixed(1)}%/s`}
+                    </span>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono">
                     <button
@@ -985,6 +1001,15 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                               </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
+                              {ENERGY_MINERAL_YIELDS[def.id] && onConsumeMineralForEnergy && (
+                                <button
+                                  onClick={() => onConsumeMineralForEnergy(def.id)}
+                                  className="px-1.5 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 font-bold"
+                                  title={`Converter no reator: ${ENERGY_MINERAL_YIELDS[def.id]?.label}`}
+                                >
+                                  ⚡+{ENERGY_MINERAL_YIELDS[def.id]?.batteryPct}%
+                                </button>
+                              )}
                               <button
                                 onClick={() => onSellCargo(def.id, 1)}
                                 className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-emerald-100"
@@ -1821,9 +1846,12 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                     ? 'text-rose-300 font-bold animate-pulse'
                     : 'text-amber-200'
                 }
-                title="Energia Elétrica Principal da Nave (Bateria & Reator)"
+                title="Energia Elétrica Principal da Nave (Recarrega pelo Sol ou Minerando Recursos de Energia)"
               >
                 ENERGIA {Math.round(survival.batteryPercent)}%
+                {!survival.inPlanetaryShadow && survival.solarHarvestKw >= 35
+                  ? ` ☀+${(Math.pow(survival.solarHarvestKw / 95, 1.12) * 2.15).toFixed(1)}%/s`
+                  : ''}
               </span>
               <span className="text-white/20">·</span>
               <span

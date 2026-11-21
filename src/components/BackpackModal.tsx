@@ -16,6 +16,7 @@ import {
   Zap,
 } from 'lucide-react';
 import {
+  ENERGY_MINERAL_YIELDS,
   getRecipesUsingResource,
   MINING_RECIPES_BY_ID,
   MINING_RESOURCE_LIST,
@@ -47,6 +48,7 @@ interface BackpackModalProps {
   onUseRepairKit: () => void;
   onConsumeWarpCell: () => void;
   onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
+  onConsumeMineralForEnergy?: (resourceId: MiningResourceId) => void;
   onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
   onSellAllCargo: () => void;
   onDiscardCargo: (resourceId: MiningResourceId) => void;
@@ -213,6 +215,7 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
   onUseRepairKit,
   onConsumeWarpCell,
   onSynthesizeRecipe,
+  onConsumeMineralForEnergy,
   onSellCargo,
   onSellAllCargo,
   onDiscardCargo,
@@ -884,6 +887,22 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
 
                 {selectedItem.kind === 'mineral' && (
                   <div className="space-y-2">
+                    {ENERGY_MINERAL_YIELDS[selectedItem.id] && onConsumeMineralForEnergy && (
+                      <button
+                        onClick={() => onConsumeMineralForEnergy(selectedItem.id)}
+                        disabled={selectedItem.qty <= 0}
+                        className={`w-full py-2 px-3 rounded-xl border text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                          selectedItem.qty > 0
+                            ? 'bg-amber-500/30 hover:bg-amber-500/45 border-amber-400 text-white'
+                            : 'bg-white/5 border-white/10 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>
+                          Recarregar Energia ({ENERGY_MINERAL_YIELDS[selectedItem.id]?.label})
+                        </span>
+                      </button>
+                    )}
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => onSellCargo(selectedItem.id, 1)}

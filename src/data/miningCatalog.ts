@@ -172,12 +172,12 @@ export const MINING_RESOURCES: Record<MiningResourceId, CatalogResourceDefinitio
     creditValue: 44,
     colorHex: '#facc15',
     description:
-      'Depósitos vulcânicos de enxofre alotrópico e dióxido de enxofre congelado. Usado em ciclos termoquímicos de refrigeração, eletrólitos de bateria e reagentes.',
+      'Depósitos vulcânicos de enxofre alotrópico e dióxido de enxofre congelado. Recurso energético secundário: recarrega +30% da Energia da Nave como eletrólito de alta descarga.',
     commonSources: 'Io, Vênus (alta atmosfera), Europa, Mimas',
   },
   'helium-3': {
     id: 'helium-3',
-    name: 'Isótopo Hélio-3 Solar',
+    name: 'Isótopo Hélio-3 Solar (Energia)',
     formula: '³He',
     category: 'ISOTOPE',
     rarity: 'RARE',
@@ -185,8 +185,8 @@ export const MINING_RESOURCES: Record<MiningResourceId, CatalogResourceDefinitio
     creditValue: 135,
     colorHex: '#3b82f6',
     description:
-      'Isótopo leve implantado por bilhões de anos de vento solar em regolitos sem atmosfera ou filtrado nas altas camadas de gigantes gasosos. Combustível limpo para reatores de fusão D-³He e dobra.',
-    commonSources: 'Júpiter, Saturno, Urano, Netuno, Lua, Mercúrio',
+      'Recurso energético primário da nave! Isótopo implantado pelo vento solar ou sifonado da Coroa Solar, Lua, Mercúrio e gigantes gasosos. Repõe +45% da Energia da Nave ao ser minerado ou injetado no reator.',
+    commonSources: 'Sol (Coroa Solar), Lua, Mercúrio, Júpiter, Saturno, Urano, Netuno',
   },
   'platinum-group': {
     id: 'platinum-group',
@@ -218,16 +218,67 @@ export const MINING_RESOURCES: Record<MiningResourceId, CatalogResourceDefinitio
 
 export const MINING_RESOURCE_LIST: CatalogResourceDefinition[] = Object.values(MINING_RESOURCES);
 
+/**
+ * Direct Ship Energy replenishment yields when mining or consuming energetic resources in the Backpack/Reactor.
+ */
+export const ENERGY_MINERAL_YIELDS: Partial<
+  Record<
+    MiningResourceId,
+    { batteryPct: number; warpPct?: number; fuelPct?: number; label: string }
+  >
+> = {
+  'helium-3': {
+    batteryPct: 45,
+    warpPct: 12,
+    label: '+45% Energia da Nave · +12% Dobra',
+  },
+  'exotic-silicates': {
+    batteryPct: 40,
+    warpPct: 8,
+    label: '+40% Energia da Nave · +8% Dobra',
+  },
+  'platinum-group': {
+    batteryPct: 35,
+    label: '+35% Energia da Nave (Catalisador)',
+  },
+  'sulfur-compounds': {
+    batteryPct: 30,
+    label: '+30% Energia da Nave (Eletrólito)',
+  },
+  'cryo-methane': {
+    batteryPct: 24,
+    fuelPct: 12,
+    label: '+24% Energia da Nave · +12% Combustível',
+  },
+  'titanium-ilmenite': {
+    batteryPct: 18,
+    label: '+18% Energia da Nave (Termopar)',
+  },
+};
+
 export const CELESTIAL_MINING_PROFILES: Record<string, CatalogCelestialMiningProfile> = {
   sun: {
     bodyId: 'sun',
-    bodyTypeLabel: 'Estrela Anã Amarela (G2V)',
-    extractable: false,
-    restrictionReason: 'Temperatura da fotosfera/coroa (5.778 K+) vaporiza o feixe e satura os escudos térmicos.',
-    extractionMethod: 'Proibido — zona de exclusão térmica estelar',
-    hardnessFactor: 1,
-    laserColorHex: '#fbbf24',
-    yields: [],
+    bodyTypeLabel: 'Estrela Anã Amarela (G2V) — Coleta Fotovoltaica & Plasma Solar',
+    extractable: true,
+    extractionMethod:
+      'Sifonagem magnetohidrodinâmica da coroa solar para recarga rápida da Energia da Nave e captura de Hélio-3 puro',
+    hardnessFactor: 0.55,
+    laserColorHex: '#fde047',
+    yields: [
+      {
+        resourceId: 'helium-3',
+        weight: 0.74,
+        purity: 0.99,
+        veinNote: 'Plasma coronal rico em ³He e prótons solares energéticos',
+      },
+      {
+        resourceId: 'exotic-silicates',
+        weight: 0.26,
+        purity: 0.96,
+        veinNote: 'Cristais refratários condensados na zona de ejeção coronal',
+      },
+    ],
   },
   earth: {
     bodyId: 'earth',

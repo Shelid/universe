@@ -569,7 +569,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(activeDpr);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = 1.18;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -757,39 +757,67 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     starField.frustumCulled = false;
     starGroup.add(starField);
 
-    // REAL 3D SOLAR POINT LIGHT & EARTHSHINE AMBIENT FILL FOR PBR SPACECRAFT MODELS
-    const sunPointLight = new THREE.PointLight('#fff8eb', 2.1, 0, 0);
+    // REAL 3D SOLAR KEY LIGHT, PLANETARY ALBEDO BOUNCE ("EARTHSHINE") & HIGH-CONTRAST HDR PMREM REFLECTIONS
+    const sunPointLight = new THREE.PointLight('#fff8eb', 2.4, 0, 0);
     sunPointLight.position.set(0, 0, 0);
     scene.add(sunPointLight);
 
-    const spaceHemisphereLight = new THREE.HemisphereLight('#7dd3fc', '#1e293b', 0.68);
+    const sunKeyDirLight = new THREE.DirectionalLight('#fff9ed', 3.4);
+    sunKeyDirLight.visible = false;
+    scene.add(sunKeyDirLight);
+    scene.add(sunKeyDirLight.target);
+
+    const planetAlbedoLight = new THREE.DirectionalLight('#38bdf8', 0.95);
+    planetAlbedoLight.visible = false;
+    scene.add(planetAlbedoLight);
+    scene.add(planetAlbedoLight.target);
+
+    const spaceHemisphereLight = new THREE.HemisphereLight('#93c5fd', '#090d16', 0.28);
     scene.add(spaceHemisphereLight);
 
-    // Subtle procedural cosmic reflection environment (PMREM) so PBR metallic hull & cockpit gleam realistically
+    // High-Dynamic-Range (1024x512) Studio Space & Solar Specular Reflection Environment (PMREM)
+    // Makes PBR metallic hull panels, engine nozzles, solar wings & cockpit canopy gleam with cinema-grade contrast
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
     const envCanvas = document.createElement('canvas');
-    envCanvas.width = 256;
-    envCanvas.height = 128;
+    envCanvas.width = 1024;
+    envCanvas.height = 512;
     const envCtx = envCanvas.getContext('2d')!;
-    const skyGrad = envCtx.createLinearGradient(0, 0, 0, 128);
-    skyGrad.addColorStop(0, '#0f1d36');
-    skyGrad.addColorStop(0.45, '#1e3557');
-    skyGrad.addColorStop(0.55, '#1a202c');
-    skyGrad.addColorStop(1, '#050811');
+    const skyGrad = envCtx.createLinearGradient(0, 0, 0, 512);
+    skyGrad.addColorStop(0.0, '#040814');
+    skyGrad.addColorStop(0.38, '#0c1930');
+    skyGrad.addColorStop(0.49, '#1e3a5f');
+    skyGrad.addColorStop(0.51, '#17253b');
+    skyGrad.addColorStop(0.65, '#080d1a');
+    skyGrad.addColorStop(1.0, '#020409');
     envCtx.fillStyle = skyGrad;
-    envCtx.fillRect(0, 0, 256, 128);
-    const sunSpot = envCtx.createRadialGradient(195, 42, 2, 195, 42, 48);
-    sunSpot.addColorStop(0, 'rgba(255, 248, 225, 0.95)');
-    sunSpot.addColorStop(0.3, 'rgba(253, 224, 175, 0.45)');
-    sunSpot.addColorStop(1, 'rgba(15, 23, 42, 0)');
-    envCtx.fillStyle = sunSpot;
-    envCtx.fillRect(0, 0, 256, 128);
-    const nebSpot = envCtx.createRadialGradient(64, 68, 4, 64, 68, 64);
-    nebSpot.addColorStop(0, 'rgba(56, 189, 248, 0.5)');
+    envCtx.fillRect(0, 0, 1024, 512);
+
+    // Subtle ecliptic Milky Way reflection band
+    const eclipticBand = envCtx.createLinearGradient(0, 210, 0, 302);
+    eclipticBand.addColorStop(0, 'rgba(56, 189, 248, 0)');
+    eclipticBand.addColorStop(0.5, 'rgba(125, 211, 252, 0.22)');
+    eclipticBand.addColorStop(1, 'rgba(56, 189, 248, 0)');
+    envCtx.fillStyle = eclipticBand;
+    envCtx.fillRect(0, 210, 1024, 92);
+
+    // Intense multi-layered solar specular disk & golden corona highlight in reflection map
+    const sunOuterGlow = envCtx.createRadialGradient(780, 168, 8, 780, 168, 240);
+    sunOuterGlow.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    sunOuterGlow.addColorStop(0.12, 'rgba(255, 250, 220, 0.98)');
+    sunOuterGlow.addColorStop(0.28, 'rgba(253, 224, 71, 0.65)');
+    sunOuterGlow.addColorStop(0.55, 'rgba(249, 115, 22, 0.22)');
+    sunOuterGlow.addColorStop(1, 'rgba(15, 23, 42, 0)');
+    envCtx.fillStyle = sunOuterGlow;
+    envCtx.fillRect(520, 0, 504, 420);
+
+    // Earthshine / planetary cyan-sapphire bounce reflection lobe
+    const nebSpot = envCtx.createRadialGradient(256, 310, 12, 256, 310, 260);
+    nebSpot.addColorStop(0, 'rgba(56, 189, 248, 0.68)');
+    nebSpot.addColorStop(0.45, 'rgba(14, 165, 233, 0.25)');
     nebSpot.addColorStop(1, 'rgba(15, 23, 42, 0)');
     envCtx.fillStyle = nebSpot;
-    envCtx.fillRect(0, 0, 256, 128);
+    envCtx.fillRect(0, 60, 520, 452);
 
     const envEquirectTex = new THREE.CanvasTexture(envCanvas);
     envEquirectTex.mapping = THREE.EquirectangularReflectionMapping;
@@ -798,7 +826,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     scene.environment = envRT.texture;
     envEquirectTex.dispose();
 
-    const shipRimLight = new THREE.DirectionalLight('#bae6fd', 0.55);
+    const shipRimLight = new THREE.DirectionalLight('#e0f2fe', 0.72);
     shipRimLight.visible = false;
     scene.add(shipRimLight);
     scene.add(shipRimLight.target);
@@ -1085,8 +1113,56 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       if (body.id === 'sun') {
         const coronaMat = createSolarCoronaMaterial();
         atmosphereMesh = new THREE.Mesh(sphereGeometryUltra, coronaMat);
-        atmosphereMesh.scale.setScalar(1.34);
+        atmosphereMesh.scale.setScalar(1.38);
         tiltGroup.add(atmosphereMesh);
+
+        // Volumetric Wide Optical Solar Bloom & Anamorphic Lens Flare Halo
+        const solarFlareCanvas = document.createElement('canvas');
+        solarFlareCanvas.width = 512;
+        solarFlareCanvas.height = 512;
+        const sfCtx = solarFlareCanvas.getContext('2d')!;
+        const sfGrad = sfCtx.createRadialGradient(256, 256, 6, 256, 256, 250);
+        sfGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.98)');
+        sfGrad.addColorStop(0.14, 'rgba(254, 249, 195, 0.82)');
+        sfGrad.addColorStop(0.32, 'rgba(253, 224, 71, 0.42)');
+        sfGrad.addColorStop(0.62, 'rgba(249, 115, 22, 0.12)');
+        sfGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+        sfCtx.fillStyle = sfGrad;
+        sfCtx.fillRect(0, 0, 512, 512);
+        // Subtle horizontal anamorphic streak + 4 coronal diffraction rays
+        sfCtx.save();
+        sfCtx.translate(256, 256);
+        const rayAngles = [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4];
+        rayAngles.forEach((ang, rIdx) => {
+          sfCtx.save();
+          sfCtx.rotate(ang);
+          const rx = rIdx === 0 ? 245 : rIdx === 1 ? 185 : 135;
+          const ry = rIdx === 0 ? 11 : 6;
+          const rg = sfCtx.createRadialGradient(0, 0, 1, 0, 0, rx);
+          rg.addColorStop(0.0, 'rgba(255, 255, 255, 0.72)');
+          rg.addColorStop(0.35, 'rgba(254, 240, 138, 0.28)');
+          rg.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+          sfCtx.fillStyle = rg;
+          sfCtx.scale(1, ry / rx);
+          sfCtx.beginPath();
+          sfCtx.arc(0, 0, rx, 0, Math.PI * 2);
+          sfCtx.fill();
+          sfCtx.restore();
+        });
+        sfCtx.restore();
+        const solarFlareTex = new THREE.CanvasTexture(solarFlareCanvas);
+        solarFlareTex.colorSpace = THREE.SRGBColorSpace;
+        const solarBloomSprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: solarFlareTex,
+            transparent: true,
+            opacity: 0.88,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          })
+        );
+        solarBloomSprite.scale.setScalar(5.8);
+        tiltGroup.add(solarBloomSprite);
 
         // 3D Magnetic Prominence Loops (erupting solar storm arches around active latitudes)
         solarProminenceMat = createSolarProminenceMaterial();
@@ -1501,186 +1577,245 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     miningCraterGroup.visible = false;
     scene.add(miningCraterGroup);
 
-    // Procedural High-Dynamic-Range Radial Fireball & Blast Shockwave CanvasTextures for Realistic Planetary Laser Explosion
-    const createFireballCoreTexture = (): THREE.CanvasTexture => {
+    // Photorealistic GLSL Surface Ablation Caldera, Molten Crust Fractures & Volumetric 3D Fireball Plume
+    // Uses NormalBlending with organic noise-warped dark scorched thermal contrast so it pops vividly even over bright sunlit clouds without any circular gray ring!
+    const createVolumetricFirePlumeTexture = (): THREE.CanvasTexture => {
       const c = document.createElement('canvas');
       c.width = 256;
       c.height = 256;
       const ctx = c.getContext('2d')!;
-      const g = ctx.createRadialGradient(128, 128, 3, 128, 128, 124);
-      g.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
-      g.addColorStop(0.14, 'rgba(254, 240, 138, 0.98)');
-      g.addColorStop(0.32, 'rgba(249, 115, 22, 0.96)');
-      g.addColorStop(0.54, 'rgba(220, 38, 38, 0.92)');
-      g.addColorStop(0.76, 'rgba(69, 10, 10, 0.85)');
-      g.addColorStop(0.92, 'rgba(15, 6, 4, 0.55)');
-      g.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 256, 256);
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      return tex;
-    };
 
-    const createTurbulentExplosionCloudTexture = (): THREE.CanvasTexture => {
-      const c = document.createElement('canvas');
-      c.width = 256;
-      c.height = 256;
-      const ctx = c.getContext('2d')!;
-      // Dark volcanic smoke / charred thermal cloud base for high contrast against bright sunlit planets
-      const smokeLobes = [
-        { x: 128, y: 128, r: 118, c0: 'rgba(28, 10, 6, 0.92)', c1: 'rgba(69, 10, 10, 0.72)' },
-        { x: 92, y: 100, r: 84, c0: 'rgba(24, 9, 5, 0.88)', c1: 'rgba(127, 29, 29, 0.62)' },
-        { x: 166, y: 108, r: 82, c0: 'rgba(24, 9, 5, 0.88)', c1: 'rgba(127, 29, 29, 0.62)' },
-        { x: 106, y: 162, r: 82, c0: 'rgba(24, 9, 5, 0.88)', c1: 'rgba(153, 27, 27, 0.58)' },
-        { x: 158, y: 154, r: 80, c0: 'rgba(24, 9, 5, 0.88)', c1: 'rgba(127, 29, 29, 0.58)' },
+      // Irregular turbulent dark volcanic smoke & scorched thermal cloud base (non-circular organic clusters)
+      const smokePuffs = [
+        { x: 128, y: 128, r: 92, a: 0.88 },
+        { x: 96, y: 108, r: 64, a: 0.78 },
+        { x: 162, y: 114, r: 60, a: 0.78 },
+        { x: 108, y: 158, r: 62, a: 0.76 },
+        { x: 154, y: 150, r: 58, a: 0.75 },
+        { x: 126, y: 92, r: 56, a: 0.74 },
+        { x: 86, y: 136, r: 50, a: 0.68 },
+        { x: 170, y: 136, r: 48, a: 0.68 },
       ];
-      for (const s of smokeLobes) {
-        const g = ctx.createRadialGradient(s.x, s.y, 6, s.x, s.y, s.r);
-        g.addColorStop(0.0, s.c0);
-        g.addColorStop(0.58, s.c1);
-        g.addColorStop(1.0, 'rgba(0,0,0,0)');
+      for (const s of smokePuffs) {
+        const g = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, s.r);
+        g.addColorStop(0.0, `rgba(22, 7, 3, ${s.a})`);
+        g.addColorStop(0.55, `rgba(68, 12, 5, ${s.a * 0.65})`);
+        g.addColorStop(1.0, 'rgba(22, 7, 3, 0.0)');
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Multi-lobed turbulent fireball plumes (crimson -> orange -> golden yellow -> incandescent white core)
-      const lobes = [
-        { x: 128, y: 128, r: 88, c0: 'rgba(255,255,255,0.98)', c1: 'rgba(250,204,21,0.95)', c2: 'rgba(234,88,12,0.88)', c3: 'rgba(153,27,27,0.45)' },
-        { x: 98, y: 104, r: 62, c0: 'rgba(254,240,138,0.95)', c1: 'rgba(249,115,22,0.9)', c2: 'rgba(220,38,38,0.78)', c3: 'rgba(69,10,10,0.0)' },
-        { x: 158, y: 112, r: 60, c0: 'rgba(254,240,138,0.95)', c1: 'rgba(249,115,22,0.9)', c2: 'rgba(185,28,28,0.75)', c3: 'rgba(69,10,10,0.0)' },
-        { x: 112, y: 154, r: 62, c0: 'rgba(253,224,71,0.94)', c1: 'rgba(234,88,12,0.88)', c2: 'rgba(185,28,28,0.75)', c3: 'rgba(69,10,10,0.0)' },
-        { x: 152, y: 146, r: 58, c0: 'rgba(254,215,170,0.92)', c1: 'rgba(249,115,22,0.86)', c2: 'rgba(153,27,27,0.72)', c3: 'rgba(69,10,10,0.0)' },
-        { x: 128, y: 92, r: 54, c0: 'rgba(255,255,255,0.96)', c1: 'rgba(250,204,21,0.92)', c2: 'rgba(234,88,12,0.82)', c3: 'rgba(69,10,10,0.0)' },
+
+      // Billowing crimson-orange-gold fiery plasma lobes inside the smoke plume
+      const fireLobes = [
+        { x: 128, y: 128, r: 74, c0: 'rgba(255,255,255,1.0)', c1: 'rgba(253,224,71,0.96)', c2: 'rgba(249,115,22,0.92)', c3: 'rgba(153,27,27,0.0)' },
+        { x: 104, y: 112, r: 52, c0: 'rgba(254,240,138,0.96)', c1: 'rgba(249,115,22,0.9)', c2: 'rgba(220,38,38,0.75)', c3: 'rgba(127,29,29,0.0)' },
+        { x: 154, y: 118, r: 50, c0: 'rgba(254,240,138,0.96)', c1: 'rgba(234,88,12,0.9)', c2: 'rgba(185,28,28,0.72)', c3: 'rgba(127,29,29,0.0)' },
+        { x: 114, y: 150, r: 52, c0: 'rgba(253,224,71,0.95)', c1: 'rgba(249,115,22,0.88)', c2: 'rgba(185,28,28,0.72)', c3: 'rgba(127,29,29,0.0)' },
+        { x: 148, y: 144, r: 48, c0: 'rgba(254,215,170,0.94)', c1: 'rgba(234,88,12,0.86)', c2: 'rgba(153,27,27,0.68)', c3: 'rgba(127,29,29,0.0)' },
+        { x: 128, y: 98, r: 46, c0: 'rgba(255,255,255,0.98)', c1: 'rgba(250,204,21,0.92)', c2: 'rgba(249,115,22,0.82)', c3: 'rgba(127,29,29,0.0)' },
       ];
-      for (const l of lobes) {
+      for (const l of fireLobes) {
         const g = ctx.createRadialGradient(l.x, l.y, 2, l.x, l.y, l.r);
         g.addColorStop(0.0, l.c0);
         g.addColorStop(0.28, l.c1);
-        g.addColorStop(0.62, l.c2);
+        g.addColorStop(0.64, l.c2);
         g.addColorStop(1.0, l.c3);
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(l.x, l.y, l.r, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // Crisp optical welding-arc diffraction rays on top of the fiery plasma core
+      ctx.save();
+      ctx.translate(128, 128);
+      const flareAngles = [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4];
+      flareAngles.forEach((ang, idx) => {
+        ctx.save();
+        ctx.rotate(ang);
+        const rx = idx < 2 ? 122 : 86;
+        const ry = idx < 2 ? 7 : 4.5;
+        const rg = ctx.createRadialGradient(0, 0, 1, 0, 0, rx);
+        rg.addColorStop(0.0, 'rgba(255, 255, 255, 0.96)');
+        rg.addColorStop(0.35, 'rgba(253, 224, 71, 0.68)');
+        rg.addColorStop(0.7, 'rgba(249, 115, 22, 0.28)');
+        rg.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+        ctx.fillStyle = rg;
+        ctx.scale(1, ry / rx);
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+      ctx.restore();
+
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
     };
 
-    const createSoftShockwaveRingTexture = (): THREE.CanvasTexture => {
-      const c = document.createElement('canvas');
-      c.width = 256;
-      c.height = 256;
-      const ctx = c.getContext('2d')!;
-      const g = ctx.createRadialGradient(128, 128, 36, 128, 128, 124);
-      g.addColorStop(0.0, 'rgba(0, 0, 0, 0.0)');
-      g.addColorStop(0.48, 'rgba(220, 38, 38, 0.14)');
-      g.addColorStop(0.72, 'rgba(249, 115, 22, 0.88)');
-      g.addColorStop(0.82, 'rgba(254, 240, 138, 0.96)');
-      g.addColorStop(0.92, 'rgba(220, 38, 38, 0.65)');
-      g.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 256, 256);
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      return tex;
-    };
+    const firePlumeTex = createVolumetricFirePlumeTexture();
 
-    const fireballCoreTex = createFireballCoreTexture();
-    const fireballCloudTex = createTurbulentExplosionCloudTexture();
-    const softShockwaveTex = createSoftShockwaveRingTexture();
-
-    const miningCraterDiscMat = new THREE.MeshBasicMaterial({
-      map: fireballCoreTex,
+    // 1. Custom GLSL Molten Crust Fracture & Scorched Caldera Disc (Flush on Planet Surface, NormalBlending for high contrast on bright clouds)
+    const miningCraterDiscMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uLaserColor: { value: new THREE.Color('#38bdf8') },
+      },
       transparent: true,
-      opacity: 0.96,
-      blending: THREE.NormalBlending,
       depthWrite: false,
+      blending: THREE.NormalBlending,
       side: THREE.DoubleSide,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform vec3 uLaserColor;
+        varying vec2 vUv;
+
+        void main() {
+          vec2 p = (vUv - 0.5) * 2.0;
+          float r = length(p);
+          if (r > 1.0) discard;
+
+          float a = atan(p.y, p.x);
+
+          // Domain-warped organic outer boundary (eliminates perfect geometric circle look)
+          float boundaryWarp =
+            0.12 * sin(a * 5.0 + uTime * 3.2) +
+            0.08 * cos(a * 9.0 - uTime * 4.8) +
+            0.05 * sin(a * 15.0 + uTime * 6.5);
+          float rw = r + boundaryWarp * smoothstep(0.15, 0.85, r);
+          if (rw > 0.96) discard;
+
+          // 1. White-hot laser contact focal point
+          float core = exp(-r * r * 22.0);
+
+          // 2. Jagged radial molten magma fissures & tectonic fractures
+          float waveA = sin(a * 8.0 + sin(r * 16.0 - uTime * 8.5) * 1.8);
+          float waveB = cos(a * 13.0 - cos(r * 22.0 - uTime * 10.5) * 1.5);
+          float crackPattern = pow(max(0.0, 1.0 - abs(waveA * 0.55 + waveB * 0.45)), 2.8);
+          float crackMask = crackPattern * smoothstep(0.88, 0.08, rw) * smoothstep(0.02, 0.16, r);
+
+          // 3. Boiling turbulent magma & dark volcanic smoke bed
+          float granule = 0.5 + 0.5 * sin(r * 26.0 - uTime * 15.0 + sin(a * 7.0 + uTime * 4.5) * 2.2);
+          float fireZone = exp(-rw * rw * 4.8) * (0.65 + 0.35 * granule);
+          float scorchBed = smoothstep(0.94, 0.22, rw);
+
+          vec3 darkScorch = vec3(0.09, 0.03, 0.015);
+          vec3 deepCrimson = vec3(0.78, 0.11, 0.03);
+          vec3 fieryOrange = vec3(0.98, 0.40, 0.05);
+          vec3 goldMagma = vec3(1.0, 0.86, 0.28);
+          vec3 whiteHot = vec3(1.0, 1.0, 0.96);
+
+          vec3 col = mix(darkScorch, deepCrimson, fireZone);
+          col = mix(col, fieryOrange, smoothstep(0.22, 0.72, fireZone + crackMask * 0.65));
+          col = mix(col, goldMagma, clamp(crackMask * 1.15 + core * 0.6, 0.0, 1.0));
+          col = mix(col, whiteHot, clamp(core * 1.35, 0.0, 1.0));
+
+          float alpha = clamp(scorchBed * 0.92 + core, 0.0, 0.98) * smoothstep(0.96, 0.62, rw);
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
     });
-    const miningCraterDisc = new THREE.Mesh(new THREE.PlaneGeometry(1.75, 1.75), miningCraterDiscMat);
+    const miningCraterDisc = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 1.45), miningCraterDiscMat);
     miningCraterDisc.rotation.x = -Math.PI / 2;
     miningCraterDisc.position.y = 0.02;
 
-    // 3D Camera-Facing Volumetric Explosion Fireball Sprites (always face camera so explosion looks 3D from any angle)
+    // 2. Camera-Facing 3D Turbulent Fireball & Dark Smoke Plume Sprite (NormalBlending so it is 100% visible from any angle over Earth)
     const miningCraterDomeMat = new THREE.SpriteMaterial({
-      map: fireballCoreTex,
+      map: firePlumeTex,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.96,
       blending: THREE.NormalBlending,
       depthWrite: false,
     });
     const miningCraterDome = new THREE.Sprite(miningCraterDomeMat);
     miningCraterDome.position.y = 0.14;
 
-    const miningPlumeConeMat = new THREE.SpriteMaterial({
-      map: fireballCloudTex,
-      transparent: true,
-      opacity: 0.96,
-      blending: THREE.NormalBlending,
-      depthWrite: false,
-    });
-    const miningPlumeCone = new THREE.Sprite(miningPlumeConeMat);
-    miningPlumeCone.position.y = 0.24;
-
+    // 3. Counter-Rotating Secondary Fireball Cloud Sprite for boiling volumetric motion
     const miningCraterHaloMat = new THREE.SpriteMaterial({
-      map: fireballCloudTex,
-      color: '#fb923c',
+      map: firePlumeTex,
+      color: '#fed7aa',
       transparent: true,
       opacity: 0.92,
       blending: THREE.NormalBlending,
       depthWrite: false,
     });
     const miningCraterHalo = new THREE.Sprite(miningCraterHaloMat);
-    miningCraterHalo.position.y = 0.2;
+    miningCraterHalo.position.y = 0.22;
 
-    const miningCraterShockMat = new THREE.MeshBasicMaterial({
-      map: softShockwaveTex,
+    // 4. 3D Vertical Plasma Excavation Geyser Plume (shoots perpendicular to planet surface normal)
+    const miningPlumeConeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uLaserColor: { value: new THREE.Color('#38bdf8') },
+      },
       transparent: true,
-      opacity: 0.92,
-      blending: THREE.NormalBlending,
       depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const miningCraterShock = new THREE.Mesh(new THREE.PlaneGeometry(2.35, 2.35), miningCraterShockMat);
-    miningCraterShock.rotation.x = -Math.PI / 2;
-    miningCraterShock.position.y = 0.04;
-
-    const miningCraterShockMat2 = new THREE.MeshBasicMaterial({
-      map: softShockwaveTex,
-      color: '#f97316',
-      transparent: true,
-      opacity: 0.85,
       blending: THREE.NormalBlending,
-      depthWrite: false,
       side: THREE.DoubleSide,
-    });
-    const miningCraterShock2 = new THREE.Mesh(new THREE.PlaneGeometry(2.55, 2.55), miningCraterShockMat2);
-    miningCraterShock2.rotation.x = -Math.PI / 2;
-    miningCraterShock2.position.y = 0.05;
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform vec3 uLaserColor;
+        varying vec2 vUv;
 
-    const miningCraterLight = new THREE.PointLight('#fb923c', 3.4, 0, 1.4);
-    miningCraterLight.position.set(0, 0.45, 0);
+        void main() {
+          float h = vUv.y;
+          float angle = vUv.x * 6.2831853;
+          float streak1 = 0.5 + 0.5 * sin(angle * 6.0 + h * 10.0 - uTime * 16.0);
+          float streak2 = 0.5 + 0.5 * cos(angle * 11.0 - h * 14.0 - uTime * 22.0);
+          float jet = pow(streak1 * 0.6 + streak2 * 0.4, 1.5);
+
+          float baseFade = smoothstep(0.0, 0.10, h);
+          float topFade = pow(max(0.0, 1.0 - h), 1.5);
+          float alpha = baseFade * topFade * (0.45 + 0.55 * jet) * 0.94;
+
+          vec3 baseCol = vec3(1.0, 0.96, 0.80);
+          vec3 midCol = vec3(0.96, 0.38, 0.05);
+          vec3 tipCol = vec3(0.18, 0.05, 0.02);
+          vec3 col = mix(baseCol, midCol, smoothstep(0.0, 0.52, h));
+          col = mix(col, tipCol, smoothstep(0.52, 0.98, h));
+
+          gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+        }
+      `,
+    });
+    const plumeConeGeo = new THREE.CylinderGeometry(0.42, 0.14, 1.15, 24, 1, true);
+    plumeConeGeo.translate(0, 0.575, 0);
+    const miningPlumeCone = new THREE.Mesh(plumeConeGeo, miningPlumeConeMat);
+
+    const miningCraterLight = new THREE.PointLight('#fb923c', 2.8, 0, 1.4);
+    miningCraterLight.position.set(0, 0.25, 0);
     miningCraterGroup.add(
       miningCraterDisc,
       miningCraterDome,
       miningPlumeCone,
       miningCraterHalo,
-      miningCraterShock,
-      miningCraterShock2,
       miningCraterLight
     );
 
-    // Planetary Impact Surface Explosion Debris & Molten Lava Ejecta Fountain (36 incandescent fragments)
-    const MINING_EJECTA_COUNT = 36;
-    const miningEjectaGeo = new THREE.DodecahedronGeometry(1, 0);
+    // Planetary Impact High-Velocity Laser Ablation Micro-Sparks (64 razor-sharp incandescent needles, NOT round pebbles!)
+    const MINING_EJECTA_COUNT = 64;
+    const miningEjectaGeo = new THREE.CylinderGeometry(0.01, 0.042, 1.0, 6);
     const miningEjectaMat = new THREE.MeshBasicMaterial({
-      color: '#f97316',
+      color: '#fb923c',
       transparent: true,
-      opacity: 0.98,
+      opacity: 0.96,
       blending: THREE.NormalBlending,
       depthWrite: false,
     });
@@ -2423,6 +2558,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       // Completely conceal ALL universe meshes, skybox stars, orbits & cosmic lights so zero game world leaks behind the Hangar menu
       starGroup.visible = false;
       sunPointLight.visible = false;
+      sunKeyDirLight.visible = false;
+      planetAlbedoLight.visible = false;
       spaceHemisphereLight.visible = false;
       shipRimLight.visible = false;
       beltGroup.visible = false;
@@ -3408,14 +3545,56 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         );
         sr7.rootGroup.scale.setScalar(currentShipScale);
 
-        // Keep rim lighting subtle and dynamic so PBR metallic bevels gleam cleanly anywhere in deep space
+        // Dynamic Physical Solar Key Light + Planetary Albedo Bounce Light ("Earthshine") + Grazing Rim Light
         shipRimLight.visible = true;
-        _tmpV2.set(0.45, 0.85, 0.35);
+        _tmpV2.set(0.45, 0.85, 0.35).normalize();
         shipRimLight.position
           .copy(sr7.rootGroup.position)
           .addScaledVector(_tmpV2, currentShipScale * 26);
         shipRimLight.target.position.copy(sr7.rootGroup.position);
         shipRimLight.target.updateMatrixWorld();
+
+        // 1. Directional Solar Key Light aligned accurately from the Sun (0,0,0) toward the spacecraft
+        const sunPosVec = bodyWorldPositions['sun'] || _originVec;
+        _tmpV3.subVectors(sunPosVec, sr7.rootGroup.position);
+        const sunDist = Math.max(0.01, _tmpV3.length());
+        _tmpV3.divideScalar(sunDist);
+        sunKeyDirLight.visible = true;
+        sunKeyDirLight.position
+          .copy(sr7.rootGroup.position)
+          .addScaledVector(_tmpV3, currentShipScale * 34);
+        sunKeyDirLight.target.position.copy(sr7.rootGroup.position);
+        sunKeyDirLight.target.updateMatrixWorld();
+        const sunDistAu = Math.max(0.12, sunDist / 149.59787);
+        const baseSolarKeyIntensity = THREE.MathUtils.clamp(
+          3.65 / Math.pow(sunDistAu, 0.38),
+          1.75,
+          5.8
+        );
+        sunKeyDirLight.intensity = activeSurvivalRef.current.inPlanetaryShadow
+          ? 0.22
+          : baseSolarKeyIntensity;
+
+        // 2. Planetary Albedo Bounce Light ("Earthshine / Planetshine") from nearest celestial body onto ship hull
+        const domWorldPos = bodyWorldPositions[dominantBody.id];
+        if (domWorldPos && dominantBody.id !== 'sun' && bestProxRatio < 14.0) {
+          _tmpV4.subVectors(domWorldPos, sr7.rootGroup.position).normalize();
+          planetAlbedoLight.visible = true;
+          planetAlbedoLight.color.set(
+            dominantBody.atmosphere.hasAtmosphere
+              ? dominantBody.atmosphereColorHex
+              : dominantBody.primaryColorHex
+          );
+          planetAlbedoLight.position
+            .copy(sr7.rootGroup.position)
+            .addScaledVector(_tmpV4, currentShipScale * 24);
+          planetAlbedoLight.target.position.copy(sr7.rootGroup.position);
+          planetAlbedoLight.target.updateMatrixWorld();
+          const proximityBounce = THREE.MathUtils.clamp(1.85 / Math.pow(Math.max(1.05, bestProxRatio), 0.85), 0.12, 1.45);
+          planetAlbedoLight.intensity = proximityBounce;
+        } else {
+          planetAlbedoLight.visible = false;
+        }
 
         const isWalkingInside = Boolean(sc.walkingInside);
         if (isWalkingInside) {
@@ -4468,41 +4647,39 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             miningMuzzleGlowMat.color.copy(_miningColorTmp);
             miningCoreMat.opacity = 0.94 + 0.06 * Math.sin(clockTime * 34.0);
 
-            // Spectacular Planetary Surface Thermal Explosion, Boiling Fireball Clouds, Supersonic Blast Waves & Lava Ejecta
+            // Properly-Scaled Orbital Laser Impact Caldera, Molten Crust Fractures & Volumetric Fireball Plume
             const craterSize = THREE.MathUtils.clamp(
-              beamLen * 0.088,
-              currentShipScale * 2.4,
-              miningTargetRadius * 0.082
+              beamLen * 0.048,
+              currentShipScale * 1.18,
+              miningTargetRadius * 0.045
             );
             miningCraterGroup.position.copy(_miningBeamEnd);
             miningCraterGroup.quaternion.setFromUnitVectors(_worldUp, _miningNormalWorld);
             miningCraterGroup.scale.setScalar(craterSize);
-            miningCraterLight.intensity = 3.4 + Math.sin(clockTime * 28.0) * 1.1;
-            miningCraterLight.distance = craterSize * 14.0;
+            miningCraterLight.intensity = 3.1 + Math.sin(clockTime * 32.0) * 0.95;
+            miningCraterLight.distance = craterSize * 12.0;
 
-            // Animate 3D billboarding explosion fireball layers (flash core + 2 counter-rotating turbulent fire clouds)
-            const flashPulse = 1.05 + 0.28 * Math.sin(clockTime * 34.0) + 0.14 * Math.cos(clockTime * 53.0);
-            miningCraterDome.scale.set(flashPulse, flashPulse, 1);
+            // Update GLSL shader uniforms for molten crust fissures & vertical plasma geyser plume
+            miningCraterDiscMat.uniforms.uTime.value = clockTime;
+            miningCraterDiscMat.uniforms.uLaserColor.value.copy(_miningColorTmp);
+            miningPlumeConeMat.uniforms.uTime.value = clockTime;
+            miningPlumeConeMat.uniforms.uLaserColor.value.copy(_miningColorTmp);
 
-            const burstA = (clockTime * 1.9) % 1.0;
-            const scaleA = 0.95 + burstA * 1.45;
-            miningPlumeCone.scale.set(scaleA, scaleA, 1);
-            miningPlumeConeMat.rotation = clockTime * 2.4;
-            miningPlumeConeMat.opacity = Math.sin(burstA * Math.PI) * 0.98;
+            // Animate 3D counter-rotating turbulent fireball & dark volcanic smoke plumes
+            const burstA = (clockTime * 2.1) % 1.0;
+            const scaleA = 0.88 + burstA * 0.78;
+            miningCraterDome.scale.set(scaleA, scaleA, 1);
+            miningCraterDomeMat.rotation = clockTime * 1.8;
+            miningCraterDomeMat.opacity = 0.78 + Math.sin(burstA * Math.PI) * 0.22;
 
-            const burstB = (clockTime * 1.9 + 0.5) % 1.0;
-            const scaleB = 0.95 + burstB * 1.68;
+            const burstB = (clockTime * 2.1 + 0.5) % 1.0;
+            const scaleB = 0.82 + burstB * 0.96;
             miningCraterHalo.scale.set(scaleB, scaleB, 1);
-            miningCraterHaloMat.rotation = -clockTime * 1.9 + 1.2;
+            miningCraterHaloMat.rotation = -clockTime * 1.5 + 1.4;
             miningCraterHaloMat.opacity = Math.sin(burstB * Math.PI) * 0.94;
 
-            const shockCycle1 = (clockTime * 2.2) % 1;
-            miningCraterShock.scale.setScalar(0.55 + shockCycle1 * 1.65);
-            miningCraterShockMat.opacity = (1 - shockCycle1) * 0.95;
-
-            const shockCycle2 = (clockTime * 2.2 + 0.5) % 1;
-            miningCraterShock2.scale.setScalar(0.55 + shockCycle2 * 2.1);
-            miningCraterShockMat2.opacity = (1 - shockCycle2) * 0.85;
+            const geyserStretch = 1.05 + 0.28 * Math.sin(clockTime * 24.0);
+            miningPlumeCone.scale.set(1.08, geyserStretch, 1.08);
 
             // Perspective-compensated dual counter-rotating helical stream (funnels tightly into ship turret at frac=0, expands at planet crater at frac=1)
             _miningPerpU.set(0, 1, 0).cross(_miningBeamDir);
@@ -4522,7 +4699,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 (isDownwardPulse ? -clockTime * 10.5 : clockTime * 8.2) + strandIdx * 1.45;
               const localRadius = THREE.MathUtils.lerp(
                 currentShipScale * 0.032,
-                craterSize * 0.36,
+                craterSize * 0.34,
                 frac
               );
               const spiralRad =
@@ -4534,7 +4711,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
                 .addScaledVector(_miningPerpV, Math.sin(theta) * spiralRad);
               _miningDummyQuat.setFromAxisAngle(_miningBeamDir, theta);
               const pScale =
-                THREE.MathUtils.lerp(currentShipScale * 0.016, craterSize * 0.11, frac) *
+                THREE.MathUtils.lerp(currentShipScale * 0.016, craterSize * 0.095, frac) *
                 (isDownwardPulse ? 0.95 : 0.75 + (pi % 3) * 0.32);
               _miningScaleVec.set(
                 pScale,
@@ -4546,21 +4723,33 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             }
             miningStreamInstanced.instanceMatrix.needsUpdate = true;
 
-            // Planetary Surface Ejecta Sparks Fountain erupting outward from impact crater
-            const ejectaSizeBase = craterSize * 0.14;
+            // High-Velocity Razor-Sharp Micro-Sparks & Laser Ablation Streaks (aligned along parabolic velocity vector)
+            const ejectaSizeBase = craterSize * 0.22;
             for (let ei = 0; ei < MINING_EJECTA_COUNT; ei++) {
-              const life = (clockTime * 1.85 + ei * (1 / MINING_EJECTA_COUNT)) % 1.0;
-              const az = ei * 2.39996 + clockTime * 0.6;
-              const spread = craterSize * (0.28 + life * 1.65);
-              const lift = craterSize * (Math.sin(life * Math.PI) * 1.35);
+              const life = (clockTime * 2.4 + ei * (1 / MINING_EJECTA_COUNT)) % 1.0;
+              const az = ei * 2.39996 + Math.floor(clockTime * 2.4 + ei / MINING_EJECTA_COUNT) * 0.7;
+              const speedBias = 0.55 + (ei % 5) * 0.22;
+              const radialDist = craterSize * (0.06 + life * 0.92 * speedBias);
+              const lift = craterSize * (life * (1.15 - life * 0.85) * 1.15 * speedBias);
               _miningParticlePos
                 .copy(_miningBeamEnd)
                 .addScaledVector(_miningNormalWorld, lift)
-                .addScaledVector(_miningPerpU, Math.cos(az) * spread)
-                .addScaledVector(_miningPerpV, Math.sin(az) * spread);
-              _miningDummyQuat.setFromAxisAngle(_miningNormalWorld, az + life * 6.0);
-              const eScale = ejectaSizeBase * (1.0 - life * 0.65);
-              _miningScaleVec.set(eScale, eScale * 1.8, eScale);
+                .addScaledVector(_miningPerpU, Math.cos(az) * radialDist)
+                .addScaledVector(_miningPerpV, Math.sin(az) * radialDist);
+
+              // Tangent velocity direction for realistic elongated spark streak orientation
+              const dRadial = 0.92 * speedBias;
+              const dLift = (1.15 - 2.0 * life * 0.85) * 1.15 * speedBias;
+              _tmpV6
+                .copy(_miningNormalWorld)
+                .multiplyScalar(dLift)
+                .addScaledVector(_miningPerpU, Math.cos(az) * dRadial)
+                .addScaledVector(_miningPerpV, Math.sin(az) * dRadial)
+                .normalize();
+              _miningDummyQuat.setFromUnitVectors(_worldUp, _tmpV6);
+              const sparkFade = Math.sin(life * Math.PI);
+              const eScale = ejectaSizeBase * sparkFade;
+              _miningScaleVec.set(eScale * 0.55, eScale * 1.65, eScale * 0.55);
               _miningTmpMat4.compose(_miningParticlePos, _miningDummyQuat, _miningScaleVec);
               miningEjectaInstanced.setMatrixAt(ei, _miningTmpMat4);
             }

@@ -42,6 +42,7 @@ import {
   adjustPowerPips,
   calibrateReactorO2Action,
   consumeFoodRation,
+  consumeMineralForEnergyAction,
   consumeWarpCell,
   consumeWaterFlask,
   createInitialSurvivalState,
@@ -663,6 +664,21 @@ export function App() {
       spaceAudio.unlock();
       spaceAudio.playCockpitSwitch(false);
       showSurvivalNotice('1 unidade mineral descartada do porão.');
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleConsumeMineralForEnergy = useCallback(
+    (resourceId: MiningResourceId) => {
+      const res = consumeMineralForEnergyAction(survivalRef.current, resourceId);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) {
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
     },
     [handleSyncSurvivalState, showSurvivalNotice]
   );
@@ -1368,6 +1384,7 @@ export function App() {
           }
           onToggleMiningLaser={handleToggleMiningLaser}
           onSynthesizeRecipe={handleSynthesizeRecipe}
+          onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
           onSellCargo={handleSellCargo}
           onSellAllCargo={handleSellAllCargo}
           onDiscardCargo={handleDiscardCargo}
@@ -1512,6 +1529,7 @@ export function App() {
         onUseRepairKit={handleUseRepairKit}
         onConsumeWarpCell={handleConsumeWarpCell}
         onSynthesizeRecipe={handleSynthesizeRecipe}
+        onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
         onSellCargo={handleSellCargo}
         onSellAllCargo={handleSellAllCargo}
         onDiscardCargo={handleDiscardCargo}
