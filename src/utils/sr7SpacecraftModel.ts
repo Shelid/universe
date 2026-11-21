@@ -57,6 +57,11 @@ export interface SR7SpacecraftRefs {
   setLandingGearDeployed: (deployed: boolean) => void;
   getFloorOffsetY: (withGear?: boolean) => number;
   setVariant: (preset: SpacecraftPreset) => void;
+  cloneExteriorForMultiplayer: (preset: SpacecraftPreset) => {
+    group: THREE.Group;
+    setVariant: (nextPreset: SpacecraftPreset) => void;
+    dispose: () => void;
+  } | null;
   dispose: () => void;
   updateAnimations: (params: {
     dt: number;
@@ -1582,6 +1587,123 @@ export function createSR7Spacecraft3DGroup(options?: {
     _lightBoostColor.set(preset.plumeWarpHex);
   };
 
+  const cloneExteriorForMultiplayer = (preset: SpacecraftPreset) => {
+    if (glbWrapper.children.length === 0) return null;
+
+    const clonedWrapper = glbWrapper.clone(true);
+    const clonedMatCache = new Map<THREE.Material, THREE.Material>();
+    const clonedHullMats: THREE.MeshStandardMaterial[] = [];
+    const clonedTailMats: THREE.MeshStandardMaterial[] = [];
+    const clonedNeonMats: THREE.MeshStandardMaterial[] = [];
+
+    // Dedicated smoked exterior canopy glass (always uInteriorView = 0.0 so local cockpit switch never affects friends!)
+    const remoteCanopyMat = canopyGlassMat.clone();
+    remoteCanopyMat.uniforms = THREE.UniformsUtils.clone(canopyGlassMat.uniforms);
+    remoteCanopyMat.uniforms.uInteriorView.value = 0.0;
+    remoteCanopyMat.uniforms.uTintColor.value.set(preset.accentHex);
+
+    const mapMatForRemote = (mat: THREE.Material): THREE.Material => {
+      if (!mat) return mat;
+      if (mat === canopyGlassMat || mat.name === 'Glass') {
+        return remoteCanopyMat;
+      }
+      const existing = clonedMatCache.get(mat);
+      if (existing) return existing;
+
+      const std = mat as THREE.MeshStandardMaterial;
+      if (
+        std.isMeshStandardMaterial &&
+        (std.name.startsWith('SShip') ||
+          std.name === 'Tail Light' ||
+          std.name === 'Neon' ||
+          std.name === 'Neon.002')
+      ) {
+        // Shallow material clone shares 100% of GPU textures in VRAM (0 MB extra texture memory!)
+        const mClone = std.clone();
+        clonedMatCache.set(mat, mClone);
+        if (mClone.name === 'Tail Light') clonedTailMats.push(mClone);
+        else if (mClone.name === 'Neon' || mClone.name === 'Neon.002') clonedNeonMats.push(mClone);
+        else if (mClone.name.startsWith('SShip')) clonedHullMats.push(mClone);
+        return mClone;
+      }
+      return mat;
+    };
+
+    clonedWrapper.traverse((obj) => {
+      if (!(obj as THREE.Mesh).isMesh) return;
+      const mesh = obj as THREE.Mesh;
+      mesh.frustumCulled = false;
+
+      const origMats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const cName = mesh.name || '';
+      const pName = mesh.parent?.name || '';
+      const isLandingGear =
+        cName.includes('010') ||
+        cName.includes('012') ||
+        cName.includes('013') ||
+        cName.includes('019') ||
+        pName.includes('010') ||
+        pName.includes('012') ||
+        pName.includes('013') ||
+        pName.includes('019');
+      const isBrakePad = origMats.some((m) => m && m.name === 'freio');
+      const hasEmptyMat = origMats.some((m) => m && m.name === '');
+
+      if (hasEmptyMat || isLandingGear || isBrakePad) {
+        mesh.visible = false;
+      } else {
+        mesh.visible = true;
+      }
+
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map(mapMatForRemote);
+      } else if (mesh.material) {
+        mesh.material = mapMatForRemote(mesh.material);
+      }
+      if (mesh.material === remoteCanopyMat) {
+        mesh.renderOrder = 12;
+      }
+    });
+
+    const applyRemoteVariant = (nextPreset: SpacecraftPreset) => {
+      const isDef = nextPreset.id === 'sr7-vanguard';
+      const hullTint = isDef ? '#ffffff' : nextPreset.hullTintHex;
+      clonedHullMats.forEach((m) => {
+        if (m.map) {
+          m.color.set(hullTint);
+          m.needsUpdate = true;
+        }
+      });
+      const tailHex = isDef ? '#38bdf8' : nextPreset.plumePrimaryHex;
+      clonedTailMats.forEach((m) => {
+        m.color.set(tailHex);
+        m.emissive.set(tailHex);
+        m.needsUpdate = true;
+      });
+      const neonBase = isDef ? '#22d3ee' : nextPreset.accentHex;
+      const neonGlow = isDef ? '#00f0ff' : nextPreset.emissiveTintHex;
+      clonedNeonMats.forEach((m) => {
+        m.color.set(neonBase);
+        m.emissive.set(neonGlow);
+        m.needsUpdate = true;
+      });
+      remoteCanopyMat.uniforms.uTintColor.value.set(nextPreset.accentHex);
+    };
+
+    applyRemoteVariant(preset);
+
+    return {
+      group: clonedWrapper,
+      setVariant: applyRemoteVariant,
+      dispose: () => {
+        // ONLY dispose cloned material wrappers — NEVER dispose shared geometries or GPU textures!
+        remoteCanopyMat.dispose();
+        clonedMatCache.forEach((m) => m.dispose());
+        clonedMatCache.clear();
+      },
+    };
+  };
+
   const dispose = () => {
     disposed = true;
     disposeNodeResources(rootGroup);
@@ -1633,6 +1755,7 @@ export function createSR7Spacecraft3DGroup(options?: {
     setLandingGearDeployed,
     getFloorOffsetY,
     setVariant,
+    cloneExteriorForMultiplayer,
     dispose,
     updateAnimations,
   };

@@ -6276,7 +6276,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             return;
           }
           if (!avatar) {
-            avatar = createRemotePlayerAvatar3D(rp);
+            avatar = createRemotePlayerAvatar3D(rp, sr7);
             remotePlayersGroup.add(avatar.rootGroup);
             remoteAvatarsMap.set(pid, avatar);
           }
