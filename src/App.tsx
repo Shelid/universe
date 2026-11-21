@@ -28,6 +28,7 @@ import {
   SatelliteRecord,
   ScaleMode,
   SceneBootProgress,
+  ShipUpgradeSystemId,
   SpacecraftControlState,
   SpacecraftTelemetry,
   SpacecraftVariantId,
@@ -41,6 +42,7 @@ import {
 import {
   adjustPowerPips,
   calibrateReactorO2Action,
+  completeSpaceContractAction,
   consumeFoodRation,
   consumeMineralForEnergyAction,
   consumeWarpCell,
@@ -49,12 +51,14 @@ import {
   discardCargoUnitAction,
   emergencyRescueDroneAction,
   fullStationResupplyAction,
+  fuseMineralsAction,
   POWER_PRESETS,
   restInCabinBunkAction,
   sellAllCargoAction,
   sellCargoResourceAction,
   synthesizeRecipeAction,
   transferBatteryBankToShipAction,
+  upgradeShipSystemAction,
   useRepairKitAction,
 } from './utils/survivalEngine';
 import {
@@ -695,6 +699,51 @@ export function App() {
     }
     showSurvivalNotice(res.message);
   }, [handleSyncSurvivalState, showSurvivalNotice]);
+
+  const handleFuseMinerals = useCallback(
+    (fusionId: string) => {
+      const res = fuseMineralsAction(survivalRef.current, fusionId);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) {
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleUpgradeShipSystem = useCallback(
+    (systemId: ShipUpgradeSystemId) => {
+      const res = upgradeShipSystemAction(survivalRef.current, systemId);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) {
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleCompleteContract = useCallback(
+    (contractId: string) => {
+      const res = completeSpaceContractAction(survivalRef.current, contractId);
+      handleSyncSurvivalState(res.state);
+      spaceAudio.unlock();
+      if (res.ok) {
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
 
   // Global Menu & EVA Hotkeys
   useEffect(() => {
@@ -1397,6 +1446,9 @@ export function App() {
           }
           onToggleMiningLaser={handleToggleMiningLaser}
           onSynthesizeRecipe={handleSynthesizeRecipe}
+          onFuseMinerals={handleFuseMinerals}
+          onUpgradeShipSystem={handleUpgradeShipSystem}
+          onCompleteContract={handleCompleteContract}
           onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
           onTransferBatteryBank={handleTransferBatteryBank}
           onSellCargo={handleSellCargo}
@@ -1543,6 +1595,8 @@ export function App() {
         onUseRepairKit={handleUseRepairKit}
         onConsumeWarpCell={handleConsumeWarpCell}
         onSynthesizeRecipe={handleSynthesizeRecipe}
+        onFuseMinerals={handleFuseMinerals}
+        onUpgradeShipSystem={handleUpgradeShipSystem}
         onConsumeMineralForEnergy={handleConsumeMineralForEnergy}
         onTransferBatteryBank={handleTransferBatteryBank}
         onSellCargo={handleSellCargo}

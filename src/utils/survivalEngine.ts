@@ -7,6 +7,7 @@ import {
   PowerPips,
   PowerSubsystemId,
   RefuelSourceKind,
+  ShipUpgradeSystemId,
   SpacecraftVariantId,
   SurvivalResourcesState,
 } from '../types/astronomy';
@@ -14,9 +15,12 @@ import {
   CatalogOrbitalHotspot,
   ENERGY_MINERAL_YIELDS,
   getBodyMiningProfile,
+  MINERAL_FUSION_RECIPES,
   MINING_RECIPES_BY_ID,
   MINING_RESOURCES,
   pickMinedResourceForBody,
+  SHIP_UPGRADE_DEFINITIONS,
+  SPACE_CONTRACTS,
 } from '../data/miningCatalog';
 
 export const POWER_PIP_TOTAL = 8;
@@ -178,9 +182,18 @@ export function createInitialSurvivalState(): SurvivalResourcesState {
     activeStatusAlert: null,
     miningLaserActive: false,
     cargoInventory: {},
-    cargoCapacityUnits: 120,
+    cargoCapacityUnits: 500,
     spaceCredits: 250,
     totalMinedUnits: 0,
+    shipUpgrades: {
+      cargo: 1,
+      laser: 1,
+      batteryBank: 1,
+      pulseCannon: 1,
+      warpDrive: 1,
+    },
+    completedContractIds: [],
+    destroyedTargetsCount: 0,
     mining: {
       isActive: false,
       isDrilling: false,
@@ -234,8 +247,16 @@ export function stepSurvivalSimulation(
 
   // Nave única polivalente: todas as pinturas compartilham eficiência 1.0x idêntica
   void p.shipVariantId;
+  const upg = state.shipUpgrades ?? {
+    cargo: 1,
+    laser: 1,
+    batteryBank: 1,
+    pulseCannon: 1,
+    warpDrive: 1,
+  };
   const fuelEfficiency = 1.0;
-  const warpEfficiency = 1.0;
+  const warpEfficiency = Math.max(0.36, 1.0 - (upg.warpDrive - 1) * 0.16);
+  const bankSolarMult = 1.0 + (upg.batteryBank - 1) * 0.35;
 
   if (p.mode === 'HANGAR') {
     return {
@@ -355,7 +376,7 @@ export function stepSurvivalSimulation(
   // 5. Ship Energy & Battery Bank (Faster Solar Charging + 62% Lower Drain so Energy Lasts Much Longer!)
   const solarChargeRate = p.inPlanetaryShadow
     ? 0
-    : Math.max(1.35, Math.pow(solarFluxKw / 95, 0.88) * 3.85);
+    : Math.max(1.35, Math.pow(solarFluxKw / 95, 0.88) * 3.85) * bankSolarMult;
   const batteryGen = solarChargeRate + (fuel > 1 ? 0.65 : 0.12);
   const batteryLoad =
     0.12 +
@@ -845,7 +866,7 @@ export function stepMiningSimulation(
           targetBodyName: bodyName,
           beamPowerKw: 0,
           extractionRatePerSec: 0,
-          statusMessage: `Porão de carga cheio (${usedCargo}/${prev.cargoCapacityUnits} un). Sintetize ou venda na Doca.`,
+          statusMessage: `Porão cheio (${usedCargo}/${prev.cargoCapacityUnits} un)! Funda 2 minérios em itens raros, venda por CR ou amplie o Porão na Oficina.`,
         },
       },
       minedUnitsThisTick: 0,
@@ -882,8 +903,9 @@ export function stepMiningSimulation(
     };
   }
 
-  // Active orbital drilling on target body
-  const weaponsMult = 0.72 + prev.powerPips.weapons * 0.24; // 0.72..1.68x
+  // Active orbital drilling on target body (boosted by Laser Quantum Upgrade Level)
+  const laserUpgradeMult = 1.0 + ((prev.shipUpgrades?.laser ?? 1) - 1) * 0.38;
+  const weaponsMult = (0.72 + prev.powerPips.weapons * 0.24) * laserUpgradeMult;
   const proximityFactor = Math.max(0.32, Math.min(1.45, 1.5 - (ratio - 1.04) * 0.28));
   const hotspotMult = matchedHotspot ? matchedHotspot.multiplier : 1.0;
   const hardness = Math.max(0.5, profile.hardnessFactor);
@@ -894,9 +916,9 @@ export function stepMiningSimulation(
   const beamPowerKw = Math.round(320 * weaponsMult * proximityFactor);
 
   // Energy & thermal load during active laser ablation (65% lower energy drain + direct Solar Corona & mineral energy harvesting!)
-  const isSolarSiphon = bodyId === 'sun';
+  const isSolarSiphon = bodyId === 'sun' || bodyId === 'solaris-nova';
   const batteryDrain = isSolarSiphon
-    ? -22.0 * dt // Siphoning the Sun directly recharges Ship Energy & Battery Bank rapidly!
+    ? -26.0 * dt // Siphoning the Sun or Solaris-Nova directly recharges Ship Energy & Battery Bank rapidly!
     : (0.38 + prev.powerPips.weapons * 0.06) * dt;
   const radiatorMitigation = prev.radiatorsDeployed ? 0.42 : 1.0;
   const heatGain = (isSolarSiphon ? 5.2 : 3.6) * weaponsMult * radiatorMitigation * dt;
@@ -1221,5 +1243,176 @@ export function transferBatteryBankToShipAction(
       batteryBankPercent: nextBank,
     },
     message: `Banco de Baterias transferiu +${Math.round(gained)}% para a Nave (Reserva no Banco: ${Math.round(nextBank)}%)`,
+  };
+}
+
+/**
+ * Combines 2 minerals from the cargo hold into a higher-rarity mineral + bonus Space Credits!
+ */
+export function fuseMineralsAction(
+  state: SurvivalResourcesState,
+  fusionId: string
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const recipe = MINERAL_FUSION_RECIPES.find((f) => f.id === fusionId);
+  if (!recipe) {
+    return { ok: false, state, message: 'Receita de fusão mineral desconhecida.' };
+  }
+  if (state.batteryPercent < recipe.energyCostPct) {
+    return {
+      ok: false,
+      state,
+      message: `Energia insuficiente para fusão (${recipe.energyCostPct}% necessária).`,
+    };
+  }
+  for (const inp of recipe.inputs) {
+    const owned = state.cargoInventory[inp.resourceId] ?? 0;
+    if (owned < inp.amount) {
+      const def = MINING_RESOURCES[inp.resourceId];
+      return {
+        ok: false,
+        state,
+        message: `Falta ${inp.amount - owned}x ${def.name} para fundir.`,
+      };
+    }
+  }
+
+  const nextInventory = { ...state.cargoInventory };
+  for (const inp of recipe.inputs) {
+    const rem = (nextInventory[inp.resourceId] ?? 0) - inp.amount;
+    if (rem <= 0) delete nextInventory[inp.resourceId];
+    else nextInventory[inp.resourceId] = rem;
+  }
+  nextInventory[recipe.outputResourceId] =
+    (nextInventory[recipe.outputResourceId] ?? 0) + recipe.outputAmount;
+  const outDef = MINING_RESOURCES[recipe.outputResourceId];
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cargoInventory: nextInventory,
+      batteryPercent: Math.max(0, Number((state.batteryPercent - recipe.energyCostPct).toFixed(1))),
+      spaceCredits: state.spaceCredits + recipe.bonusCredits,
+    },
+    message: `Fusão Concluída: +${recipe.outputAmount}x ${outDef.name} (${outDef.formula}) e +${recipe.bonusCredits} CR!`,
+  };
+}
+
+/**
+ * Upgrades a ship subsystem (Porão, Laser, Banco de Bateria, Canhão de Pulso [F], Motor de Dobra)
+ * spending Space Credits (CR) and 1 required mineral for that tier.
+ */
+export function upgradeShipSystemAction(
+  state: SurvivalResourcesState,
+  systemId: ShipUpgradeSystemId
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const def = SHIP_UPGRADE_DEFINITIONS[systemId];
+  const curUpgrades = state.shipUpgrades ?? {
+    cargo: 1,
+    laser: 1,
+    batteryBank: 1,
+    pulseCannon: 1,
+    warpDrive: 1,
+  };
+  const curLevel = curUpgrades[systemId] ?? 1;
+  if (curLevel >= def.maxLevel) {
+    return { ok: false, state, message: `${def.name} já está no Nível Máximo (${def.maxLevel})!` };
+  }
+
+  const stepIndex = curLevel - 1;
+  const creditCost = Math.round(def.baseCostCredits * Math.pow(1.55, stepIndex));
+  const reqMineral =
+    def.mineralRequirementPerLevel[
+      Math.min(stepIndex, def.mineralRequirementPerLevel.length - 1)
+    ];
+  const reqDef = MINING_RESOURCES[reqMineral.resourceId];
+  const ownedMineral = state.cargoInventory[reqMineral.resourceId] ?? 0;
+
+  if (state.spaceCredits < creditCost) {
+    return {
+      ok: false,
+      state,
+      message: `Créditos insuficientes: requer ${creditCost} CR (você tem ${state.spaceCredits} CR).`,
+    };
+  }
+  if (ownedMineral < reqMineral.amount) {
+    return {
+      ok: false,
+      state,
+      message: `Requer ${reqMineral.amount}x ${reqDef.name} (${reqDef.formula}) — minere ou crie na Fusão Mineral!`,
+    };
+  }
+
+  const nextInventory = { ...state.cargoInventory };
+  const rem = ownedMineral - reqMineral.amount;
+  if (rem <= 0) delete nextInventory[reqMineral.resourceId];
+  else nextInventory[reqMineral.resourceId] = rem;
+
+  const nextLevel = curLevel + 1;
+  const nextUpgrades = { ...curUpgrades, [systemId]: nextLevel };
+  const nextCargoCap =
+    systemId === 'cargo' ? 500 + (nextLevel - 1) * 450 : state.cargoCapacityUnits;
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      spaceCredits: state.spaceCredits - creditCost,
+      cargoInventory: nextInventory,
+      cargoCapacityUnits: nextCargoCap,
+      shipUpgrades: nextUpgrades,
+      batteryPercent: systemId === 'batteryBank' ? 100 : state.batteryPercent,
+      batteryBankPercent: systemId === 'batteryBank' ? 100 : state.batteryBankPercent,
+    },
+    message: `Upgrade Concluído: ${def.name} Nível ${nextLevel} (${def.getLevelBenefitLabel(nextLevel)})!`,
+  };
+}
+
+/**
+ * Completes an active Space Contract or SOS Rescue Mission, consuming the requested minerals and awarding CR + Warp Cells!
+ */
+export function completeSpaceContractAction(
+  state: SurvivalResourcesState,
+  contractId: string
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const contract = SPACE_CONTRACTS.find((c) => c.id === contractId);
+  if (!contract) {
+    return { ok: false, state, message: 'Contrato espacial não encontrado.' };
+  }
+  for (const req of contract.requirements) {
+    const owned = state.cargoInventory[req.resourceId] ?? 0;
+    if (owned < req.amount) {
+      const def = MINING_RESOURCES[req.resourceId];
+      return {
+        ok: false,
+        state,
+        message: `Falta ${req.amount - owned}x ${def.name} para concluir "${contract.title}".`,
+      };
+    }
+  }
+
+  const nextInventory = { ...state.cargoInventory };
+  for (const req of contract.requirements) {
+    const rem = (nextInventory[req.resourceId] ?? 0) - req.amount;
+    if (rem <= 0) delete nextInventory[req.resourceId];
+    else nextInventory[req.resourceId] = rem;
+  }
+
+  const completed = state.completedContractIds ?? [];
+  const nextCompleted = completed.includes(contractId) ? completed : [...completed, contractId];
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cargoInventory: nextInventory,
+      spaceCredits: state.spaceCredits + contract.rewardCredits,
+      warpCells: Math.min(12, state.warpCells + (contract.rewardWarpCells ?? 0)),
+      warpEnergyPercent: Math.min(100, state.warpEnergyPercent + 35),
+      completedContractIds: nextCompleted,
+    },
+    message: `Missão Concluída (${contract.title}): +${contract.rewardCredits} CR${
+      contract.rewardWarpCells ? ` e +${contract.rewardWarpCells} Célula(s) de Dobra` : ''
+    }!`,
   };
 }

@@ -3,12 +3,14 @@ import { SUN_AND_PLANETS } from './solarSystemPlanets';
 import { MOONS_AND_DWARF_PLANETS } from './solarSystemMoonsAndDwarfs';
 import { COSMIC_GALAXIES, MISSING_DWARF_PLANETS_AND_WORLDS } from './galaxiesData';
 import { EXTRA_SOLAR_SYSTEM_BODIES } from './extraSolarSystemBodies';
+import { EXOTIC_4K_PLANETS } from './exoticPlanetsData';
 
 export const ALL_CELESTIAL_BODIES: CelestialBodyData[] = [
   ...SUN_AND_PLANETS,
   ...MOONS_AND_DWARF_PLANETS,
   ...MISSING_DWARF_PLANETS_AND_WORLDS,
   ...EXTRA_SOLAR_SYSTEM_BODIES,
+  ...EXOTIC_4K_PLANETS,
   ...COSMIC_GALAXIES,
 ];
 

@@ -499,10 +499,13 @@ export function createPlanetSurfaceMaterial(
             oceanColor = mix(oceanColor, sampledDiffuse * vec3(0.85, 1.15, 1.42), 0.38);
             oceanColor = mix(oceanColor, turquoiseShelf, clamp(shallowShelf * 0.85 + coastalEdge * 0.25, 0.0, 0.85));
 
-            // 2. Crisp 4K Continental Land Grading (Lush forests, golden deserts, snow peaks)
+            // 2. Crisp 4K Continental Land Grading (Earth or Exotic 4K Super-Earths Tyche-IX / Xylos-Omega)
             vec3 landColor = pow(sampledDiffuse, vec3(0.92)) * vec3(1.06, 1.08, 0.98);
-            // Boost high-altitude mountain contrast (Andes, Rockies, Himalayas)
             landColor = mix(landColor, landColor * 1.15, smoothstep(0.25, 0.75, elevation));
+            // Tint exotic Super-Earths (Xylos-Omega emerald bioluminescent or Tyche-IX glacial sapphire) while preserving 4K detail
+            float exoticBlend = clamp(distance(uPrimaryColor, vec3(0.145, 0.388, 0.922)) * 1.1, 0.0, 0.65);
+            landColor = mix(landColor, landColor * (uPrimaryColor * 1.45 + 0.35), exoticBlend);
+            oceanColor = mix(oceanColor, oceanColor * (uSecondaryColor * 1.35 + 0.35), exoticBlend * 0.75);
 
             albedo = mix(oceanColor, landColor, isLand);
           }
@@ -627,11 +630,19 @@ export function createPlanetSurfaceMaterial(
         }
 
         // =========================================================================
-        // 4: MARS — 4K VIKING / MRO GLOBAL MOSAIC + DUST ATMOSPHERE RIM
+        // 4: MARS & IGNIS-PRIME (4K VIKING/MRO MOSAIC + INCANDESCENT MAGMA FISSURES)
         // =========================================================================
         else if (uShaderType == 4) {
           if (uHasDiffuseMap > 0.5) {
             albedo = pow(sampledDiffuse, vec3(1.02)) * 1.05;
+            // On hyper-volcanic Ignis-Prime (uSecondaryColor dark magma brown), dark basalt valleys glow with 4K molten lava rivers!
+            if (uSecondaryColor.r < 0.55) {
+              float lum = dot(sampledDiffuse, vec3(0.333));
+              float lavaVein = smoothstep(0.46, 0.24, lum) * smoothstep(0.12, 0.23, lum);
+              vec3 lavaCol = mix(vec3(0.98, 0.28, 0.02), vec3(1.0, 0.88, 0.25), lavaVein);
+              albedo = mix(albedo * vec3(0.72, 0.58, 0.52), lavaCol, lavaVein * 0.85);
+              nightEmission = lavaCol * lavaVein * 2.2;
+            }
           } else {
             float n = fbm(p * 3.0);
             albedo = mix(vec3(0.28, 0.11, 0.06), vec3(0.82, 0.38, 0.18), smoothstep(-0.3, 0.4, n));

@@ -51,14 +51,18 @@ import {
   CRAFTING_RECIPES,
   ENERGY_MINERAL_YIELDS,
   getBodyMiningProfile,
+  MINERAL_FUSION_RECIPES,
   MINING_RESOURCE_LIST,
   MINING_RESOURCES,
+  SHIP_UPGRADE_DEFINITIONS,
+  SPACE_CONTRACTS,
 } from '../data/miningCatalog';
 import { RECIPE_IMAGE_PATHS, RESOURCE_IMAGE_PATHS } from '../data/itemArtwork';
 import {
   MiningRecipeId,
   MiningResourceId,
   PowerSubsystemId,
+  ShipUpgradeSystemId,
   SpacecraftControlState,
   SpacecraftTelemetry,
   SurvivalResourcesState,
@@ -109,6 +113,9 @@ interface SpacecraftCockpitHUDProps {
   onCabinStationInteract: () => void;
   onToggleMiningLaser: () => void;
   onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
+  onFuseMinerals?: (fusionId: string) => void;
+  onUpgradeShipSystem?: (systemId: ShipUpgradeSystemId) => void;
+  onCompleteContract?: (contractId: string) => void;
   onConsumeMineralForEnergy?: (resourceId: MiningResourceId) => void;
   onTransferBatteryBank?: () => void;
   onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
@@ -149,6 +156,9 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   onCabinStationInteract,
   onToggleMiningLaser,
   onSynthesizeRecipe,
+  onFuseMinerals,
+  onUpgradeShipSystem,
+  onCompleteContract,
   onConsumeMineralForEnergy,
   onTransferBatteryBank,
   onSellCargo,
@@ -1028,6 +1038,46 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                           title: 'Júpiter & Saturno',
                           desc: 'Hélio-3 Atmosférico Puro (+45% Energia / Banco)',
                         },
+                        {
+                          id: 'tyche-prime',
+                          title: '🌌 Tyche-IX (Super-Terra Glacial 4K)',
+                          desc: 'Cristal de Vácuo Quântico (+65% Energia · 420 CR)',
+                        },
+                        {
+                          id: 'ignis-prime',
+                          title: '🌋 Ignis-Prime (Mundo de Magma 4K)',
+                          desc: 'Núcleo de Plasma Estelar (+85% Energia · 540 CR)',
+                        },
+                        {
+                          id: 'krystallos-v',
+                          title: '💎 Krystallos-V (Planeta de Diamante 4K)',
+                          desc: 'Cristal de Vácuo & Silicatos Exóticos (420 CR)',
+                        },
+                        {
+                          id: 'solaris-nova',
+                          title: '🌟 Estrela Solaris-Nova (Setor Andrômeda)',
+                          desc: 'Sifão Estelar (+26%/s) + Hipercristal de Andrômeda',
+                        },
+                        {
+                          id: 'xylos-omega',
+                          title: '🌿 Xylos-Omega (Mundo Bioluminescente 4K)',
+                          desc: 'Superliga Aether-Platina (+75% Energia · 680 CR)',
+                        },
+                        {
+                          id: 'aether-ix',
+                          title: '⚡ Aether-IX (Gigante de Tempestades 4K)',
+                          desc: 'Núcleo de Plasma & Hipercristal de Andrômeda (950 CR)',
+                        },
+                        {
+                          id: 'nyx-obsidian',
+                          title: '🛡️ Nyx-Obsidian (Mundo de Platina 4K)',
+                          desc: 'Superliga Aether-Platina & Platina Pura (680 CR)',
+                        },
+                        {
+                          id: 'chronos-prime',
+                          title: '👑 Chronos-Prime (Anéis Quânticos 4K)',
+                          desc: 'Hipercristal de Andrômeda (+100% Energia & Banco · 950 CR)',
+                        },
                       ].map((spot) => (
                         <div
                           key={spot.id}
@@ -1225,6 +1275,204 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                       })}
                     </div>
                   </div>
+
+                  {/* 3B. MINERAL FUSION LAB (Combine 2 minerals to create a rarer mineral!) */}
+                  {onFuseMinerals && (
+                    <div className="bg-slate-900/80 border border-purple-400/35 rounded-xl p-3 space-y-2.5">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-purple-300">
+                        <span className="font-bold flex items-center gap-1.5">
+                          <Atom className="w-3.5 h-3.5" />
+                          FUSÃO MINERAL (JUNTAR 2 → CRIAR MAIS RARO)
+                        </span>
+                        <span className="text-emerald-300 font-bold">Libera Porão</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {MINERAL_FUSION_RECIPES.map((fus) => {
+                          const outDef = MINING_RESOURCES[fus.outputResourceId];
+                          const canFuse =
+                            fus.inputs.every(
+                              (inp) => (survival.cargoInventory[inp.resourceId] ?? 0) >= inp.amount
+                            ) && survival.batteryPercent >= fus.energyCostPct;
+                          return (
+                            <div
+                              key={fus.id}
+                              className="rounded-xl p-2 bg-slate-950/75 border border-white/10 flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-bold text-white truncate">
+                                  {fus.name}
+                                </div>
+                                <div className="text-[9px] font-mono text-cyan-200 truncate">
+                                  {fus.inputs
+                                    .map((inp) => {
+                                      const d = MINING_RESOURCES[inp.resourceId];
+                                      const have = survival.cargoInventory[inp.resourceId] ?? 0;
+                                      return `${have}/${inp.amount} ${d.name.split(' ')[0]}`;
+                                    })
+                                    .join(' + ')}{' '}
+                                  → +{fus.outputAmount}x ({outDef.creditValue} CR)
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => onFuseMinerals(fus.id)}
+                                disabled={!canFuse}
+                                className={`shrink-0 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-bold transition-colors ${
+                                  canFuse
+                                    ? 'bg-purple-500/35 hover:bg-purple-500/50 border-purple-300 text-white'
+                                    : 'bg-white/5 border-white/10 text-slate-500 cursor-not-allowed'
+                                }`}
+                              >
+                                Fundir
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3C. SHIP UPGRADE WORKSHOP (Spend Space Credits CR + Minerals to evolve the ship!) */}
+                  {onUpgradeShipSystem && (
+                    <div className="bg-slate-900/80 border border-amber-400/40 rounded-xl p-3 space-y-2.5">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-amber-300">
+                        <span className="font-bold flex items-center gap-1.5">
+                          <Wrench className="w-3.5 h-3.5" />
+                          OFICINA DE EVOLUÇÃO DA NAVE (UPGRADES)
+                        </span>
+                        <span className="text-emerald-300 font-bold">
+                          {survival.spaceCredits.toLocaleString('pt-BR')} CR
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {(
+                          Object.keys(SHIP_UPGRADE_DEFINITIONS) as Array<
+                            keyof typeof SHIP_UPGRADE_DEFINITIONS
+                          >
+                        ).map((sysId) => {
+                          const def = SHIP_UPGRADE_DEFINITIONS[sysId];
+                          const curLvl = survival.shipUpgrades?.[sysId] ?? 1;
+                          const isMax = curLvl >= def.maxLevel;
+                          const stepIdx = curLvl - 1;
+                          const crCost = Math.round(def.baseCostCredits * Math.pow(1.55, stepIdx));
+                          const reqMin =
+                            def.mineralRequirementPerLevel[
+                              Math.min(stepIdx, def.mineralRequirementPerLevel.length - 1)
+                            ];
+                          const reqMinDef = MINING_RESOURCES[reqMin.resourceId];
+                          const ownedMin = survival.cargoInventory[reqMin.resourceId] ?? 0;
+                          const canUpgrade =
+                            !isMax &&
+                            survival.spaceCredits >= crCost &&
+                            ownedMin >= reqMin.amount;
+
+                          return (
+                            <div
+                              key={sysId}
+                              className="rounded-xl p-2 bg-slate-950/75 border border-white/10 flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-bold text-white truncate">
+                                  {def.name} (Nv {curLvl}/{def.maxLevel})
+                                </div>
+                                <div className="text-[9px] font-mono text-emerald-300 truncate">
+                                  {def.getLevelBenefitLabel(curLvl)}
+                                </div>
+                                {!isMax && (
+                                  <div className="text-[9px] font-mono text-amber-200 truncate">
+                                    Próx: {crCost} CR + {ownedMin}/{reqMin.amount}{' '}
+                                    {reqMinDef.name.split(' ')[0]}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => onUpgradeShipSystem(sysId)}
+                                disabled={!canUpgrade}
+                                className={`shrink-0 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-bold transition-colors ${
+                                  isMax
+                                    ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200 cursor-default'
+                                    : canUpgrade
+                                      ? 'bg-amber-500/35 hover:bg-amber-500/50 border-amber-300 text-white'
+                                      : 'bg-white/5 border-white/10 text-slate-500 cursor-not-allowed'
+                                }`}
+                              >
+                                {isMax ? 'MÁX' : 'Evoluir'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3D. ACTIVE SPACE CONTRACTS & SOS RESCUE SIGNALS */}
+                  {onCompleteContract && (
+                    <div className="bg-slate-900/80 border border-sky-400/35 rounded-xl p-3 space-y-2.5">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-sky-300">
+                        <span className="font-bold flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          CONTRATOS ESPACIAIS &amp; SINAIS SOS
+                        </span>
+                        <span className="text-emerald-300 font-bold">
+                          {(survival.completedContractIds ?? []).length}/{SPACE_CONTRACTS.length}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {SPACE_CONTRACTS.map((c) => {
+                          const canComplete = c.requirements.every(
+                            (r) => (survival.cargoInventory[r.resourceId] ?? 0) >= r.amount
+                          );
+                          return (
+                            <div
+                              key={c.id}
+                              className="rounded-xl p-2 bg-slate-950/75 border border-white/10 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-white truncate">
+                                  {c.title}
+                                </span>
+                                <span className="text-[10px] font-mono font-bold text-emerald-300 shrink-0">
+                                  +{c.rewardCredits} CR
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-300 leading-snug">
+                                {c.description}
+                              </p>
+                              <div className="flex items-center justify-between gap-2 pt-0.5">
+                                <div className="text-[9px] font-mono text-cyan-200 truncate">
+                                  {c.requirements
+                                    .map((r) => {
+                                      const d = MINING_RESOURCES[r.resourceId];
+                                      const have = survival.cargoInventory[r.resourceId] ?? 0;
+                                      return `${have}/${r.amount} ${d.name.split(' ')[0]}`;
+                                    })
+                                    .join(' · ')}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() => startAutopilotTripTo(c.targetBodyId)}
+                                    className="px-2 py-0.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/45 text-sky-100 text-[9px] font-mono font-bold"
+                                  >
+                                    Viajar
+                                  </button>
+                                  <button
+                                    onClick={() => onCompleteContract(c.id)}
+                                    disabled={!canComplete}
+                                    className={`px-2 py-0.5 rounded-lg border text-[9px] font-mono font-bold transition-colors ${
+                                      canComplete
+                                        ? 'bg-emerald-500/35 hover:bg-emerald-500/50 border-emerald-300 text-white'
+                                        : 'bg-white/5 border-white/10 text-slate-500 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    Entregar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* 4. Astrochemical Resource Catalog */}
                   <div className="bg-slate-900/80 border border-white/10 rounded-xl p-3 space-y-2">
@@ -2196,6 +2444,20 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
             >
               <Zap className="w-3 h-3" />
               <span className="hidden sm:inline">Dobra</span>
+            </button>
+
+            <button
+              onClick={() =>
+                onUpdateControl((prev) => ({
+                  ...prev,
+                  firePulseCount: prev.firePulseCount + 1,
+                }))
+              }
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 text-[10px] font-bold font-mono transition-colors"
+              title="Disparar Canhões de Pulso de Plasma em Meteoros de Cristal e Drones Sentinelas (Tecla F)"
+            >
+              <Crosshair className="w-3 h-3" />
+              <span>Pulso [F]</span>
             </button>
 
             <button

@@ -211,8 +211,60 @@ export const MINING_RESOURCES: Record<MiningResourceId, CatalogResourceDefinitio
     creditValue: 260,
     colorHex: '#c084fc',
     description:
-      'Grãos pré-solares irradiados por raios cósmicos interestelares e cometas primordiais da Nuvem de Oort. Apresentam ressonância quântica útil em bobinas de dobra.',
-    commonSources: '1I/ʻOumuamua, Arrokoth, Gonggong, Halley, 67P',
+      'Grãos pré-solares irradiados por raios cósmicos interestelares e cometas primordiais da Nuvem de Oort. Apresentam ressonância quântica útil em bobinas de dobra e fusão de cristais lendários.',
+    commonSources: '1I/ʻOumuamua, Krystallos-V, Arrokoth, Gonggong, Halley, 67P',
+  },
+  'void-crystal': {
+    id: 'void-crystal',
+    name: 'Cristal de Vácuo Quântico',
+    formula: 'Qr·SiC₄ (Lendário)',
+    category: 'EXOTIC',
+    rarity: 'EXOTIC',
+    unitMassKg: 10,
+    creditValue: 420,
+    colorHex: '#38bdf8',
+    description:
+      'Cristal hiperbarométrico formado sob 400 GPa em Super-Terras glaciais e mundos de diamante, ou obtido pela fusão de Silicatos Exóticos com Platina. Repõe +65% da Energia e do Banco de Baterias.',
+    commonSources: 'Tyche-IX, Krystallos-V, Xylos-Omega, Fusão Mineral',
+  },
+  'solar-plasma-core': {
+    id: 'solar-plasma-core',
+    name: 'Núcleo de Plasma Estelar Condensado',
+    formula: '³He·H⁺ (p)',
+    category: 'ISOTOPE',
+    rarity: 'EXOTIC',
+    unitMassKg: 8,
+    creditValue: 540,
+    colorHex: '#fde047',
+    description:
+      'Esfera magnética de plasma estelar estabilizado, extraída da estrela Solaris-Nova, caldeiras de Ignis-Prime, tempestades de Aether-IX ou fundindo Hélio-3 com Cristal de Vácuo. Repõe +85% de Energia.',
+    commonSources: 'Estrela Solaris-Nova, Ignis-Prime, Aether-IX, Fusão Mineral',
+  },
+  'chronos-alloy': {
+    id: 'chronos-alloy',
+    name: 'Superliga Aether-Platina',
+    formula: 'Pt₃Ir·TiC',
+    category: 'METALLIC',
+    rarity: 'EXOTIC',
+    unitMassKg: 24,
+    creditValue: 680,
+    colorHex: '#34d399',
+    description:
+      'Superliga metamaterial indestrutível extraída do núcleo metálico de Nyx-Obsidian e recifes de Xylos-Omega, ou forjada na Fusão Mineral. Indispensável para evoluir os sistemas da nave na Oficina.',
+    commonSources: 'Nyx-Obsidian, Xylos-Omega, Chronos-Prime, Fusão Mineral',
+  },
+  'andromeda-hypercrystal': {
+    id: 'andromeda-hypercrystal',
+    name: 'Hipercristal de Andrômeda (Supremo)',
+    formula: 'Ω-³He·SiC',
+    category: 'EXOTIC',
+    rarity: 'EXOTIC',
+    unitMassKg: 6,
+    creditValue: 950,
+    colorHex: '#e879f9',
+    description:
+      'O recurso mineral mais raro e valioso do cosmos! Extraído nos anéis quânticos de Chronos-Prime e Aether-IX ou criado pela fusão de Núcleo de Plasma com Superliga Aether-Platina. Restaura 100% da Energia e do Banco!',
+    commonSources: 'Chronos-Prime, Aether-IX, Estrela Solaris-Nova, Fusão Mineral',
   },
 };
 
@@ -278,6 +330,31 @@ export const ENERGY_MINERAL_YIELDS: Record<
     batteryPct: 12,
     bankPct: 10,
     label: '+12% Energia / Banco (Termossílica)',
+  },
+  'void-crystal': {
+    batteryPct: 65,
+    bankPct: 55,
+    warpPct: 25,
+    label: '+65% Energia / Banco · +25% Dobra',
+  },
+  'solar-plasma-core': {
+    batteryPct: 85,
+    bankPct: 75,
+    warpPct: 35,
+    label: '+85% Energia / Banco · +35% Dobra',
+  },
+  'chronos-alloy': {
+    batteryPct: 75,
+    bankPct: 65,
+    fuelPct: 25,
+    label: '+75% Energia / Banco · +25% Combustível',
+  },
+  'andromeda-hypercrystal': {
+    batteryPct: 100,
+    bankPct: 100,
+    warpPct: 60,
+    fuelPct: 40,
+    label: '+100% Energia & Banco · +60% Dobra',
   },
 };
 
@@ -783,6 +860,114 @@ export const CELESTIAL_MINING_PROFILES: Record<string, CatalogCelestialMiningPro
       { resourceId: 'platinum-group', weight: 0.18, purity: 0.93, veinNote: 'Anomalia metálica densa no núcleo' },
     ],
   },
+  'tyche-prime': {
+    bodyId: 'tyche-prime',
+    bodyTypeLabel: 'Super-Terra Glacial Quântica 4K (Fronteira Externa · 52,4 UA)',
+    extractable: true,
+    extractionMethod: 'Perfuração criogênica de fendas abissais de Gelo VII e cristais de vácuo',
+    hardnessFactor: 0.78,
+    laserColorHex: '#38bdf8',
+    yields: [
+      { resourceId: 'void-crystal', weight: 0.42, purity: 0.98, veinNote: 'Fenda abissal de Cristal de Vácuo Quântico' },
+      { resourceId: 'helium-3', weight: 0.32, purity: 0.97, veinNote: 'Clatratos polares de Hélio-3' },
+      { resourceId: 'water-ice', weight: 0.26, purity: 0.99, veinNote: 'Gelo VII de altíssima pureza' },
+    ],
+  },
+  'ignis-prime': {
+    bodyId: 'ignis-prime',
+    bodyTypeLabel: 'Planeta Tectônico Hipervulcânico de Magma 4K (58,8 UA)',
+    extractable: true,
+    extractionMethod: 'Sifonagem magnetotérmica em rios de lava incandescente e caldeiras de plasma',
+    hardnessFactor: 0.85,
+    laserColorHex: '#f97316',
+    yields: [
+      { resourceId: 'solar-plasma-core', weight: 0.40, purity: 0.98, veinNote: 'Caldeira ativa de Núcleo de Plasma' },
+      { resourceId: 'sulfur-compounds', weight: 0.26, purity: 0.96, veinNote: 'Gêiseres vulcânicos de enxofre puro' },
+      { resourceId: 'platinum-group', weight: 0.20, purity: 0.95, veinNote: 'Derrame magmático rico em platina' },
+      { resourceId: 'titanium-ilmenite', weight: 0.14, purity: 0.94, veinNote: 'Basalto negro de titânio' },
+    ],
+  },
+  'krystallos-v': {
+    bodyId: 'krystallos-v',
+    bodyTypeLabel: 'Exoplaneta Cristalino de Diamante & Quartzo 4K (65,2 UA)',
+    extractable: true,
+    extractionMethod: 'Corte óptico ressonante em cordilheiras de diamante e carbeto de silício quântico',
+    hardnessFactor: 0.88,
+    laserColorHex: '#c084fc',
+    yields: [
+      { resourceId: 'void-crystal', weight: 0.48, purity: 0.99, veinNote: 'Maciço de Cristal de Vácuo & Diamante' },
+      { resourceId: 'exotic-silicates', weight: 0.34, purity: 0.98, veinNote: 'Cristais prismáticos de SiC quântico' },
+      { resourceId: 'platinum-group', weight: 0.18, purity: 0.95, veinNote: 'Inclusões nobres nos anéis internos' },
+    ],
+  },
+  'solaris-nova': {
+    bodyId: 'solaris-nova',
+    bodyTypeLabel: 'Estrela Hipergigante do Setor Andrômeda (Sifão Estelar +30%/s Energia)',
+    extractable: true,
+    extractionMethod: 'Sifonagem magnetohidrodinâmica direta de Núcleos de Plasma Estelar e Hipercristais',
+    hardnessFactor: 0.50,
+    laserColorHex: '#fde047',
+    yields: [
+      { resourceId: 'solar-plasma-core', weight: 0.52, purity: 1.0, veinNote: 'Arco coronal de Plasma Estelar Condensado' },
+      { resourceId: 'helium-3', weight: 0.28, purity: 1.0, veinNote: 'Vento estelar puro de Hélio-3' },
+      { resourceId: 'andromeda-hypercrystal', weight: 0.20, purity: 0.99, veinNote: 'Singularidade magnética coronal' },
+    ],
+  },
+  'xylos-omega': {
+    bodyId: 'xylos-omega',
+    bodyTypeLabel: 'Super-Terra Oceânica & Bioluminescente 4K (Setor Andrômeda · 94,5 UA)',
+    extractable: true,
+    extractionMethod: 'Extração limpa em recifes organometálicos bioluminescentes e dorsais oceânicas',
+    hardnessFactor: 0.72,
+    laserColorHex: '#10b981',
+    yields: [
+      { resourceId: 'chronos-alloy', weight: 0.42, purity: 0.98, veinNote: 'Recife bioluminescente de Superliga Aether-Platina' },
+      { resourceId: 'void-crystal', weight: 0.28, purity: 0.97, veinNote: 'Fossa abissal cristalina' },
+      { resourceId: 'ammonia-hydrates', weight: 0.16, purity: 0.98, veinNote: 'Biomassa marinha rica em nitrogênio' },
+      { resourceId: 'water-ice', weight: 0.14, purity: 1.0, veinNote: 'Calota polar oceânica pura' },
+    ],
+  },
+  'aether-ix': {
+    bodyId: 'aether-ix',
+    bodyTypeLabel: 'Hipergigante Gasoso Anelado de Tempestades 4K (Setor Andrômeda · 104,0 UA)',
+    extractable: true,
+    extractionMethod: 'Colheita eletromagnética em super-tempestades de plasma e anéis luminosos',
+    hardnessFactor: 0.82,
+    laserColorHex: '#38bdf8',
+    yields: [
+      { resourceId: 'solar-plasma-core', weight: 0.38, purity: 0.99, veinNote: 'Vórtice anticiclônico de Plasma Estelar' },
+      { resourceId: 'andromeda-hypercrystal', weight: 0.28, purity: 0.98, veinNote: 'Anel ressonante de Hipercristal de Andrômeda' },
+      { resourceId: 'helium-3', weight: 0.22, purity: 0.99, veinNote: 'Corrente de jato equatorial de ³He' },
+      { resourceId: 'cryo-methane', weight: 0.12, purity: 0.97, veinNote: 'Nuvens superiores de hidrocarbonetos' },
+    ],
+  },
+  'nyx-obsidian': {
+    bodyId: 'nyx-obsidian',
+    bodyTypeLabel: 'Planeta Metálico de Platina & Obsidiana 4K (Setor Andrômeda · 114,0 UA)',
+    extractable: true,
+    extractionMethod: 'Fusão laser de alta precisão em maciços expostos de Superliga Aether-Platina',
+    hardnessFactor: 0.86,
+    laserColorHex: '#818cf8',
+    yields: [
+      { resourceId: 'chronos-alloy', weight: 0.50, purity: 0.99, veinNote: 'Escarpa pura de Superliga Aether-Platina' },
+      { resourceId: 'platinum-group', weight: 0.28, purity: 0.99, veinNote: 'Cratera espelhada de Platina-Irídio' },
+      { resourceId: 'titanium-ilmenite', weight: 0.22, purity: 0.97, veinNote: 'Manto de obsidiana-titânio' },
+    ],
+  },
+  'chronos-prime': {
+    bodyId: 'chronos-prime',
+    bodyTypeLabel: 'Gigante Quântico Anelado 4K (Setor Profundo de Andrômeda · 125,0 UA)',
+    extractable: true,
+    extractionMethod: 'Captura harmônica de Hipercristais de Andrômeda na divisão dourada dos anéis',
+    hardnessFactor: 0.80,
+    laserColorHex: '#e879f9',
+    yields: [
+      { resourceId: 'andromeda-hypercrystal', weight: 0.48, purity: 1.0, veinNote: 'Santuário Quântico de Hipercristal de Andrômeda' },
+      { resourceId: 'chronos-alloy', weight: 0.24, purity: 0.99, veinNote: 'Nódulos anelares de Superliga Aether-Platina' },
+      { resourceId: 'void-crystal', weight: 0.16, purity: 0.98, veinNote: 'Cristal de Vácuo polar' },
+      { resourceId: 'solar-plasma-core', weight: 0.12, purity: 0.98, veinNote: 'Fluxo auroral de plasma condensado' },
+    ],
+  },
 };
 
 export const CRAFTING_RECIPES: CatalogSynthesisRecipe[] = [
@@ -935,6 +1120,338 @@ export function getRecipesUsingResource(
     recipe.ingredients.some((ing) => ing.resourceId === resourceId)
   );
 }
+
+/**
+ * MINERAL FUSION TREE (Combine 2 minerals to transmute/create a rarer mineral + free up Cargo Hold space!)
+ */
+export interface CatalogMineralFusionRecipe {
+  id: string;
+  name: string;
+  inputs: [CatalogRecipeIngredient, CatalogRecipeIngredient];
+  outputResourceId: MiningResourceId;
+  outputAmount: number;
+  energyCostPct: number;
+  bonusCredits: number;
+  description: string;
+}
+
+export const MINERAL_FUSION_RECIPES: CatalogMineralFusionRecipe[] = [
+  {
+    id: 'fuse-titanium',
+    name: 'Fusão Termometálica → Ilmenita de Titânio',
+    inputs: [
+      { resourceId: 'iron-nickel', amount: 2 },
+      { resourceId: 'silicate-regolith', amount: 1 },
+    ],
+    outputResourceId: 'titanium-ilmenite',
+    outputAmount: 1,
+    energyCostPct: 3,
+    bonusCredits: 25,
+    description: 'Funde 2x Ferro-Níquel + 1x Regolito em 1x Ilmenita de Titânio (Incomum).',
+  },
+  {
+    id: 'fuse-methane',
+    name: 'Síntese Criogênica → Metano Criogênico',
+    inputs: [
+      { resourceId: 'water-ice', amount: 2 },
+      { resourceId: 'silicate-regolith', amount: 1 },
+    ],
+    outputResourceId: 'cryo-methane',
+    outputAmount: 1,
+    energyCostPct: 3,
+    bonusCredits: 20,
+    description: 'Combina 2x Gelo de Água + 1x Regolito em 1x Metano Criogênico (Incomum).',
+  },
+  {
+    id: 'fuse-sulfur',
+    name: 'Condensação Ácida → Compostos Sulfurosos',
+    inputs: [
+      { resourceId: 'ammonia-hydrates', amount: 1 },
+      { resourceId: 'silicate-regolith', amount: 2 },
+    ],
+    outputResourceId: 'sulfur-compounds',
+    outputAmount: 1,
+    energyCostPct: 3,
+    bonusCredits: 25,
+    description: 'Reage 1x Amônia + 2x Regolito para extrair 1x Compostos Sulfurosos (Incomum · +30% Energia).',
+  },
+  {
+    id: 'fuse-helium3',
+    name: 'Transmutação Isotópica → Hélio-3 Solar (Energia)',
+    inputs: [
+      { resourceId: 'cryo-methane', amount: 2 },
+      { resourceId: 'sulfur-compounds', amount: 1 },
+    ],
+    outputResourceId: 'helium-3',
+    outputAmount: 1,
+    energyCostPct: 4,
+    bonusCredits: 60,
+    description: 'Funde 2x Metano + 1x Enxofre em 1x Isótopo Hélio-3 Solar (Raro · +45% Energia).',
+  },
+  {
+    id: 'fuse-platinum',
+    name: 'Refino Siderófilo → Metais da Platina (PGM)',
+    inputs: [
+      { resourceId: 'titanium-ilmenite', amount: 2 },
+      { resourceId: 'iron-nickel', amount: 1 },
+    ],
+    outputResourceId: 'platinum-group',
+    outputAmount: 1,
+    energyCostPct: 4,
+    bonusCredits: 70,
+    description: 'Purifica 2x Titânio + 1x Ferro-Níquel em 1x Metais do Grupo da Platina (Raro · 165 CR).',
+  },
+  {
+    id: 'fuse-exotic-silicates',
+    name: 'Cristalização Quântica → Silicatos Interestelares',
+    inputs: [
+      { resourceId: 'helium-3', amount: 1 },
+      { resourceId: 'platinum-group', amount: 1 },
+    ],
+    outputResourceId: 'exotic-silicates',
+    outputAmount: 1,
+    energyCostPct: 5,
+    bonusCredits: 95,
+    description: 'Une 1x Hélio-3 + 1x Platina em 1x Silicatos Amorfos Interestelares (Exótico · 260 CR).',
+  },
+  {
+    id: 'fuse-void-crystal',
+    name: 'Compressão Hiperbarométrica → Cristal de Vácuo Quântico',
+    inputs: [
+      { resourceId: 'exotic-silicates', amount: 1 },
+      { resourceId: 'titanium-ilmenite', amount: 2 },
+    ],
+    outputResourceId: 'void-crystal',
+    outputAmount: 1,
+    energyCostPct: 6,
+    bonusCredits: 150,
+    description: 'Funde 1x Silicatos Exóticos + 2x Titânio em 1x Cristal de Vácuo Quântico (Lendário · 420 CR).',
+  },
+  {
+    id: 'fuse-solar-plasma',
+    name: 'Confinamento Magnético → Núcleo de Plasma Estelar',
+    inputs: [
+      { resourceId: 'helium-3', amount: 2 },
+      { resourceId: 'void-crystal', amount: 1 },
+    ],
+    outputResourceId: 'solar-plasma-core',
+    outputAmount: 1,
+    energyCostPct: 6,
+    bonusCredits: 210,
+    description: 'Condensa 2x Hélio-3 + 1x Cristal de Vácuo em 1x Núcleo de Plasma Estelar (Lendário · 540 CR).',
+  },
+  {
+    id: 'fuse-chronos-alloy',
+    name: 'Forja Metamaterial → Superliga Aether-Platina',
+    inputs: [
+      { resourceId: 'platinum-group', amount: 2 },
+      { resourceId: 'void-crystal', amount: 1 },
+    ],
+    outputResourceId: 'chronos-alloy',
+    outputAmount: 1,
+    energyCostPct: 6,
+    bonusCredits: 260,
+    description: 'Une 2x Platina + 1x Cristal de Vácuo em 1x Superliga Aether-Platina (Lendário · 680 CR).',
+  },
+  {
+    id: 'fuse-andromeda-hypercrystal',
+    name: 'Singularidade Suprema → Hipercristal de Andrômeda',
+    inputs: [
+      { resourceId: 'solar-plasma-core', amount: 1 },
+      { resourceId: 'chronos-alloy', amount: 1 },
+    ],
+    outputResourceId: 'andromeda-hypercrystal',
+    outputAmount: 1,
+    energyCostPct: 8,
+    bonusCredits: 450,
+    description: 'Funde 1x Núcleo de Plasma + 1x Superliga Aether-Platina no supremo Hipercristal de Andrômeda (950 CR · 100% Energia)!',
+  },
+];
+
+export function getFusionsUsingResource(
+  resourceId: MiningResourceId
+): CatalogMineralFusionRecipe[] {
+  return MINERAL_FUSION_RECIPES.filter(
+    (f) =>
+      f.outputResourceId === resourceId ||
+      f.inputs.some((inp) => inp.resourceId === resourceId)
+  );
+}
+
+/**
+ * SHIP UPGRADE WORKSHOP DEFINITIONS (Spends Space Credits CR + Mined/Fused Minerals!)
+ */
+export interface ShipUpgradeDefinition {
+  id: 'cargo' | 'laser' | 'batteryBank' | 'pulseCannon' | 'warpDrive';
+  name: string;
+  maxLevel: number;
+  baseCostCredits: number;
+  mineralRequirementPerLevel: Array<{ resourceId: MiningResourceId; amount: number }>;
+  getLevelBenefitLabel: (level: number) => string;
+  description: string;
+}
+
+export const SHIP_UPGRADE_DEFINITIONS: Record<
+  'cargo' | 'laser' | 'batteryBank' | 'pulseCannon' | 'warpDrive',
+  ShipUpgradeDefinition
+> = {
+  cargo: {
+    id: 'cargo',
+    name: 'Expansão do Porão de Carga',
+    maxLevel: 5,
+    baseCostCredits: 320,
+    mineralRequirementPerLevel: [
+      { resourceId: 'iron-nickel', amount: 2 },
+      { resourceId: 'titanium-ilmenite', amount: 2 },
+      { resourceId: 'platinum-group', amount: 2 },
+      { resourceId: 'chronos-alloy', amount: 1 },
+    ],
+    getLevelBenefitLabel: (lvl) => `Capacidade: ${500 + (lvl - 1) * 450} unidades`,
+    description: 'Amplia o porão da nave de 500 un até 2.300 un para longas expedições intergalácticas.',
+  },
+  laser: {
+    id: 'laser',
+    name: 'Laser Extrator Orbital Quântico',
+    maxLevel: 5,
+    baseCostCredits: 380,
+    mineralRequirementPerLevel: [
+      { resourceId: 'titanium-ilmenite', amount: 2 },
+      { resourceId: 'helium-3', amount: 2 },
+      { resourceId: 'exotic-silicates', amount: 1 },
+      { resourceId: 'void-crystal', amount: 1 },
+    ],
+    getLevelBenefitLabel: (lvl) => `Velocidade de Extração: +${(lvl - 1) * 38}%`,
+    description: 'Aumenta a taxa de extração por segundo e reduz o aquecimento do feixe.',
+  },
+  batteryBank: {
+    id: 'batteryBank',
+    name: 'Banco de Baterias & Coletores Solares',
+    maxLevel: 5,
+    baseCostCredits: 350,
+    mineralRequirementPerLevel: [
+      { resourceId: 'sulfur-compounds', amount: 2 },
+      { resourceId: 'helium-3', amount: 2 },
+      { resourceId: 'void-crystal', amount: 1 },
+      { resourceId: 'solar-plasma-core', amount: 1 },
+    ],
+    getLevelBenefitLabel: (lvl) => `Recarga Solar & Banco: +${(lvl - 1) * 35}%`,
+    description: 'Acelera a captação solar mesmo longe do Sol e aumenta a eficiência do Banco de Baterias.',
+  },
+  pulseCannon: {
+    id: 'pulseCannon',
+    name: 'Canhões de Pulso de Plasma [F]',
+    maxLevel: 5,
+    baseCostCredits: 360,
+    mineralRequirementPerLevel: [
+      { resourceId: 'iron-nickel', amount: 2 },
+      { resourceId: 'sulfur-compounds', amount: 2 },
+      { resourceId: 'platinum-group', amount: 1 },
+      { resourceId: 'solar-plasma-core', amount: 1 },
+    ],
+    getLevelBenefitLabel: (lvl) => `Dano & Saque Balístico: +${(lvl - 1) * 45}%`,
+    description: 'Destrói Meteoros de Cristal e Drones Sentinelas com mais dano e multiplica os minérios dropados!',
+  },
+  warpDrive: {
+    id: 'warpDrive',
+    name: 'Motor de Dobra Intergaláctica',
+    maxLevel: 5,
+    baseCostCredits: 420,
+    mineralRequirementPerLevel: [
+      { resourceId: 'cryo-methane', amount: 2 },
+      { resourceId: 'helium-3', amount: 2 },
+      { resourceId: 'void-crystal', amount: 1 },
+      { resourceId: 'andromeda-hypercrystal', amount: 1 },
+    ],
+    getLevelBenefitLabel: (lvl) => `Economia de Dobra: -${(lvl - 1) * 16}% consumo`,
+    description: 'Reduz o consumo do combustível de dobra e acelera viagens para o Setor de Andrômeda.',
+  },
+};
+
+/**
+ * ACTIVE SPACE CONTRACTS & SOS RESCUE MISSIONS (Gives high CR rewards & purpose to exploration!)
+ */
+export interface SpaceMissionContract {
+  id: string;
+  kind: 'SOS_RESCUE' | 'LOGISTICS' | 'DEEP_SPACE';
+  title: string;
+  targetBodyId: string;
+  targetBodyName: string;
+  requirements: CatalogRecipeIngredient[];
+  rewardCredits: number;
+  rewardWarpCells?: number;
+  description: string;
+}
+
+export const SPACE_CONTRACTS: SpaceMissionContract[] = [
+  {
+    id: 'sos-lunar-capsule',
+    kind: 'SOS_RESCUE',
+    title: '🚨 SOS: Cápsula Científica em Órbita Lunar',
+    targetBodyId: 'moon',
+    targetBodyName: 'Lua',
+    requirements: [
+      { resourceId: 'water-ice', amount: 2 },
+      { resourceId: 'helium-3', amount: 1 },
+    ],
+    rewardCredits: 580,
+    rewardWarpCells: 1,
+    description: 'Tripulação com suporte de vida crítico solicita Gelo de Água (O₂) e Hélio-3 de emergência.',
+  },
+  {
+    id: 'contract-mars-colony',
+    kind: 'LOGISTICS',
+    title: '📦 Logística: Blindagem para Base de Marte',
+    targetBodyId: 'mars',
+    targetBodyName: 'Marte',
+    requirements: [
+      { resourceId: 'iron-nickel', amount: 2 },
+      { resourceId: 'titanium-ilmenite', amount: 2 },
+    ],
+    rewardCredits: 740,
+    description: 'Entrega de ligas estruturais para expansão dos domos pressurizados de Arcadia Planitia.',
+  },
+  {
+    id: 'sos-jupiter-probe',
+    kind: 'SOS_RESCUE',
+    title: '🚨 SOS: Sonda Criogênica em Europa / Júpiter',
+    targetBodyId: 'jupiter',
+    targetBodyName: 'Júpiter',
+    requirements: [
+      { resourceId: 'sulfur-compounds', amount: 2 },
+      { resourceId: 'platinum-group', amount: 1 },
+    ],
+    rewardCredits: 960,
+    rewardWarpCells: 1,
+    description: 'Substituição de baterias Li-Enxofre e eletrodos de platina corroídos pela radiação joviana.',
+  },
+  {
+    id: 'contract-frontier-tyche',
+    kind: 'DEEP_SPACE',
+    title: '🌌 Expedição Fronteira: Cristais de Tyche-IX',
+    targetBodyId: 'tyche-prime',
+    targetBodyName: 'Tyche-IX (Super-Terra Glacial)',
+    requirements: [
+      { resourceId: 'void-crystal', amount: 2 },
+    ],
+    rewardCredits: 1450,
+    rewardWarpCells: 2,
+    description: 'Fornecer 2x Cristais de Vácuo Quântico extraídos de Tyche-IX/Krystallos-V ou criados por Fusão.',
+  },
+  {
+    id: 'contract-andromeda-core',
+    kind: 'DEEP_SPACE',
+    title: '🌟 Missão Andrômeda: Hipercristal & Plasma',
+    targetBodyId: 'chronos-prime',
+    targetBodyName: 'Chronos-Prime (Setor Andrômeda)',
+    requirements: [
+      { resourceId: 'solar-plasma-core', amount: 1 },
+      { resourceId: 'andromeda-hypercrystal', amount: 1 },
+    ],
+    rewardCredits: 2800,
+    rewardWarpCells: 3,
+    description: 'Contrato supremo da Doca Orbital: entregar 1x Núcleo de Plasma Estelar e 1x Hipercristal de Andrômeda.',
+  },
+];
 
 export const MINING_RECIPES_BY_ID: Record<MiningRecipeId, CatalogSynthesisRecipe> =
   CRAFTING_RECIPES.reduce((acc, item) => {

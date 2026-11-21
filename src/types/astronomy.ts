@@ -336,7 +336,26 @@ export type MiningResourceId =
   | 'sulfur-compounds'
   | 'helium-3'
   | 'platinum-group'
-  | 'exotic-silicates';
+  | 'exotic-silicates'
+  | 'void-crystal'
+  | 'solar-plasma-core'
+  | 'chronos-alloy'
+  | 'andromeda-hypercrystal';
+
+export type ShipUpgradeSystemId =
+  | 'cargo'
+  | 'laser'
+  | 'batteryBank'
+  | 'pulseCannon'
+  | 'warpDrive';
+
+export interface ShipUpgradeLevels {
+  cargo: number;
+  laser: number;
+  batteryBank: number;
+  pulseCannon: number;
+  warpDrive: number;
+}
 
 export type MiningResourceCategory =
   | 'VOLATILE_ICE'
@@ -469,6 +488,9 @@ export interface SurvivalResourcesState {
   spaceCredits: number;
   totalMinedUnits: number;
   mining: MiningLaserTelemetry;
+  shipUpgrades?: ShipUpgradeLevels;
+  completedContractIds?: string[];
+  destroyedTargetsCount?: number;
 }
 
 export interface SpacecraftControlState {

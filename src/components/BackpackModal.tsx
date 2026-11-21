@@ -17,10 +17,12 @@ import {
 } from 'lucide-react';
 import {
   ENERGY_MINERAL_YIELDS,
+  getFusionsUsingResource,
   getRecipesUsingResource,
   MINING_RECIPES_BY_ID,
   MINING_RESOURCE_LIST,
   MINING_RESOURCES,
+  SHIP_UPGRADE_DEFINITIONS,
 } from '../data/miningCatalog';
 import {
   PROVISION_ITEMS,
@@ -32,6 +34,7 @@ import {
 import {
   MiningRecipeId,
   MiningResourceId,
+  ShipUpgradeSystemId,
   SurvivalResourcesState,
 } from '../types/astronomy';
 import { getTotalCargoUnits } from '../utils/survivalEngine';
@@ -48,6 +51,8 @@ interface BackpackModalProps {
   onUseRepairKit: () => void;
   onConsumeWarpCell: () => void;
   onSynthesizeRecipe: (recipeId: MiningRecipeId) => void;
+  onFuseMinerals?: (fusionId: string) => void;
+  onUpgradeShipSystem?: (systemId: ShipUpgradeSystemId) => void;
   onConsumeMineralForEnergy?: (resourceId: MiningResourceId) => void;
   onTransferBatteryBank?: () => void;
   onSellCargo: (resourceId: MiningResourceId, units?: number) => void;
@@ -216,6 +221,8 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
   onUseRepairKit,
   onConsumeWarpCell,
   onSynthesizeRecipe,
+  onFuseMinerals,
+  onUpgradeShipSystem,
   onConsumeMineralForEnergy,
   onTransferBatteryBank,
   onSellCargo,
@@ -757,6 +764,60 @@ export const BackpackModal: React.FC<BackpackModalProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Mineral Fusion Tree (Combine 2 minerals to create a rarer mineral!) */}
+                {selectedItem.kind === 'mineral' && onFuseMinerals && (
+                  <div className="rounded-2xl bg-slate-900/75 border border-white/10 p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-purple-300">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <Atom className="w-3.5 h-3.5" />
+                        FUSÃO MINERAL (JUNTAR 2 → CRIAR RARO)
+                      </span>
+                      <span className="text-emerald-300">Libera espaço no Porão</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {getFusionsUsingResource(selectedItem.id).map((fus) => {
+                        const outDef = MINING_RESOURCES[fus.outputResourceId];
+                        const canFuse =
+                          fus.inputs.every(
+                            (inp) => (survival.cargoInventory[inp.resourceId] ?? 0) >= inp.amount
+                          ) && survival.batteryPercent >= fus.energyCostPct;
+                        return (
+                          <div
+                            key={fus.id}
+                            className="rounded-xl bg-slate-950/60 border border-white/15 p-2 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-bold text-white truncate">
+                                → {fus.outputAmount}x {outDef.name} (+{fus.bonusCredits} CR)
+                              </div>
+                              <div className="text-[9px] font-mono text-cyan-200 truncate">
+                                {fus.inputs
+                                  .map((inp) => {
+                                    const d = MINING_RESOURCES[inp.resourceId];
+                                    const have = survival.cargoInventory[inp.resourceId] ?? 0;
+                                    return `${have}/${inp.amount} ${d.name.split(' ')[0]}`;
+                                  })
+                                  .join(' + ')}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => onFuseMinerals(fus.id)}
+                              disabled={!canFuse}
+                              className={`shrink-0 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-bold transition-colors ${
+                                canFuse
+                                  ? 'bg-purple-500/35 hover:bg-purple-500/50 border-purple-300 text-white'
+                                  : 'bg-white/10 border-white/15 text-slate-300 opacity-60 cursor-not-allowed'
+                              }`}
+                            >
+                              Fundir
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Combinations & Utilities in Onboard Machine for Farmed Minerals */}
                 {selectedItem.kind === 'mineral' && (

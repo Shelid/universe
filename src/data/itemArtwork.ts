@@ -27,6 +27,10 @@ export const RESOURCE_IMAGE_PATHS: Record<MiningResourceId, string> = {
   'helium-3': '/images/items/helium-3.webp',
   'platinum-group': '/images/items/platinum-group.webp',
   'exotic-silicates': '/images/items/exotic-silicates.webp',
+  'void-crystal': '/images/items/exotic-silicates.webp',
+  'solar-plasma-core': '/images/items/helium-3.webp',
+  'chronos-alloy': '/images/items/platinum-group.webp',
+  'andromeda-hypercrystal': '/images/items/interstellar-resonator.webp',
 };
 
 export const RECIPE_IMAGE_PATHS: Record<MiningRecipeId, string> = {
