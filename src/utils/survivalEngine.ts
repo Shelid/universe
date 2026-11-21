@@ -22,6 +22,7 @@ import {
   SHIP_UPGRADE_DEFINITIONS,
   SPACE_CONTRACTS,
 } from '../data/miningCatalog';
+import { getSpacecraftPreset } from '../data/hangarCatalog';
 
 export const POWER_PIP_TOTAL = 8;
 export const MAX_PIPS_PER_SUBSYSTEM = 4;
@@ -149,7 +150,19 @@ export function adjustPowerPips(
   return next;
 }
 
-export function createInitialSurvivalState(): SurvivalResourcesState {
+export const SURVIVAL_SAVE_STORAGE_KEY = 'universe_explorer_progress_v2';
+
+export function computeCargoCapacityForShip(
+  cargoLevel: number,
+  shipVariantId: SpacecraftVariantId = 'sr7-vanguard'
+): number {
+  const shipBonus = getSpacecraftPreset(shipVariantId).flightMultipliers.cargoBonusUnits ?? 0;
+  return 500 + Math.max(0, cargoLevel - 1) * 450 + shipBonus;
+}
+
+export function createInitialSurvivalState(
+  shipVariantId: SpacecraftVariantId = 'sr7-vanguard'
+): SurvivalResourcesState {
   return {
     fuelPercent: 100,
     warpEnergyPercent: 68,
@@ -182,7 +195,7 @@ export function createInitialSurvivalState(): SurvivalResourcesState {
     activeStatusAlert: null,
     miningLaserActive: false,
     cargoInventory: {},
-    cargoCapacityUnits: 500,
+    cargoCapacityUnits: computeCargoCapacityForShip(1, shipVariantId),
     spaceCredits: 250,
     totalMinedUnits: 0,
     shipUpgrades: {
@@ -194,6 +207,9 @@ export function createInitialSurvivalState(): SurvivalResourcesState {
     },
     completedContractIds: [],
     destroyedTargetsCount: 0,
+    discoveredBodyIds: ['earth'],
+    unlockedShipIds: ['sr7-vanguard'],
+    environmentalHazardKind: 'NONE',
     mining: {
       isActive: false,
       isDrilling: false,
@@ -211,6 +227,126 @@ export function createInitialSurvivalState(): SurvivalResourcesState {
       statusMessage: 'Extrator orbital em espera. Aproxime-se de um astro e pressione X.',
     },
   };
+}
+
+export function loadSavedSurvivalState(
+  shipVariantId: SpacecraftVariantId = 'sr7-vanguard'
+): SurvivalResourcesState {
+  const base = createInitialSurvivalState(shipVariantId);
+  try {
+    const raw = localStorage.getItem(SURVIVAL_SAVE_STORAGE_KEY);
+    if (!raw) return base;
+    const parsed = JSON.parse(raw) as Partial<SurvivalResourcesState>;
+    if (!parsed || typeof parsed !== 'object') return base;
+
+    const mergedUpgrades = {
+      cargo: Math.max(1, Math.min(5, Number(parsed.shipUpgrades?.cargo ?? 1))),
+      laser: Math.max(1, Math.min(5, Number(parsed.shipUpgrades?.laser ?? 1))),
+      batteryBank: Math.max(1, Math.min(5, Number(parsed.shipUpgrades?.batteryBank ?? 1))),
+      pulseCannon: Math.max(1, Math.min(5, Number(parsed.shipUpgrades?.pulseCannon ?? 1))),
+      warpDrive: Math.max(1, Math.min(5, Number(parsed.shipUpgrades?.warpDrive ?? 1))),
+    };
+
+    const unlockedRaw = Array.isArray(parsed.unlockedShipIds) ? parsed.unlockedShipIds : [];
+    const unlockedShipIds: SpacecraftVariantId[] = Array.from(
+      new Set<SpacecraftVariantId>([
+        'sr7-vanguard',
+        ...unlockedRaw.filter(
+          (id): id is SpacecraftVariantId =>
+            id === 'sr7-vanguard' || id === 'xr9-phantom' || id === 'aegis-titan'
+        ),
+      ])
+    );
+
+    const discoveredRaw = Array.isArray(parsed.discoveredBodyIds) ? parsed.discoveredBodyIds : [];
+    const discoveredBodyIds = Array.from(
+      new Set<string>(['earth', ...discoveredRaw.filter((x) => typeof x === 'string')])
+    );
+
+    const effectiveShip = unlockedShipIds.includes(shipVariantId) ? shipVariantId : 'sr7-vanguard';
+
+    return {
+      ...base,
+      fuelPercent: clampPct(Number(parsed.fuelPercent ?? base.fuelPercent)),
+      warpEnergyPercent: clampPct(Number(parsed.warpEnergyPercent ?? base.warpEnergyPercent)),
+      warpCells: Math.max(0, Math.min(12, Math.floor(Number(parsed.warpCells ?? base.warpCells)))),
+      batteryPercent: clampPct(Number(parsed.batteryPercent ?? base.batteryPercent)),
+      batteryBankPercent: clampPct(Number(parsed.batteryBankPercent ?? base.batteryBankPercent)),
+      ecoCruiseMode: Boolean(parsed.ecoCruiseMode),
+      shipOxygenPercent: clampPct(Number(parsed.shipOxygenPercent ?? base.shipOxygenPercent)),
+      evaOxygenPercent: clampPct(Number(parsed.evaOxygenPercent ?? base.evaOxygenPercent)),
+      hullIntegrity: Math.max(15, clampPct(Number(parsed.hullIntegrity ?? base.hullIntegrity))),
+      hungerPercent: Math.max(20, clampPct(Number(parsed.hungerPercent ?? base.hungerPercent))),
+      thirstPercent: Math.max(20, clampPct(Number(parsed.thirstPercent ?? base.thirstPercent))),
+      fatiguePercent: Math.max(20, clampPct(Number(parsed.fatiguePercent ?? base.fatiguePercent))),
+      foodRations: Math.max(0, Math.min(12, Math.floor(Number(parsed.foodRations ?? base.foodRations)))),
+      waterFlasks: Math.max(0, Math.min(12, Math.floor(Number(parsed.waterFlasks ?? base.waterFlasks)))),
+      repairKits: Math.max(0, Math.min(12, Math.floor(Number(parsed.repairKits ?? base.repairKits)))),
+      powerPips: parsed.powerPips ? { ...DEFAULT_POWER_PIPS, ...parsed.powerPips } : base.powerPips,
+      cargoInventory:
+        parsed.cargoInventory && typeof parsed.cargoInventory === 'object'
+          ? parsed.cargoInventory
+          : {},
+      cargoCapacityUnits: computeCargoCapacityForShip(mergedUpgrades.cargo, effectiveShip),
+      spaceCredits: Math.max(0, Math.floor(Number(parsed.spaceCredits ?? base.spaceCredits))),
+      totalMinedUnits: Math.max(0, Math.floor(Number(parsed.totalMinedUnits ?? 0))),
+      shipUpgrades: mergedUpgrades,
+      completedContractIds: Array.isArray(parsed.completedContractIds)
+        ? parsed.completedContractIds.filter((x) => typeof x === 'string')
+        : [],
+      destroyedTargetsCount: Math.max(0, Math.floor(Number(parsed.destroyedTargetsCount ?? 0))),
+      discoveredBodyIds,
+      unlockedShipIds,
+      environmentalHazardKind: 'NONE',
+      miningLaserActive: false,
+      mining: base.mining,
+    };
+  } catch {
+    return base;
+  }
+}
+
+export function saveSurvivalState(state: SurvivalResourcesState): void {
+  try {
+    const payload = {
+      fuelPercent: state.fuelPercent,
+      warpEnergyPercent: state.warpEnergyPercent,
+      warpCells: state.warpCells,
+      batteryPercent: state.batteryPercent,
+      batteryBankPercent: state.batteryBankPercent,
+      ecoCruiseMode: state.ecoCruiseMode,
+      shipOxygenPercent: state.shipOxygenPercent,
+      evaOxygenPercent: state.evaOxygenPercent,
+      hullIntegrity: state.hullIntegrity,
+      hungerPercent: state.hungerPercent,
+      thirstPercent: state.thirstPercent,
+      fatiguePercent: state.fatiguePercent,
+      foodRations: state.foodRations,
+      waterFlasks: state.waterFlasks,
+      repairKits: state.repairKits,
+      powerPips: state.powerPips,
+      cargoInventory: state.cargoInventory,
+      spaceCredits: state.spaceCredits,
+      totalMinedUnits: state.totalMinedUnits,
+      shipUpgrades: state.shipUpgrades,
+      completedContractIds: state.completedContractIds,
+      destroyedTargetsCount: state.destroyedTargetsCount,
+      discoveredBodyIds: state.discoveredBodyIds,
+      unlockedShipIds: state.unlockedShipIds,
+    };
+    localStorage.setItem(SURVIVAL_SAVE_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function resetSavedSurvivalState(): SurvivalResourcesState {
+  try {
+    localStorage.removeItem(SURVIVAL_SAVE_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+  return createInitialSurvivalState('sr7-vanguard');
 }
 
 export interface StepSurvivalParams {
@@ -234,6 +370,8 @@ export interface StepSurvivalParams {
   nearestSurfaceRatio: number; // distance / radius (~1.05 at surface skim)
   nearOrbitalStation: boolean;
   inPlanetaryShadow: boolean;
+  inRingTurbulence?: boolean;
+  inUpperAtmosphere?: boolean;
 }
 
 const clampPct = (v: number): number => Math.max(0, Math.min(100, v));
@@ -245,8 +383,7 @@ export function stepSurvivalSimulation(
   const dt = Math.min(0.15, Math.max(0.001, p.dt));
   if (dt <= 0) return state;
 
-  // Nave única polivalente: todas as pinturas compartilham eficiência 1.0x idêntica
-  void p.shipVariantId;
+  const shipPreset = getSpacecraftPreset(p.shipVariantId);
   const upg = state.shipUpgrades ?? {
     cargo: 1,
     laser: 1,
@@ -254,9 +391,12 @@ export function stepSurvivalSimulation(
     pulseCannon: 1,
     warpDrive: 1,
   };
-  const fuelEfficiency = 1.0;
-  const warpEfficiency = Math.max(0.36, 1.0 - (upg.warpDrive - 1) * 0.16);
+  const fuelEfficiency = shipPreset.flightMultipliers.fuelEfficiency ?? 1.0;
+  const shipWarpMult = shipPreset.flightMultipliers.warpEfficiency ?? 1.0;
+  const thermalShieldBonus = shipPreset.flightMultipliers.thermalShieldBonus ?? 0.0;
+  const warpEfficiency = Math.max(0.32, (1.0 - (upg.warpDrive - 1) * 0.16) * shipWarpMult);
   const bankSolarMult = 1.0 + (upg.batteryBank - 1) * 0.35;
+  const effectiveCargoCap = computeCargoCapacityForShip(upg.cargo, p.shipVariantId);
 
   if (p.mode === 'HANGAR') {
     return {
@@ -402,10 +542,39 @@ export function stepSurvivalSimulation(
     battery = clampPct(rawNextBattery);
   }
 
-  // 6. Thermal Physics (Solar heat + Warp/Engine heat vs Shadow & Radiators!)
+  // 6. Thermal Physics & Environmental Shield Hazards (Solar Corona, Ring Turbulence, Aerobraking, Jupiter Magnetosphere)
+  const inSolarHazard =
+    !p.inPlanetaryShadow &&
+    (p.sunDistanceUnits < 52 || (p.nearestBodyCategory === 'star' && p.nearestSurfaceRatio < 4.6));
+  const inRingHazard = Boolean(p.inRingTurbulence) && p.mode === 'SPACECRAFT';
+  const inAtmoDragHazard =
+    Boolean(p.inUpperAtmosphere) &&
+    p.mode === 'SPACECRAFT' &&
+    (Math.abs(p.throttle) > 0.08 || p.boostActive);
+  const inJupiterRad = p.nearestBodyId === 'jupiter' && p.nearestSurfaceRatio < 4.0;
+
+  let environmentalHazardKind: NonNullable<SurvivalResourcesState['environmentalHazardKind']> = 'NONE';
+  if (inSolarHazard) environmentalHazardKind = 'SOLAR_CORONA';
+  else if (inRingHazard) environmentalHazardKind = 'RING_TURBULENCE';
+  else if (inAtmoDragHazard) environmentalHazardKind = 'ATMOSPHERIC_DRAG';
+  else if (inJupiterRad) environmentalHazardKind = 'JUPITER_RADIATION';
+
+  const shieldsActiveAndPowered = p.shieldsOn && battery > 2.0;
+  const shieldThermalMitigation = shieldsActiveAndPowered
+    ? Math.min(0.84, 0.52 + shieldPips * 0.07 + thermalShieldBonus)
+    : 0;
+
+  // Active shields draw slight extra power when deflecting active environmental hazards
+  if (shieldsActiveAndPowered && environmentalHazardKind !== 'NONE') {
+    battery = clampPct(battery - 0.34 * dt);
+  }
+
   const sunHeatTargetC = p.inPlanetaryShadow
     ? -65
     : THREE_CLAMP(-90 + solarFluxKw * 4.8, -110, 820);
+  const aeroHeatBonusC = inAtmoDragHazard
+    ? (285 + (p.boostActive ? 190 : 0)) * (1 - shieldThermalMitigation)
+    : 0;
   const engineHeatTarget =
     245 +
     (p.mode === 'SPACECRAFT' ? Math.abs(p.throttle) * 235 + (p.boostActive ? 390 : 0) : 15) +
@@ -419,11 +588,17 @@ export function stepSurvivalSimulation(
     : engineHeatTarget;
   reactorTemp += (reactorTargetCool - reactorTemp) * Math.min(1, dt * (0.45 + lifeCooling) * coolantBonus);
 
-  const hullTargetC =
+  const rawHullTargetC =
     sunHeatTargetC +
+    aeroHeatBonusC +
     Math.max(0, reactorTemp - 360) * 0.42 -
     (state.radiatorsDeployed ? 85 : 0) -
     (p.inPlanetaryShadow ? 35 : 0);
+  // Thermal shield caps extreme solar/aerobraking heat spikes smoothly
+  const hullTargetC =
+    rawHullTargetC > 180
+      ? 180 + (rawHullTargetC - 180) * (1 - shieldThermalMitigation * 0.72)
+      : rawHullTargetC;
   hullTemp += (hullTargetC - hullTemp) * Math.min(1, dt * 0.35 * coolantBonus * shadowBonus);
 
   // Cosmic & Solar Radiation (Jupiter radiation belt / close Solar approach)
@@ -431,17 +606,24 @@ export function stepSurvivalSimulation(
   if (!p.inPlanetaryShadow && p.sunDistanceUnits < 65) {
     targetRad += Math.min(82, Math.pow(65 / Math.max(8, p.sunDistanceUnits), 1.9) * 6);
   }
-  if (p.nearestBodyId === 'jupiter' && p.nearestSurfaceRatio < 4.0) {
+  if (inJupiterRad) {
     targetRad += 34;
   }
-  const shieldFilter = (p.shieldsOn ? 0.42 + shieldPips * 0.1 : 0.1) + lifePips * 0.08;
-  targetRad *= Math.max(0.18, 1 - shieldFilter);
+  const shieldFilter =
+    (shieldsActiveAndPowered ? 0.46 + shieldPips * 0.1 + thermalShieldBonus * 0.65 : 0.1) +
+    lifePips * 0.08;
+  targetRad *= Math.max(0.12, 1 - shieldFilter);
   if (p.inPlanetaryShadow) targetRad *= 0.22;
   radiation += (clampPct(targetRad) - radiation) * Math.min(1, dt * 0.9);
 
+  // Ring micro-debris turbulence chips hull only if Shields are OFF!
+  if (inRingHazard && !shieldsActiveAndPowered) {
+    hull -= 1.35 * dt;
+  }
+
   // Overheating gently chips hull integrity above 640°C
   if (hullTemp > 640 && p.mode === 'SPACECRAFT') {
-    hull -= ((hullTemp - 640) / 180) * 0.85 * dt;
+    hull -= ((hullTemp - 640) / 180) * (shieldsActiveAndPowered ? 0.28 : 0.92) * dt;
   }
 
   // 7. Oxygen ($O_2$) — Ship Life Support vs EVA Suit Tank
@@ -501,8 +683,10 @@ export function stepSurvivalSimulation(
     activeStatusAlert = 'OXIGÊNIO DO TRAJE EVA CRÍTICO — Retorne à nave ou use recarga!';
   } else if (p.mode !== 'EVA' && shipO2 < 25) {
     activeStatusAlert = 'SUPORTE DE VIDA (O₂) BAIXO — Aumente energia em Suporte de Vida!';
+  } else if (inRingHazard && !shieldsActiveAndPowered) {
+    activeStatusAlert = 'TURBULÊNCIA DE ANÉIS — Ligue os Escudos para repelir fragmentos de gelo!';
   } else if (hullTemp > 520) {
-    activeStatusAlert = 'SUPERAQUECIMENTO TÉRMICO — Ative os Radiadores (K) ou entre na sombra!';
+    activeStatusAlert = 'SUPERAQUECIMENTO TÉRMICO — Ative os Escudos/Radiadores (K) ou entre na sombra!';
   } else if (radiation > 68) {
     activeStatusAlert = 'RADIAÇÃO SOLAR ALTA — Ligue Escudos ou abrigue-se atrás de um planeta!';
   } else if (fuel < 15 && p.mode === 'SPACECRAFT') {
@@ -516,6 +700,7 @@ export function stepSurvivalSimulation(
 
   return {
     ...state,
+    cargoCapacityUnits: effectiveCargoCap,
     fuelPercent: Number(fuel.toFixed(1)),
     warpEnergyPercent: Number(warpEnergy.toFixed(1)),
     warpCells,
@@ -534,6 +719,7 @@ export function stepSurvivalSimulation(
     fatiguePercent: Number(fatigue.toFixed(1)),
     nearRefuelSource: refuelSource,
     nearbyCabinStation,
+    environmentalHazardKind,
     activeStatusAlert,
   };
 }
@@ -1304,7 +1490,8 @@ export function fuseMineralsAction(
  */
 export function upgradeShipSystemAction(
   state: SurvivalResourcesState,
-  systemId: ShipUpgradeSystemId
+  systemId: ShipUpgradeSystemId,
+  activeShipId: SpacecraftVariantId = 'sr7-vanguard'
 ): { ok: boolean; state: SurvivalResourcesState; message: string } {
   const def = SHIP_UPGRADE_DEFINITIONS[systemId];
   const curUpgrades = state.shipUpgrades ?? {
@@ -1333,7 +1520,9 @@ export function upgradeShipSystemAction(
   const nextLevel = curLevel + 1;
   const nextUpgrades = { ...curUpgrades, [systemId]: nextLevel };
   const nextCargoCap =
-    systemId === 'cargo' ? 500 + (nextLevel - 1) * 450 : state.cargoCapacityUnits;
+    systemId === 'cargo'
+      ? computeCargoCapacityForShip(nextLevel, activeShipId)
+      : state.cargoCapacityUnits;
 
   return {
     ok: true,
@@ -1574,5 +1763,90 @@ export function completeSpaceContractAction(
     message: `Missão Concluída (${contract.title}): +${contract.rewardCredits} CR${
       contract.rewardWarpCells ? ` e +${contract.rewardWarpCells} Célula(s) de Dobra` : ''
     }!`,
+  };
+}
+
+export function getDiscoveryRewardCredits(
+  bodyId: string,
+  category: BodyCategory,
+  distanceAU: number
+): number {
+  if (category === 'galaxy') return 1200;
+  if (distanceAU >= 80) return 950;
+  if (distanceAU >= 48) return 680;
+  if (distanceAU >= 18) return 460;
+  if (distanceAU >= 4.5) return 340;
+  if (bodyId === 'sun') return 420;
+  if (category === 'moon') return 220;
+  return 260;
+}
+
+/**
+ * Registers the player's first orbital visit to a celestial body and awards exploration Credits (CR).
+ */
+export function registerBodyDiscoveryAction(
+  state: SurvivalResourcesState,
+  bodyId: string,
+  bodyName: string,
+  category: BodyCategory,
+  distanceAU: number
+): { discovered: boolean; rewardCredits: number; state: SurvivalResourcesState; message: string } {
+  const known = state.discoveredBodyIds ?? ['earth'];
+  if (known.includes(bodyId)) {
+    return { discovered: false, rewardCredits: 0, state, message: '' };
+  }
+  const rewardCredits = getDiscoveryRewardCredits(bodyId, category, distanceAU);
+  const nextState: SurvivalResourcesState = {
+    ...state,
+    discoveredBodyIds: [...known, bodyId],
+    spaceCredits: state.spaceCredits + rewardCredits,
+  };
+  return {
+    discovered: true,
+    rewardCredits,
+    state: nextState,
+    message: `Novo Corpo Descoberto: ${bodyName} (+${rewardCredits} CR)!`,
+  };
+}
+
+/**
+ * Unlocks a spacecraft variant permanently in the Hangar using earned Space Credits (CR).
+ */
+export function unlockShipWithCreditsAction(
+  state: SurvivalResourcesState,
+  shipId: SpacecraftVariantId
+): { ok: boolean; state: SurvivalResourcesState; message: string } {
+  const preset = getSpacecraftPreset(shipId);
+  const unlocked = state.unlockedShipIds ?? ['sr7-vanguard'];
+  if (unlocked.includes(shipId) || preset.unlockCostCredits <= 0) {
+    const nextUnlocked = unlocked.includes(shipId) ? unlocked : [...unlocked, shipId];
+    const cargoLvl = state.shipUpgrades?.cargo ?? 1;
+    return {
+      ok: true,
+      state: {
+        ...state,
+        unlockedShipIds: nextUnlocked,
+        cargoCapacityUnits: computeCargoCapacityForShip(cargoLvl, shipId),
+      },
+      message: `${preset.name} equipada no Hangar!`,
+    };
+  }
+  if (state.spaceCredits < preset.unlockCostCredits) {
+    return {
+      ok: false,
+      state,
+      message: `Créditos insuficientes para ${preset.name}: requer ${preset.unlockCostCredits} CR (você tem ${state.spaceCredits} CR).`,
+    };
+  }
+  const cargoLvl = state.shipUpgrades?.cargo ?? 1;
+  return {
+    ok: true,
+    state: {
+      ...state,
+      spaceCredits: state.spaceCredits - preset.unlockCostCredits,
+      unlockedShipIds: [...unlocked, shipId],
+      cargoCapacityUnits: computeCargoCapacityForShip(cargoLvl, shipId),
+    },
+    message: `Nova Nave Desbloqueada: ${preset.name} (-${preset.unlockCostCredits} CR)!`,
   };
 }

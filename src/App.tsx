@@ -19,6 +19,7 @@ import {
   saveQualityPreference,
 } from './utils/performanceProfile';
 import {
+  BodyCategory,
   CabinStationId,
   MiningRecipeId,
   MiningResourceId,
@@ -44,21 +45,26 @@ import {
   buyShopItemWithCreditsAction,
   calibrateReactorO2Action,
   completeSpaceContractAction,
+  computeCargoCapacityForShip,
   consumeFoodRation,
   consumeMineralForEnergyAction,
   consumeWarpCell,
   consumeWaterFlask,
-  createInitialSurvivalState,
   discardCargoUnitAction,
   emergencyRescueDroneAction,
   fullStationResupplyAction,
   fuseMineralsAction,
+  loadSavedSurvivalState,
   POWER_PRESETS,
+  registerBodyDiscoveryAction,
+  resetSavedSurvivalState,
   restInCabinBunkAction,
+  saveSurvivalState,
   sellAllCargoAction,
   sellCargoResourceAction,
   synthesizeRecipeAction,
   transferBatteryBankToShipAction,
+  unlockShipWithCreditsAction,
   upgradeShipSystemAction,
   useRepairKitAction,
 } from './utils/survivalEngine';
@@ -243,11 +249,40 @@ export function App() {
     miningLaserActive: false,
   });
 
-  // Survival & Ship Resources Engine State (Ref as 60fps authority + React mirror for HUD)
-  const survivalRef = useRef<SurvivalResourcesState>(createInitialSurvivalState());
+  // Survival & Ship Resources Engine State (Persistent localStorage Save + 60fps ref authority)
+  const survivalRef = useRef<SurvivalResourcesState>(loadSavedSurvivalState(selectedShipId));
   const [survivalState, setSurvivalState] = useState<SurvivalResourcesState>(survivalRef.current);
+  const lastSaveTimestampRef = useRef<number>(0);
   const [survivalNotice, setSurvivalNotice] = useState<string | null>(null);
   const survivalNoticeTimerRef = useRef<number | null>(null);
+  const [discoveryBanner, setDiscoveryBanner] = useState<{
+    bodyName: string;
+    rewardCredits: number;
+    discoveredCount: number;
+    totalCount: number;
+  } | null>(null);
+  const discoveryBannerTimerRef = useRef<number | null>(null);
+
+  // Ensure saved ship selection matches an actually unlocked ship on boot
+  useEffect(() => {
+    const unlocked = survivalRef.current.unlockedShipIds ?? ['sr7-vanguard'];
+    if (!unlocked.includes(selectedShipId)) {
+      setSelectedShipId('sr7-vanguard');
+      saveShipVariant('sr7-vanguard');
+    }
+  }, [selectedShipId]);
+
+  // Persist save state safely before tab unload
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      saveSurvivalState(survivalRef.current);
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      saveSurvivalState(survivalRef.current);
+    };
+  }, []);
 
   const showSurvivalNotice = useCallback((msg: string) => {
     setSurvivalNotice(msg);
@@ -260,10 +295,24 @@ export function App() {
     }, 3400);
   }, []);
 
-  const handleSyncSurvivalState = useCallback((next: SurvivalResourcesState) => {
-    survivalRef.current = next;
-    setSurvivalState(next);
-  }, []);
+  const handleSyncSurvivalState = useCallback(
+    (next: SurvivalResourcesState, forceSave = false) => {
+      const prev = survivalRef.current;
+      const importantChanged =
+        next.spaceCredits !== prev.spaceCredits ||
+        next.totalMinedUnits !== prev.totalMinedUnits ||
+        (next.discoveredBodyIds?.length ?? 0) !== (prev.discoveredBodyIds?.length ?? 0) ||
+        (next.unlockedShipIds?.length ?? 0) !== (prev.unlockedShipIds?.length ?? 0);
+      survivalRef.current = next;
+      setSurvivalState(next);
+      const nowMs = Date.now();
+      if (forceSave || importantChanged || nowMs - lastSaveTimestampRef.current > 1500) {
+        lastSaveTimestampRef.current = nowMs;
+        saveSurvivalState(next);
+      }
+    },
+    []
+  );
 
   const [spacecraftTelemetry, setSpacecraftTelemetry] = useState<SpacecraftTelemetry>({
     speedUnitsPerSec: 0,
@@ -718,8 +767,8 @@ export function App() {
 
   const handleUpgradeShipSystem = useCallback(
     (systemId: ShipUpgradeSystemId) => {
-      const res = upgradeShipSystemAction(survivalRef.current, systemId);
-      handleSyncSurvivalState(res.state);
+      const res = upgradeShipSystemAction(survivalRef.current, systemId, selectedShipId);
+      handleSyncSurvivalState(res.state, true);
       spaceAudio.unlock();
       if (res.ok) {
         spaceAudio.playSynthesisSuccess();
@@ -728,13 +777,13 @@ export function App() {
       }
       showSurvivalNotice(res.message);
     },
-    [handleSyncSurvivalState, showSurvivalNotice]
+    [handleSyncSurvivalState, selectedShipId, showSurvivalNotice]
   );
 
   const handleCompleteContract = useCallback(
     (contractId: string) => {
       const res = completeSpaceContractAction(survivalRef.current, contractId);
-      handleSyncSurvivalState(res.state);
+      handleSyncSurvivalState(res.state, true);
       spaceAudio.unlock();
       if (res.ok) {
         spaceAudio.playSynthesisSuccess();
@@ -749,7 +798,7 @@ export function App() {
   const handleBuyShopItem = useCallback(
     (shopItemId: string) => {
       const res = buyShopItemWithCreditsAction(survivalRef.current, shopItemId);
-      handleSyncSurvivalState(res.state);
+      handleSyncSurvivalState(res.state, true);
       spaceAudio.unlock();
       if (res.ok) {
         spaceAudio.playSynthesisSuccess();
@@ -760,6 +809,79 @@ export function App() {
     },
     [handleSyncSurvivalState, showSurvivalNotice]
   );
+
+  const handleDiscoverBody = useCallback(
+    (bodyId: string, bodyName: string, category: BodyCategory, distanceAU: number) => {
+      const res = registerBodyDiscoveryAction(
+        survivalRef.current,
+        bodyId,
+        bodyName,
+        category,
+        distanceAU
+      );
+      if (!res.discovered) return;
+      handleSyncSurvivalState(res.state, true);
+      spaceAudio.unlock();
+      spaceAudio.playSynthesisSuccess();
+      const totalDiscoverable = ALL_CELESTIAL_BODIES.filter((b) => b.category !== 'galaxy').length;
+      setDiscoveryBanner({
+        bodyName,
+        rewardCredits: res.rewardCredits,
+        discoveredCount: (res.state.discoveredBodyIds ?? []).length,
+        totalCount: totalDiscoverable,
+      });
+      if (discoveryBannerTimerRef.current !== null) {
+        window.clearTimeout(discoveryBannerTimerRef.current);
+      }
+      discoveryBannerTimerRef.current = window.setTimeout(() => {
+        setDiscoveryBanner(null);
+        discoveryBannerTimerRef.current = null;
+      }, 4600);
+    },
+    [handleSyncSurvivalState]
+  );
+
+  const handleSelectOrUnlockShip = useCallback(
+    (id: SpacecraftVariantId) => {
+      const unlocked = survivalRef.current.unlockedShipIds ?? ['sr7-vanguard'];
+      const preset = getSpacecraftPreset(id);
+      if (unlocked.includes(id) || preset.unlockCostCredits <= 0) {
+        setSelectedShipId(id);
+        saveShipVariant(id);
+        const cargoLvl = survivalRef.current.shipUpgrades?.cargo ?? 1;
+        const nextCap = computeCargoCapacityForShip(cargoLvl, id);
+        handleSyncSurvivalState(
+          { ...survivalRef.current, cargoCapacityUnits: nextCap },
+          true
+        );
+        spaceAudio.unlock();
+        spaceAudio.playCockpitSwitch(true);
+        return;
+      }
+      const res = unlockShipWithCreditsAction(survivalRef.current, id);
+      handleSyncSurvivalState(res.state, true);
+      spaceAudio.unlock();
+      if (res.ok) {
+        setSelectedShipId(id);
+        saveShipVariant(id);
+        spaceAudio.playSynthesisSuccess();
+      } else {
+        spaceAudio.playCockpitSwitch(false);
+      }
+      showSurvivalNotice(res.message);
+    },
+    [handleSyncSurvivalState, showSurvivalNotice]
+  );
+
+  const handleResetProgress = useCallback(() => {
+    const fresh = resetSavedSurvivalState();
+    setSelectedShipId('sr7-vanguard');
+    saveShipVariant('sr7-vanguard');
+    handleSyncSurvivalState(fresh, true);
+    spaceAudio.unlock();
+    spaceAudio.playCockpitSwitch(false);
+    showSurvivalNotice('Progresso salvo resetado com sucesso! Novo jogo iniciado.');
+  }, [handleSyncSurvivalState, showSurvivalNotice]);
 
   // Global Menu & EVA Hotkeys
   useEffect(() => {
@@ -1116,6 +1238,8 @@ export function App() {
         survivalStateRef={survivalRef}
         onSyncSurvivalState={handleSyncSurvivalState}
         onTriggerCabinStationAction={handleCabinStationAction}
+        onDiscoverBody={handleDiscoverBody}
+        onSeismicNotice={showSurvivalNotice}
       />
 
       {/* 1B. CINEMATIC PRELOAD SPLASH SCREEN WITH LOGO */}
@@ -1135,10 +1259,9 @@ export function App() {
           startDestination={lobbyStartDestination}
           onChangeStartDestination={setLobbyStartDestination}
           selectedShipId={selectedShipId}
-          onSelectShip={(id) => {
-            setSelectedShipId(id);
-            saveShipVariant(id);
-          }}
+          onSelectShip={handleSelectOrUnlockShip}
+          spaceCredits={survivalState.spaceCredits}
+          unlockedShipIds={survivalState.unlockedShipIds}
           selectedCharacterId={selectedCharacterId}
           onSelectCharacter={(id) => {
             setSelectedCharacterId(id);
@@ -1445,6 +1568,7 @@ export function App() {
           flightControlPrefs={flightControlPrefs}
           survival={survivalState}
           survivalNotice={survivalNotice}
+          discoveryBanner={discoveryBanner}
           onConsumeFood={handleConsumeFood}
           onConsumeWater={handleConsumeWater}
           onConsumeWarpCell={handleConsumeWarpCell}
@@ -1521,10 +1645,10 @@ export function App() {
         onSwitchMode={switchPlayerMode}
         onLaunchShipCockpit={() => launchSpacecraftSR7(true)}
         selectedShipId={selectedShipId}
-        onSelectShip={(id) => {
-          setSelectedShipId(id);
-          saveShipVariant(id);
-        }}
+        onSelectShip={handleSelectOrUnlockShip}
+        spaceCredits={survivalState.spaceCredits}
+        unlockedShipIds={survivalState.unlockedShipIds}
+        onResetProgress={handleResetProgress}
         selectedCharacterId={selectedCharacterId}
         onSelectCharacter={(id) => {
           setSelectedCharacterId(id);

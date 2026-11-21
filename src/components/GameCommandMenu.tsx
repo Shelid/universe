@@ -48,6 +48,9 @@ interface GameCommandMenuProps {
   onLaunchShipCockpit: () => void;
   selectedShipId: SpacecraftVariantId;
   onSelectShip: (id: SpacecraftVariantId) => void;
+  spaceCredits?: number;
+  unlockedShipIds?: SpacecraftVariantId[];
+  onResetProgress?: () => void;
   selectedCharacterId: CharacterVariantId;
   onSelectCharacter: (id: CharacterVariantId) => void;
   onDeployToStation: (mode: 'ORBIT_INSPECT' | 'SHIP_DOCK' | 'EVA_WALK') => void;
@@ -175,6 +178,9 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
   onLaunchShipCockpit,
   selectedShipId,
   onSelectShip,
+  spaceCredits = 250,
+  unlockedShipIds = ['sr7-vanguard'],
+  onResetProgress,
   selectedCharacterId,
   onSelectCharacter,
   onDeployToStation,
@@ -301,11 +307,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       onSwitchMode(m.id);
                       onClose();
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
-                      active
-                        ? 'bg-sky-500 text-slate-950 shadow-[0_0_12px_rgba(56,189,248,0.4)]'
-                        : 'text-slate-300 hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${active
+                      ? 'bg-sky-500 text-slate-950 shadow-[0_0_12px_rgba(56,189,248,0.4)]'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                      }`}
                   >
                     <Icon className="w-3.5 h-3.5" />
                     <span>{m.label}</span>
@@ -354,11 +359,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center justify-center gap-1.5 py-3 px-2 border-b-2 transition-all ${
-                  active
-                    ? 'border-sky-400 text-sky-200 bg-sky-500/12 font-bold'
-                    : 'border-transparent text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
+                className={`flex items-center justify-center gap-1.5 py-3 px-2 border-b-2 transition-all ${active
+                  ? 'border-sky-400 text-sky-200 bg-sky-500/12 font-bold'
+                  : 'border-transparent text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{tab.label}</span>
@@ -408,6 +412,9 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                 {SPACECRAFT_HANGAR_CATALOG.map((ship) => {
                   const isSelected = ship.id === selectedShipId;
+                  const isUnlocked =
+                    ship.unlockCostCredits <= 0 || unlockedShipIds.includes(ship.id);
+                  const canAfford = spaceCredits >= ship.unlockCostCredits;
                   return (
                     <div
                       key={ship.id}
@@ -420,11 +427,13 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       className={`group cursor-pointer relative rounded-2xl p-4 border transition-all flex flex-col justify-between gap-3.5 ${
                         isSelected
                           ? 'bg-slate-900/95 border-sky-400 shadow-[0_0_28px_rgba(56,189,248,0.2)]'
-                          : 'bg-slate-900/55 border-white/10 hover:border-white/25 hover:bg-slate-900/80'
+                          : isUnlocked
+                            ? 'bg-slate-900/55 border-white/10 hover:border-white/25 hover:bg-slate-900/80'
+                            : 'bg-slate-900/45 border-amber-400/35 hover:border-amber-300/75 hover:bg-slate-900/75'
                       }`}
                     >
                       <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <span
                             className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border"
                             style={{
@@ -435,10 +444,24 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                           >
                             {ship.codename}
                           </span>
-                          {isSelected && (
+                          {isSelected ? (
                             <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-300">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               EQUIPADA
+                            </span>
+                          ) : isUnlocked ? (
+                            <span className="text-[10px] font-mono font-bold text-sky-300">
+                              LIBERADA
+                            </span>
+                          ) : (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                                canAfford
+                                  ? 'bg-amber-500/25 border-amber-400 text-amber-100'
+                                  : 'bg-slate-800/80 border-slate-500/40 text-slate-300'
+                              }`}
+                            >
+                              🔒 {ship.unlockCostCredits.toLocaleString('pt-BR')} CR
                             </span>
                           )}
                         </div>
@@ -457,6 +480,9 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                           <div className="text-[11px] font-mono text-sky-300/90">
                             {ship.role}
                           </div>
+                          <div className="inline-block mt-1 px-2 py-0.5 rounded bg-white/10 border border-white/10 text-[9px] font-mono font-semibold text-amber-200">
+                            {ship.perkBadge}
+                          </div>
                           <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
                             {ship.description}
                           </p>
@@ -468,6 +494,13 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                         <StatBar label="Agilidade" value={ship.stats.agility} color={ship.accentHex} />
                         <StatBar label="Blindagem" value={ship.stats.armor} color={ship.accentHex} />
                         <StatBar label="Dobra" value={ship.stats.warp} color={ship.accentHex} />
+                        {!isUnlocked && (
+                          <div className="pt-1 text-[10px] font-mono text-center text-amber-200">
+                            {canAfford
+                              ? `Clique para comprar e equipar (${spaceCredits.toLocaleString('pt-BR')} CR)`
+                              : `Faltam ${(ship.unlockCostCredits - spaceCredits).toLocaleString('pt-BR')} CR`}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -523,11 +556,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') onSelectCharacter(char.id);
                       }}
-                      className={`cursor-pointer rounded-2xl p-4 border transition-all flex flex-col justify-between gap-3.5 ${
-                        isSelected
-                          ? 'bg-slate-900/95 border-cyan-400 shadow-[0_0_28px_rgba(34,211,238,0.2)]'
-                          : 'bg-slate-900/55 border-white/10 hover:border-white/25 hover:bg-slate-900/80'
-                      }`}
+                      className={`cursor-pointer rounded-2xl p-4 border transition-all flex flex-col justify-between gap-3.5 ${isSelected
+                        ? 'bg-slate-900/95 border-cyan-400 shadow-[0_0_28px_rgba(34,211,238,0.2)]'
+                        : 'bg-slate-900/55 border-white/10 hover:border-white/25 hover:bg-slate-900/80'
+                        }`}
                     >
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between">
@@ -728,11 +760,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                     <button
                       key={c.id}
                       onClick={() => setCategoryFilter(c.id)}
-                      className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                        categoryFilter === c.id
-                          ? 'bg-sky-500/25 border-sky-400 text-sky-100'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
-                      }`}
+                      className={`px-3 py-1 rounded-full text-[11px] font-medium border transition-colors ${categoryFilter === c.id
+                        ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                        }`}
                     >
                       {c.label}
                     </button>
@@ -742,21 +773,19 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => onToggleOrbits(!showOrbits)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                      showOrbits
-                        ? 'bg-sky-500/25 border-sky-400 text-sky-100'
-                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
-                    }`}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${showOrbits
+                      ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
                   >
                     {showOrbits ? '✓ Órbitas 3D' : 'Órbitas 3D'}
                   </button>
                   <button
                     onClick={() => onToggleLabels(!showLabels)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
-                      showLabels
-                        ? 'bg-sky-500/25 border-sky-400 text-sky-100'
-                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
-                    }`}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${showLabels
+                      ? 'bg-sky-500/25 border-sky-400 text-sky-100'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
                   >
                     {showLabels ? '✓ Nomes dos Planetas' : 'Nomes dos Planetas'}
                   </button>
@@ -773,11 +802,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                         onSelectBody(body.id, true);
                         onClose();
                       }}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
-                        active
-                          ? 'bg-sky-500/25 border-sky-400 text-white'
-                          : 'bg-slate-900/75 border-white/10 hover:bg-white/10 text-slate-200'
-                      }`}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${active
+                        ? 'bg-sky-500/25 border-sky-400 text-white'
+                        : 'bg-slate-900/75 border-white/10 hover:bg-white/10 text-slate-200'
+                        }`}
                     >
                       <span
                         className="w-3 h-3 rounded-full shrink-0"
@@ -804,11 +832,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                     onToggleInterior();
                     onClose();
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium ${
-                    isExploringInterior
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium ${isExploringInterior
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                    : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
+                    }`}
                 >
                   <Layers className="w-3.5 h-3.5 text-amber-400" />
                   <span>Corte Interno 3D ({selectedBody.name})</span>
@@ -819,11 +846,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       onToggleSaturnRingDive();
                       onClose();
                     }}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-medium ${
-                      saturnRingDiveMode
-                        ? 'bg-amber-500/25 border-amber-400 text-amber-200'
-                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-medium ${saturnRingDiveMode
+                      ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
+                      }`}
                   >
                     Mergulhar nos Anéis de Saturno
                   </button>
@@ -834,11 +860,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       onToggleVenusRadar();
                       onClose();
                     }}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-medium ${
-                      venusRadarMode
-                        ? 'bg-orange-500/25 border-orange-400 text-orange-200'
-                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-medium ${venusRadarMode
+                      ? 'bg-orange-500/25 border-orange-400 text-orange-200'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
+                      }`}
                   >
                     Radar Geológico de Vênus
                   </button>
@@ -894,11 +919,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       <button
                         key={q.id}
                         onClick={() => onChangeQuality(q.id)}
-                        className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
-                          active
-                            ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-[0_0_18px_rgba(16,185,129,0.2)]'
-                            : 'bg-slate-900/70 border-white/10 hover:border-white/25 text-slate-300'
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 ${active
+                          ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-[0_0_18px_rgba(16,185,129,0.2)]'
+                          : 'bg-slate-900/70 border-white/10 hover:border-white/25 text-slate-300'
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-xs font-bold">{q.title}</span>
@@ -938,11 +962,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       <button
                         key={s.label}
                         onClick={() => onChangeTimeSpeed(s.speed)}
-                        className={`py-1.5 rounded-lg border transition-colors ${
-                          timeSpeedDaysPerSec === s.speed
-                            ? 'bg-sky-500/25 border-sky-400 text-sky-200 font-bold'
-                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                        }`}
+                        className={`py-1.5 rounded-lg border transition-colors ${timeSpeedDaysPerSec === s.speed
+                          ? 'bg-sky-500/25 border-sky-400 text-sky-200 font-bold'
+                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                          }`}
                       >
                         {s.label}
                       </button>
@@ -958,11 +981,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                       <button
                         key={item.label}
                         onClick={item.toggle}
-                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${
-                          item.val
-                            ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
-                            : 'bg-white/5 border-white/10 text-slate-400'
-                        }`}
+                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${item.val
+                          ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
+                          : 'bg-white/5 border-white/10 text-slate-400'
+                          }`}
                       >
                         {item.val ? '✓ ' : ''}
                         {item.label}
@@ -1010,11 +1032,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                             invertPitchArrows: !flightControlPrefs.invertPitchArrows,
                           })
                         }
-                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${
-                          flightControlPrefs.invertPitchArrows
-                            ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
-                            : 'bg-white/5 border-white/10 text-slate-300'
-                        }`}
+                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${flightControlPrefs.invertPitchArrows
+                          ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
+                          : 'bg-white/5 border-white/10 text-slate-300'
+                          }`}
                       >
                         {flightControlPrefs.invertPitchArrows
                           ? '✓ ↓ Sobe / ↑ Desce'
@@ -1027,11 +1048,10 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                             invertRollArrows: !flightControlPrefs.invertRollArrows,
                           })
                         }
-                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${
-                          flightControlPrefs.invertRollArrows
-                            ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
-                            : 'bg-white/5 border-white/10 text-slate-300'
-                        }`}
+                        className={`py-1.5 px-2.5 rounded-xl border text-left text-[11px] font-medium transition-colors ${flightControlPrefs.invertRollArrows
+                          ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
+                          : 'bg-white/5 border-white/10 text-slate-300'
+                          }`}
                       >
                         {flightControlPrefs.invertRollArrows
                           ? '✓ Inclinação ←/→ Inv.'
@@ -1041,12 +1061,33 @@ export const GameCommandMenu: React.FC<GameCommandMenuProps> = ({
                   )}
                   <div className="bg-slate-950/75 border border-white/5 rounded-xl p-2.5 text-[11px] text-slate-300 space-y-1 font-mono">
                     <div>
-                      <span className="text-amber-300">NAVE:</span> W/S Motor · A/D/Setas Manobra · Shift Dobra · V Cabine
+                      <span className="text-amber-300">NAVE:</span> W/S Motor · A/D/Setas Manobra · Shift Dobra · F Pulso Sísmico · V Cabine
                     </div>
                     <div>
                       <span className="text-cyan-300">EVA ESTAÇÃO:</span> W/A/S/D Andar · Shift Correr · Espaço Jetpack · L Lanterna
                     </div>
                   </div>
+                  {onResetProgress && (
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono text-slate-400">
+                        Progresso salvo automaticamente no navegador.
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              'Resetar moedas (CR), inventário, upgrades, descobertas e naves desbloqueadas?'
+                            )
+                          ) {
+                            onResetProgress();
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/45 text-rose-200 text-[10px] font-mono font-bold transition-colors shrink-0"
+                      >
+                        Resetar Save
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

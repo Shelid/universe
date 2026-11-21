@@ -497,6 +497,14 @@ export interface SurvivalResourcesState {
   shipUpgrades?: ShipUpgradeLevels;
   completedContractIds?: string[];
   destroyedTargetsCount?: number;
+  discoveredBodyIds?: string[];
+  unlockedShipIds?: SpacecraftVariantId[];
+  environmentalHazardKind?:
+    | 'NONE'
+    | 'SOLAR_CORONA'
+    | 'RING_TURBULENCE'
+    | 'ATMOSPHERIC_DRAG'
+    | 'JUPITER_RADIATION';
 }
 
 export interface SpacecraftControlState {
@@ -557,6 +565,8 @@ export interface SpacecraftPreset {
   codename: string;
   role: string;
   description: string;
+  unlockCostCredits: number;
+  perkBadge: string;
   accentHex: string;
   plumePrimaryHex: string;
   plumeWarpHex: string;
@@ -572,6 +582,10 @@ export interface SpacecraftPreset {
     speed: number;
     agility: number;
     boost: number;
+    fuelEfficiency: number;
+    warpEfficiency: number;
+    thermalShieldBonus: number;
+    cargoBonusUnits: number;
   };
 }
 

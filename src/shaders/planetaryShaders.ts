@@ -425,6 +425,7 @@ export function createPlanetSurfaceMaterial(
           uHasDiffuseMap > 0.5 &&
           (uShaderType == 1 ||
             uShaderType == 4 ||
+            uShaderType == 7 ||
             uShaderType == 8 ||
             uShaderType == 11 ||
             (uShaderType >= 15 && uShaderType <= 20))
@@ -466,6 +467,7 @@ export function createPlanetSurfaceMaterial(
           uHasDiffuseMap > 0.5 &&
           (uShaderType == 1 ||
             uShaderType == 4 ||
+            uShaderType == 7 ||
             uShaderType == 8 ||
             uShaderType == 11 ||
             (uShaderType >= 15 && uShaderType <= 20))
@@ -474,19 +476,21 @@ export function createPlanetSurfaceMaterial(
           float h0 = dot(sampledDiffuse, vec3(0.333));
           float hx = dot(sampledDiffuseRight, vec3(0.333)) - h0;
           float hy = dot(sampledDiffuseUp, vec3(0.333)) - h0;
-          if (uShaderType == 8 && uHasCloudsMap > 0.5) {
-            // Blend 4K high-altitude methane cirrus elevation into normal perturbation for Neptune
+          if ((uShaderType == 7 || uShaderType == 8) && uHasCloudsMap > 0.5) {
+            // Blend 4K high-altitude methane cirrus elevation into normal perturbation for Ice Giants
             float ch0 = dot(sampledClouds, vec3(0.333));
             float chShadow = dot(sampledCloudsShadow, vec3(0.333));
-            hx += (ch0 - chShadow) * 0.45;
+            hx += (ch0 - chShadow) * (uShaderType == 7 ? 0.28 : 0.45);
           }
           float bumpStrength = (uShaderType == 16 || uShaderType == 20)
             ? 3.8
             : (uShaderType == 15 || uShaderType == 17 || uShaderType == 18)
               ? 3.2
-              : (uShaderType == 4 || uShaderType == 8)
-                ? 2.4
-                : 3.2;
+              : (uShaderType == 7)
+                ? 1.7
+                : (uShaderType == 4 || uShaderType == 8)
+                  ? 2.4
+                  : 3.2;
           N = normalize(baseN - (T * hx + B * hy) * bumpStrength);
         }
 
@@ -712,14 +716,70 @@ export function createPlanetSurfaceMaterial(
         }
 
         // =========================================================================
-        // 7: URANUS — 2K VOYAGER 2 / HUBBLE MAP
+        // 7: URANUS — 4K JWST / VOYAGER 2 ICE GIANT WITH SEASONAL POLAR HOOD & METHANE BANDS
         // =========================================================================
         else if (uShaderType == 7) {
+          float lat = p.y;
+          vec2 flowUv = vec2(
+            fract(vUv.x - uTime * 0.00028 + sin(lat * 14.0) * 0.025),
+            clamp(vUv.y + sin(vUv.x * 6.283) * 0.003, 0.005, 0.995)
+          );
+          float auxHaze = uHasAuxMap > 0.5 ? dot(texture2D(uAuxMap, flowUv).rgb, vec3(0.333)) : 0.5;
+          float cloudsTex = uHasCloudsMap > 0.5 ? dot(sampledClouds, vec3(0.333)) : 0.0;
+          float cloudsShadowTex = uHasCloudsMap > 0.5 ? dot(sampledCloudsShadow, vec3(0.333)) : 0.0;
+
+          vec3 uDomain = vec3(p.x * 3.0, lat * 16.0, p.z * 3.0);
+          float macroFlow = fbm(uDomain + vec3(uTime * 0.003, 0.0, 0.0));
+          float microFlow = fbm(vec3(p.x * 8.0 + macroFlow, lat * 38.0, p.z * 8.0 - macroFlow));
+
+          // Delicate JWST banded aquamarine-cyan methane haze layers
+          float zonalBand = sin(lat * 32.0 + macroFlow * 1.9 + auxHaze * 1.4) * 0.5 + 0.5;
+          float fineBelt = sin(lat * 84.0 + microFlow * 2.6) * 0.5 + 0.5;
+          float bandMix = clamp(zonalBand * 0.55 + fineBelt * 0.20 + auxHaze * 0.25, 0.0, 1.0);
+
+          vec3 deepTeal = vec3(0.24, 0.62, 0.72);
+          vec3 paleCyan = vec3(0.47, 0.84, 0.91);
+          vec3 iceAqua = vec3(0.68, 0.93, 0.97);
+          vec3 polarHoodCol = vec3(0.86, 0.97, 0.99);
+
+          vec3 uranusCol = mix(deepTeal, paleCyan, smoothstep(0.18, 0.62, bandMix));
+          uranusCol = mix(uranusCol, iceAqua, smoothstep(0.62, 0.95, bandMix) * 0.62);
           if (uHasDiffuseMap > 0.5) {
-            albedo = sampledDiffuse * 1.05;
-          } else {
-            albedo = uPrimaryColor;
+            uranusCol = mix(uranusCol, sampledDiffuse * 1.04, 0.22);
           }
+
+          // Iconic JWST Bright Seasonal North Polar Cap & Collar (p.y > 0.44) + subtle polar vortex ring
+          float northHood = smoothstep(0.42, 0.86, lat + macroFlow * 0.06);
+          float collarBand = smoothstep(0.32, 0.48, lat) * (1.0 - smoothstep(0.50, 0.66, lat));
+          uranusCol = mix(uranusCol, vec3(0.32, 0.74, 0.84), collarBand * 0.34);
+          uranusCol = mix(uranusCol, polarHoodCol, northHood * (0.64 + 0.18 * auxHaze));
+
+          // Bright Methane Storm Clouds spotted by Hubble/JWST along the polar collar & mid-latitudes
+          float stormWisps = pow(
+            smoothstep(0.64, 0.92, ridgedFbm(vec3(p.x * 5.2, lat * 15.0, p.z * 5.2)) * 0.62 + cloudsTex * 0.48),
+            1.8
+          );
+          float stormLatMask = smoothstep(0.12, 0.55, abs(lat)) * (1.0 - smoothstep(0.75, 0.94, abs(lat)));
+          float brightClouds = clamp(stormWisps * stormLatMask * 0.82, 0.0, 1.0);
+          float cloudShadow = clamp((cloudsShadowTex - cloudsTex) * stormLatMask * 0.45, 0.0, 0.35);
+          uranusCol *= (1.0 - cloudShadow);
+          albedo = mix(uranusCol, vec3(0.96, 0.99, 1.0), brightClouds * 0.86);
+
+          N = normalize(N + T * ((brightClouds - cloudShadow) * 0.32) + B * ((microFlow - 0.5) * 0.16));
+          NdotL = dot(N, L);
+          dayFactor = smoothstep(-0.14, 0.22, NdotL);
+
+          float urLimb = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.15);
+          float sunLimb = smoothstep(-0.30, 0.48, baseNdotL);
+          vec3 specIce = vec3(0.88, 0.98, 1.0) * pow(max(dot(N, H), 0.0), 32.0) * (0.09 + brightClouds * 0.12) * dayFactor;
+          vec3 litUranus =
+            albedo * (0.036 + 1.01 * mix(baseDayFactor, dayFactor, 0.7)) +
+            specIce +
+            vec3(0.38, 0.88, 0.96) * urLimb * (0.18 + 0.82 * sunLimb) * 0.68 +
+            vec3(0.24, 0.56, 0.82) * twilightFactor * 0.24;
+
+          gl_FragColor = vec4(litUranus, 1.0);
+          return;
         }
 
         // =========================================================================
@@ -1253,8 +1313,9 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
 export function createSaturnRingsShaderMaterial(
   saturnRadiusSceneUnits: number,
   ringTintHex = '#ffffff',
-  isDelicateNeptuneRings = false
+  ringStyle: 'saturn' | 'neptune' | 'uranus' = 'saturn'
 ): THREE.ShaderMaterial {
+  const ringStyleCode = ringStyle === 'uranus' ? 2.0 : ringStyle === 'neptune' ? 1.0 : 0.0;
   return new THREE.ShaderMaterial({
     uniforms: {
       uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
@@ -1265,7 +1326,7 @@ export function createSaturnRingsShaderMaterial(
       uInnerRadius: { value: saturnRadiusSceneUnits * 1.18 },
       uOuterRadius: { value: saturnRadiusSceneUnits * 2.42 },
       uRingTint: { value: new THREE.Color(ringTintHex) },
-      uRingStyle: { value: isDelicateNeptuneRings ? 1.0 : 0.0 },
+      uRingStyle: { value: ringStyleCode },
     },
     transparent: true,
     depthWrite: false,
@@ -1301,7 +1362,33 @@ export function createSaturnRingsShaderMaterial(
         vec3 ringColor = vec3(0.88, 0.81, 0.68);
         float alpha = 0.0;
 
-        if (uRingStyle > 0.5) {
+        if (uRingStyle > 1.5) {
+          // Uranus JWST / Voyager 2 Vertical 13-Ring System: Zeta dust, 6/5/4, Alpha, Beta, Eta, Gamma, Delta, Brilliant Epsilon & Nu/Mu
+          float zetaDust = smoothstep(0.01, 0.08, t) * (1.0 - smoothstep(0.14, 0.22, t)) * 0.16;
+          float innerTriplet =
+            exp(-pow((t - 0.25) * 210.0, 2.0)) * 0.28 +
+            exp(-pow((t - 0.29) * 210.0, 2.0)) * 0.26 +
+            exp(-pow((t - 0.33) * 210.0, 2.0)) * 0.28;
+          float alphaBeta =
+            exp(-pow((t - 0.41) * 185.0, 2.0)) * 0.44 +
+            exp(-pow((t - 0.47) * 185.0, 2.0)) * 0.46;
+          float etaGammaDelta =
+            exp(-pow((t - 0.54) * 160.0, 2.0)) * 0.36 +
+            exp(-pow((t - 0.59) * 195.0, 2.0)) * 0.54 +
+            exp(-pow((t - 0.65) * 195.0, 2.0)) * 0.50;
+          // Iconic Brilliant Eccentric Epsilon Ring (t ~ 0.77)
+          float theta = atan(vLocalPos.y, vLocalPos.x);
+          float epsWidth = 1.0 + 0.35 * cos(theta - 0.9);
+          float epsilonRing = exp(-pow((t - 0.77) * (115.0 / epsWidth), 2.0)) * 0.86;
+          // Outer faint icy Nu & blue Mu rings
+          float outerDust =
+            exp(-pow((t - 0.88) * 95.0, 2.0)) * 0.18 +
+            exp(-pow((t - 0.95) * 115.0, 2.0)) * 0.24;
+
+          float microRinglets = 0.84 + 0.16 * sin(t * 740.0);
+          alpha = clamp((zetaDust + innerTriplet + alphaBeta + etaGammaDelta + epsilonRing + outerDust) * microRinglets, 0.0, 0.90);
+          ringColor = mix(vec3(0.56, 0.84, 0.94), vec3(0.92, 0.98, 1.0), smoothstep(0.45, 0.82, t));
+        } else if (uRingStyle > 0.5) {
           // Neptune JWST / Voyager 2 Delicate Ring System: Galle, Le Verrier, Lassell, Arago & Adams Resonant Arcs
           float galleBand = smoothstep(0.01, 0.07, t) * (1.0 - smoothstep(0.14, 0.22, t)) * 0.14;
           float leVerrier = exp(-pow((t - 0.34) * 145.0, 2.0)) * 0.54;

@@ -98,6 +98,12 @@ interface SpacecraftCockpitHUDProps {
   flightControlPrefs?: FlightControlPrefs;
   survival: SurvivalResourcesState;
   survivalNotice?: string | null;
+  discoveryBanner?: {
+    bodyName: string;
+    rewardCredits: number;
+    discoveredCount: number;
+    totalCount: number;
+  } | null;
   onConsumeFood: () => void;
   onConsumeWater: () => void;
   onConsumeWarpCell: () => void;
@@ -141,6 +147,7 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
   flightControlPrefs = DEFAULT_FLIGHT_CONTROL_PREFS,
   survival,
   survivalNotice,
+  discoveryBanner,
   onConsumeFood,
   onConsumeWater,
   onConsumeWarpCell,
@@ -374,8 +381,64 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
           )}
         </div>
 
+        {/* Discreet First-Visit Orbital Discovery Pop-Up Banner */}
+        {discoveryBanner && (
+          <div
+            data-testid="discovery-banner"
+            className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-40 animate-mining-toast"
+          >
+            <div className="menu-glass-surface flex items-center gap-2.5 border border-emerald-400/60 rounded-2xl px-4 py-2 shadow-2xl">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/60 flex items-center justify-center text-emerald-300 shrink-0">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="font-mono">
+                <div className="text-[9px] uppercase tracking-wider text-emerald-300 font-bold">
+                  Novo Corpo Descoberto · {discoveryBanner.discoveredCount}/{discoveryBanner.totalCount}
+                </div>
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>{discoveryBanner.bodyName}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400/50 text-amber-200 text-[10px]">
+                    +{discoveryBanner.rewardCredits} CR
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Active Harvest / Alert / Action Toast Banner */}
         <div className="flex flex-wrap items-center justify-start gap-1.5">
+          {survival.environmentalHazardKind && survival.environmentalHazardKind !== 'NONE' && (
+            <div
+              className={`pointer-events-auto flex items-center gap-1.5 backdrop-blur-xl border rounded-full px-3 py-1 text-[10px] font-mono shadow-lg ${
+                controlState.shieldsOn && survival.batteryPercent > 2
+                  ? 'bg-indigo-950/88 border-indigo-400/60 text-indigo-100'
+                  : 'bg-rose-950/90 border-rose-400/70 text-rose-100 animate-pulse'
+              }`}
+            >
+              <Shield className="w-3 h-3 shrink-0" />
+              <span>
+                {controlState.shieldsOn && survival.batteryPercent > 2
+                  ? `ESCUDO ATIVO: ${
+                      survival.environmentalHazardKind === 'SOLAR_CORONA'
+                        ? 'Coroa Solar (-Calor/Rad)'
+                        : survival.environmentalHazardKind === 'RING_TURBULENCE'
+                          ? 'Anéis Planetários (Repelindo)'
+                          : survival.environmentalHazardKind === 'ATMOSPHERIC_DRAG'
+                            ? 'Aerofrenagem Térmica'
+                            : 'Radiação de Júpiter'
+                    }`
+                  : `PERIGO SEM ESCUDO: ${
+                      survival.environmentalHazardKind === 'RING_TURBULENCE'
+                        ? 'Impacto em Anéis'
+                        : survival.environmentalHazardKind === 'ATMOSPHERIC_DRAG'
+                          ? 'Calor de Reentrada'
+                          : 'Radiação Extrema'
+                    }`}
+              </span>
+            </div>
+          )}
+
           {survival.nearRefuelSource !== 'NONE' && (
             <div className="pointer-events-auto flex items-center gap-1.5 bg-emerald-950/88 backdrop-blur-xl border border-emerald-400/50 rounded-full px-3 py-1 text-[10px] font-mono text-emerald-100 shadow-lg">
               {survival.nearRefuelSource === 'SOLAR_CORONA' ? (
@@ -1980,34 +2043,103 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   <div className="text-[10px] font-mono text-slate-400 mb-1">
                     CORPOS CELESTES MAIS PRÓXIMOS
                   </div>
-                  {telemetry.nearbyContacts.slice(0, 6).map((c) => (
-                    <div
-                      key={c.id}
-                      onClick={() => setSelectedAutopilotId(c.id)}
-                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${chosenId === c.id
-                        ? 'bg-amber-500/20 border border-amber-400/50 text-amber-100'
-                        : 'bg-white/5 hover:bg-white/10 text-slate-200'
-                        }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{c.name}</div>
-                        <div className="text-[10px] font-mono text-sky-300">
-                          {c.distanceFormatted}
-                        </div>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startAutopilotTripTo(c.id);
-                        }}
-                        className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/40 border border-emerald-400/50 text-emerald-100 text-[10px] font-mono font-bold flex items-center gap-1"
+                  {telemetry.nearbyContacts.slice(0, 6).map((c) => {
+                    const isDiscovered = (survival.discoveredBodyIds ?? ['earth']).includes(c.id);
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => setSelectedAutopilotId(c.id)}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${chosenId === c.id
+                          ? 'bg-amber-500/20 border border-amber-400/50 text-amber-100'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-200'
+                          }`}
                       >
-                        <Rocket className="w-3 h-3" />
-                        <span>Iniciar Viagem</span>
-                      </button>
-                    </div>
-                  ))}
+                        <div className="min-w-0">
+                          <div className="font-medium truncate flex items-center gap-1.5">
+                            <span className="truncate">{c.name}</span>
+                            {isDiscovered && (
+                              <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 shrink-0">
+                                ✓
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] font-mono text-sky-300">
+                            {c.distanceFormatted}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startAutopilotTripTo(c.id);
+                          }}
+                          className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/40 border border-emerald-400/50 text-emerald-100 text-[10px] font-mono font-bold flex items-center gap-1"
+                        >
+                          <Rocket className="w-3 h-3" />
+                          <span>Iniciar Viagem</span>
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
+
+                {/* Orbital Discovery Log inside Radar */}
+                {(() => {
+                  const explorableBodies = ALL_CELESTIAL_BODIES.filter(
+                    (b) => b.category !== 'galaxy'
+                  );
+                  const discoveredSet = new Set(survival.discoveredBodyIds ?? ['earth']);
+                  const discoveredCount = explorableBodies.filter((b) =>
+                    discoveredSet.has(b.id)
+                  ).length;
+                  const pct = Math.round(
+                    (discoveredCount / Math.max(1, explorableBodies.length)) * 100
+                  );
+                  return (
+                    <div className="bg-slate-900/75 border border-emerald-400/25 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-emerald-300 font-bold flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" />
+                          DESCOBERTAS ORBITAIS
+                        </span>
+                        <span className="text-white font-bold">
+                          {discoveredCount}/{explorableBodies.length} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-400 transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="max-h-40 overflow-y-auto pr-1 space-y-1">
+                        {explorableBodies.map((b) => {
+                          const found = discoveredSet.has(b.id);
+                          return (
+                            <div
+                              key={b.id}
+                              className={`flex items-center justify-between gap-2 px-2 py-1 rounded-lg text-[10px] border ${
+                                found
+                                  ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-100'
+                                  : 'bg-white/5 border-white/5 text-slate-400'
+                              }`}
+                            >
+                              <span className="truncate font-medium">
+                                {found ? '✓ ' : '○ '}
+                                {b.name}
+                              </span>
+                              <button
+                                onClick={() => startAutopilotTripTo(b.id)}
+                                className="shrink-0 px-1.5 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-sky-200 font-mono text-[9px]"
+                              >
+                                {found ? 'Revisitar' : 'Explorar'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             );
             })()}
@@ -2053,6 +2185,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                   <div className="flex justify-between">
                     <span className="text-slate-400">Extrator Orbital a Laser</span>
                     <span className="font-mono text-cyan-300">X</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Pulso Sísmico (Veios 3× &amp; Cinturões)</span>
+                    <span className="font-mono text-amber-300">F</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Mochila &amp; Inventário Completo</span>
@@ -2454,10 +2590,10 @@ export const SpacecraftCockpitHUD: React.FC<SpacecraftCockpitHUDProps> = ({
                 }))
               }
               className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/50 text-amber-100 text-[10px] font-bold font-mono transition-colors"
-              title="Disparar Canhões de Pulso de Plasma (Tecla F)"
+              title="Pulso Sísmico [F]: Revela veios 3× em planetas ou fragmenta asteroides nos Cinturões!"
             >
               <Crosshair className="w-3 h-3" />
-              <span>Pulso [F]</span>
+              <span>Sísmico [F]</span>
             </button>
 
             <button

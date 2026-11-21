@@ -1339,7 +1339,7 @@ export const SHIP_UPGRADE_DEFINITIONS: Record<
   },
   pulseCannon: {
     id: 'pulseCannon',
-    name: 'Canhões de Pulso de Plasma [F]',
+    name: 'Pulso Sísmico & Fragmentador [F]',
     maxLevel: 5,
     baseCostCredits: 360,
     mineralRequirementPerLevel: [
@@ -1348,8 +1348,9 @@ export const SHIP_UPGRADE_DEFINITIONS: Record<
       { resourceId: 'platinum-group', amount: 1 },
       { resourceId: 'solar-plasma-core', amount: 1 },
     ],
-    getLevelBenefitLabel: (lvl) => `Potência do Pulso: +${(lvl - 1) * 45}%`,
-    description: 'Potencializa a descarga e velocidade dos Canhões de Pulso de Plasma [F] da nave.',
+    getLevelBenefitLabel: (lvl) => `Rendimento Sísmico & Cinturões: +${(lvl - 1) * 45}%`,
+    description:
+      'Fratura veios minerais 3× nos planetas com o Pulso [F] e extrai depósitos raros dos Cinturões de Asteroides e Kuiper!',
   },
   warpDrive: {
     id: 'warpDrive',

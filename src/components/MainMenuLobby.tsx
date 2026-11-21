@@ -34,6 +34,8 @@ interface MainMenuLobbyProps {
   onChangeStartDestination: (dest: LobbyStartDestination) => void;
   selectedShipId: SpacecraftVariantId;
   onSelectShip: (id: SpacecraftVariantId) => void;
+  spaceCredits?: number;
+  unlockedShipIds?: SpacecraftVariantId[];
   selectedCharacterId: CharacterVariantId;
   onSelectCharacter: (id: CharacterVariantId) => void;
   lobbyFocusTarget: HangarCameraFocus;
@@ -122,6 +124,8 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
   onChangeStartDestination,
   selectedShipId,
   onSelectShip,
+  spaceCredits = 250,
+  unlockedShipIds = ['sr7-vanguard'],
   selectedCharacterId,
   onSelectCharacter,
   lobbyFocusTarget,
@@ -338,24 +342,29 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
           {activeTab === 'ships' && (
             <section className="space-y-2.5">
               <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-slate-400">
-                <span>Pinturas da Nave Polivalente (Ao Vivo 3D)</span>
-                <span className="font-semibold" style={{ color: activeShip.accentHex }}>
-                  {activeShip.codename}
+                <span>Hangar de Naves (Ao Vivo 3D)</span>
+                <span className="font-bold text-amber-300">
+                  Saldo: {spaceCredits.toLocaleString('pt-BR')} CR
                 </span>
               </div>
               <div className="space-y-2">
                 {SPACECRAFT_HANGAR_CATALOG.map((ship) => {
                   const active = ship.id === selectedShipId;
+                  const unlocked =
+                    ship.unlockCostCredits <= 0 || unlockedShipIds.includes(ship.id);
+                  const canAfford = spaceCredits >= ship.unlockCostCredits;
                   return (
                     <button
                       key={ship.id}
                       onClick={() => {
-                        onSelectShip(ship.id);
                         onChangeLobbyFocusTarget('SHIP');
+                        onSelectShip(ship.id);
                       }}
                       className={`w-full p-3 rounded-2xl border text-left transition-all space-y-2 ${active
                           ? 'bg-slate-900 border-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.22)]'
-                          : 'bg-slate-950/75 border-white/10 hover:border-white/25'
+                          : unlocked
+                            ? 'bg-slate-950/75 border-white/10 hover:border-white/25'
+                            : 'bg-slate-950/65 border-amber-400/35 hover:border-amber-300/70'
                         }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -372,17 +381,35 @@ export const MainMenuLobby: React.FC<MainMenuLobbyProps> = ({
                             <div className="text-[10px] text-slate-400 truncate">{ship.role}</div>
                           </div>
                         </div>
-                        {active && (
+                        {active ? (
                           <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/50 text-[9px] font-mono font-bold text-sky-200 shrink-0">
                             SELECIONADA
                           </span>
+                        ) : unlocked ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-[9px] font-mono font-bold text-emerald-200 shrink-0">
+                            LIBERADA
+                          </span>
+                        ) : (
+                          <span
+                            className={`px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold shrink-0 ${
+                              canAfford
+                                ? 'bg-amber-500/25 border-amber-400 text-amber-100'
+                                : 'bg-slate-800/80 border-slate-500/40 text-slate-300'
+                            }`}
+                          >
+                            🔒 {ship.unlockCostCredits.toLocaleString('pt-BR')} CR
+                          </span>
                         )}
                       </div>
+                      <div className="inline-block px-2 py-0.5 rounded-md bg-white/10 border border-white/10 text-[9px] font-mono font-semibold text-sky-200">
+                        {ship.perkBadge}
+                      </div>
                       <p className="text-[11px] text-slate-300 leading-snug">{ship.description}</p>
-                      <div className="grid grid-cols-3 gap-2 pt-0.5">
+                      <div className="grid grid-cols-4 gap-1.5 pt-0.5">
                         <StatBar label="Vel." value={ship.stats.speed} color={ship.accentHex} />
-                        <StatBar label="Blind." value={ship.stats.armor} color="#34d399" />
                         <StatBar label="Agil." value={ship.stats.agility} color="#fbbf24" />
+                        <StatBar label="Blind." value={ship.stats.armor} color="#34d399" />
+                        <StatBar label="Dobra" value={ship.stats.warp} color="#a855f7" />
                       </div>
                     </button>
                   );

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
+  BodyCategory,
   CabinStationId,
   CelestialBodyData,
   CharacterVariantId,
@@ -132,6 +133,13 @@ interface UniverseCanvasProps {
   survivalStateRef?: React.MutableRefObject<SurvivalResourcesState>;
   onSyncSurvivalState?: (next: SurvivalResourcesState) => void;
   onTriggerCabinStationAction?: (stationId: Exclude<CabinStationId, 'NONE'>) => void;
+  onDiscoverBody?: (
+    bodyId: string,
+    bodyName: string,
+    category: BodyCategory,
+    distanceAU: number
+  ) => void;
+  onSeismicNotice?: (message: string) => void;
   bodySelectSeq?: number;
   hideHud?: boolean;
 }
@@ -175,7 +183,11 @@ const REAL_PLANET_TEXTURE_URLS_HIGH: Record<string, PlanetTextureConfig> = {
   mars: { diffuse: '/textures/mars_4k.jpg' },
   jupiter: { diffuse: '/textures/jupiter_4k.jpg' },
   saturn: { diffuse: '/textures/saturn_4k.jpg' },
-  uranus: { diffuse: '/textures/uranus_2k.jpg' },
+  uranus: {
+    diffuse: '/textures/uranus_2k.jpg',
+    clouds: '/textures/earth_clouds_sss_4k.jpg',
+    aux: '/textures/venus_atmo_4k.jpg',
+  },
   neptune: {
     diffuse: '/textures/neptune_2k.jpg',
     clouds: '/textures/earth_clouds_sss_4k.jpg',
@@ -239,7 +251,11 @@ const REAL_PLANET_TEXTURE_URLS_LOW: Record<string, PlanetTextureConfig> = {
   mars: { diffuse: '/textures/mars_2k.jpg' },
   jupiter: { diffuse: '/textures/jupiter_2k.jpg' },
   saturn: { diffuse: '/textures/saturn_2k.jpg' },
-  uranus: { diffuse: '/textures/uranus_2k.jpg' },
+  uranus: {
+    diffuse: '/textures/uranus_2k.jpg',
+    clouds: '/textures/earth_clouds_1024.png',
+    aux: '/textures/venus_atmo_2k.jpg',
+  },
   neptune: {
     diffuse: '/textures/neptune_2k.jpg',
     clouds: '/textures/earth_clouds_1024.png',
@@ -372,6 +388,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
   survivalStateRef,
   onSyncSurvivalState,
   onTriggerCabinStationAction,
+  onDiscoverBody,
+  onSeismicNotice,
   bodySelectSeq = 0,
   hideHud = false,
 }) => {
@@ -447,6 +465,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     onSyncSpacecraftTelemetry,
     onSyncSurvivalState,
     onTriggerCabinStationAction,
+    onDiscoverBody,
+    onSeismicNotice,
     onResolvedQualityChange,
     onBootProgress,
   });
@@ -501,6 +521,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       onSyncSpacecraftTelemetry,
       onSyncSurvivalState,
       onTriggerCabinStationAction,
+      onDiscoverBody,
+      onSeismicNotice,
       onResolvedQualityChange,
       onBootProgress,
     };
@@ -1319,61 +1341,66 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(ceresAsteroidCluster);
       }
 
-      // SATURN, NEPTUNE & EXOTIC RINGED WORLDS SPECIAL EXPERIENCE: High-Definition Cassini / JWST Ring Shader
+      // SATURN, URANUS, NEPTUNE & EXOTIC RINGED WORLDS SPECIAL EXPERIENCE: High-Definition Cassini / JWST Ring Shader
       let saturnRingShaderMesh: THREE.Mesh | undefined;
       let saturnRingShaderMat: THREE.ShaderMaterial | undefined;
       let saturnBouldersGroup: THREE.Group | undefined;
 
       if (
         body.id === 'saturn' ||
+        body.id === 'uranus' ||
         body.id === 'neptune' ||
         body.id === 'krystallos-v' ||
         body.id === 'aether-ix' ||
         body.id === 'chronos-prime'
       ) {
         const innerR =
-          body.id === 'neptune'
-            ? 1.38
-            : body.id === 'krystallos-v'
-              ? 1.24
-              : body.id === 'aether-ix'
-                ? 1.28
-                : body.id === 'chronos-prime'
-                  ? 1.22
-                  : 1.18;
+          body.id === 'uranus'
+            ? 1.44
+            : body.id === 'neptune'
+              ? 1.38
+              : body.id === 'krystallos-v'
+                ? 1.24
+                : body.id === 'aether-ix'
+                  ? 1.28
+                  : body.id === 'chronos-prime'
+                    ? 1.22
+                    : 1.18;
         const outerR =
-          body.id === 'neptune'
-            ? 2.32
-            : body.id === 'krystallos-v'
-              ? 2.38
-              : body.id === 'aether-ix'
-                ? 2.48
-                : body.id === 'chronos-prime'
-                  ? 2.65
-                  : 2.42;
+          body.id === 'uranus'
+            ? 2.48
+            : body.id === 'neptune'
+              ? 2.32
+              : body.id === 'krystallos-v'
+                ? 2.38
+                : body.id === 'aether-ix'
+                  ? 2.48
+                  : body.id === 'chronos-prime'
+                    ? 2.65
+                    : 2.42;
         const ringTintHex =
-          body.id === 'neptune'
-            ? '#93c5fd'
-            : body.id === 'krystallos-v'
-              ? '#7dd3fc'
-              : body.id === 'aether-ix'
-                ? '#fde047'
-                : body.id === 'chronos-prime'
-                  ? '#e879f9'
-                  : '#ffffff';
+          body.id === 'uranus'
+            ? '#bae6fd'
+            : body.id === 'neptune'
+              ? '#93c5fd'
+              : body.id === 'krystallos-v'
+                ? '#7dd3fc'
+                : body.id === 'aether-ix'
+                  ? '#fde047'
+                  : body.id === 'chronos-prime'
+                    ? '#e879f9'
+                    : '#ffffff';
+        const ringStyle: 'saturn' | 'neptune' | 'uranus' =
+          body.id === 'uranus' ? 'uranus' : body.id === 'neptune' ? 'neptune' : 'saturn';
         const ringGeo = new THREE.RingGeometry(innerR, outerR, perf.ringSegments, 10);
-        saturnRingShaderMat = createSaturnRingsShaderMaterial(
-          1.0,
-          ringTintHex,
-          body.id === 'neptune'
-        );
+        saturnRingShaderMat = createSaturnRingsShaderMaterial(1.0, ringTintHex, ringStyle);
         saturnRingShaderMat.uniforms.uInnerRadius.value = innerR;
         saturnRingShaderMat.uniforms.uOuterRadius.value = outerR;
         saturnRingShaderMesh = new THREE.Mesh(ringGeo, saturnRingShaderMat);
         saturnRingShaderMesh.rotation.x = Math.PI / 2;
         tiltGroup.add(saturnRingShaderMesh);
 
-        if (body.id !== 'neptune') {
+        if (body.id !== 'neptune' && body.id !== 'uranus') {
           saturnBouldersGroup = new THREE.Group();
           populateSaturnRing3DAsteroidFragments(
             saturnBouldersGroup,
@@ -1386,17 +1413,17 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
       }
 
-      if (body.id === 'uranus' || body.id === 'haumea') {
+      if (body.id === 'haumea') {
         const uRingGeo = new THREE.RingGeometry(
-          body.id === 'haumea' ? 1.55 : 1.32,
-          body.id === 'uranus' ? 1.95 : 1.82,
+          1.55,
+          1.82,
           perf.tier === 'low' ? 56 : 88
         );
         const uRingMat = new THREE.MeshBasicMaterial({
-          color: body.id === 'uranus' ? '#67e8f9' : '#e2e8f0',
+          color: '#e2e8f0',
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: body.id === 'uranus' ? 0.24 : 0.35,
+          opacity: 0.35,
         });
         const uRingMesh = new THREE.Mesh(uRingGeo, uRingMat);
         uRingMesh.rotation.x = Math.PI / 2;
@@ -2095,6 +2122,23 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       blending: THREE.AdditiveBlending,
     });
 
+    // 3D Seismic Pulse Expanding Shockwave Ring (Reveals 3x Mineral Veins & Shatters Asteroid Belt Pockets!)
+    const seismicWaveGeo = new THREE.RingGeometry(0.65, 1.0, 48);
+    const seismicWaveMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const seismicWaveMesh = new THREE.Mesh(seismicWaveGeo, seismicWaveMat);
+    seismicWaveMesh.visible = false;
+    scene.add(seismicWaveMesh);
+    let seismicWaveAge = 99;
+    let seismicWaveMaxRadius = 1;
+    let lastSeismicRewardMs = 0;
+
     // 6-DOF Spacecraft Flight Physics State
     const pressedKeys = new Set<string>();
     const shipVelocity = new THREE.Vector3();
@@ -2653,6 +2697,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
     const _tmpV4 = new THREE.Vector3();
     const _tmpV5 = new THREE.Vector3();
     const _tmpV6 = new THREE.Vector3();
+    const _tmpV7 = new THREE.Vector3();
     const _tmpMat4 = new THREE.Matrix4();
     const _tmpQuat1 = new THREE.Quaternion();
     const _tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -2674,6 +2719,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       satelliteGroup.visible = false;
       warpTunnelGroup.visible = false;
       projectileGroup.visible = false;
+      seismicWaveMesh.visible = false;
       activeSatelliteOrbitLine.visible = false;
       ALL_CELESTIAL_BODIES.forEach((b) => {
         const node = bodyNodes[b.id];
@@ -2869,6 +2915,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         miningStreamInstanced.visible = false;
         miningEjectaInstanced.visible = false;
         hotspotGroup.visible = false;
+        seismicWaveMesh.visible = false;
       }
 
       // Multi-Scale Hierarchy Cross-Fade Factors based on distance from Solar System origin (0, 0, 0)
@@ -4002,6 +4049,43 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const rcsIsActive =
           Math.abs(pitchInput) + Math.abs(yawInput) + Math.abs(rollInput) > 0.05;
 
+        // Detect Ring Plane Micro-Debris Turbulence & Upper Atmosphere Aerobraking for Environmental Shields
+        let shipInRingTurbulence = false;
+        const domRingedNode = bodyNodes[dominantBody.id];
+        if (
+          domRingedNode?.saturnRingShaderMat &&
+          bestProxRatio > 1.16 &&
+          bestProxRatio < 2.66 &&
+          bodyWorldPositions[dominantBody.id]
+        ) {
+          const domRadRing = getScaledRadius(dominantBody, st.scaleMode);
+          _tmpV6.subVectors(sr7.rootGroup.position, bodyWorldPositions[dominantBody.id]);
+          domRingedNode.tiltGroup.updateWorldMatrix(true, false);
+          _tmpV7.set(0, 1, 0).transformDirection(domRingedNode.tiltGroup.matrixWorld).normalize();
+          const distFromRingPlane = Math.abs(_tmpV6.dot(_tmpV7));
+          if (distFromRingPlane < domRadRing * 0.17) {
+            shipInRingTurbulence = true;
+          }
+        }
+        const shipInUpperAtmosphere =
+          Boolean(dominantBody.atmosphere?.hasAtmosphere) &&
+          dominantBody.category !== 'star' &&
+          bestProxRatio < 1.24;
+
+        // First-visit Automatic Orbital Discovery Reward
+        if (
+          dominantBody.category !== 'galaxy' &&
+          bestProxRatio < 7.8 &&
+          !(activeSurvivalRef.current.discoveredBodyIds ?? ['earth']).includes(dominantBody.id)
+        ) {
+          cb.onDiscoverBody?.(
+            dominantBody.id,
+            dominantBody.name,
+            dominantBody.category,
+            dominantBody.distanceFromSunAU
+          );
+        }
+
         const liveSurv = (activeSurvivalRef.current = stepSurvivalSimulation(
           activeSurvivalRef.current,
           {
@@ -4025,6 +4109,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             nearestSurfaceRatio: Number.isFinite(bestProxRatio) ? bestProxRatio : 9999,
             nearOrbitalStation: shipNearStation,
             inPlanetaryShadow: shipInShadow,
+            inRingTurbulence: shipInRingTurbulence,
+            inUpperAtmosphere: shipInUpperAtmosphere,
           }
         ));
 
@@ -4338,7 +4424,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           camera.updateProjectionMatrix();
         }
 
-        // 5. Twin Ventral Plasma Pulse Cannons [F] (Free-Flight Tactical Plasma Discharge — No enemies spawned)
+        // 5. Twin Ventral Seismic Pulse Cannons [F] (Reveals 3x Planet Veins & Shatters Asteroid/Kuiper Belt Deposits)
         if (sc.firePulseCount > lastFirePulseCount) {
           lastFirePulseCount = sc.firePulseCount;
           muzzleFlashAlpha = 1.0;
@@ -4360,8 +4446,156 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
             projectileGroup.add(boltMesh);
             activePulseBolts.push({ mesh: boltMesh, velocity: _tmpV4.clone(), age: 0 });
           });
+
+          // Seismic Fracture Logic (3.5s recharge cooldown to stay balanced and rewarding)
+          const seismicReady = now - lastSeismicRewardMs > 3500;
+          const domMiningProf = getBodyMiningProfile(dominantBody.id);
+          const inMainBelt = shipSunDist >= 305 && shipSunDist <= 535;
+          const inKuiperBelt = shipSunDist >= 4550 && shipSunDist <= 7450;
+
+          if (
+            seismicReady &&
+            dominantBody.category !== 'galaxy' &&
+            domMiningProf.extractable &&
+            domMiningProf.yields.length > 0 &&
+            bestProxRatio <= 8.5 &&
+            bodyWorldPositions[dominantBody.id]
+          ) {
+            lastSeismicRewardMs = now;
+            const domPos = bodyWorldPositions[dominantBody.id];
+            const domRad = getScaledRadius(dominantBody, st.scaleMode);
+            _tmpV6.subVectors(sr7.rootGroup.position, domPos).normalize();
+            const impactWorldPos = _tmpV7.copy(domPos).addScaledVector(_tmpV6, domRad * 1.008);
+
+            // Spawn expanding 3D Seismic Shockwave Ring on planet crust
+            seismicWaveMesh.position.copy(impactWorldPos);
+            seismicWaveMesh.quaternion.setFromUnitVectors(_tmpV5.set(0, 0, 1), _tmpV6);
+            seismicWaveMaxRadius = Math.max(currentShipScale * 5.2, domRad * 0.24);
+            seismicWaveAge = 0;
+            seismicWaveMat.color.set('#38bdf8');
+            seismicWaveMesh.visible = true;
+
+            // Inject/refresh a rich 3.0x Seismic Mineral Vein Hotspot right beneath the ship!
+            const targetNode = bodyNodes[dominantBody.id];
+            const localImpactNormal = _tmpV5.copy(_tmpV6);
+            if (targetNode) {
+              targetNode.spinMesh.updateWorldMatrix(true, false);
+              targetNode.spinMesh.getWorldQuaternion(_miningSpinInvQuat).invert();
+              localImpactNormal.applyQuaternion(_miningSpinInvQuat).normalize();
+            }
+            if (activeHotspotsBodyId !== dominantBody.id) {
+              activeHotspotsBodyId = dominantBody.id;
+              activeHotspotsList = generateHotspotsForBody(dominantBody.id);
+            }
+            const rarestYield =
+              domMiningProf.yields[domMiningProf.yields.length - 1] || domMiningProf.yields[0];
+            const rarestDef = MINING_RESOURCES[rarestYield.resourceId];
+            const seismicHotspot = {
+              id: `${dominantBody.id}-seismic-vein`,
+              bodyId: dominantBody.id,
+              label: `Veio Sísmico 3× (${rarestDef.name})`,
+              resourceId: rarestYield.resourceId,
+              localNormal: {
+                x: localImpactNormal.x,
+                y: localImpactNormal.y,
+                z: localImpactNormal.z,
+              },
+              multiplier: 3.0,
+              radiusRad: 0.65,
+              colorHex: rarestDef.colorHex,
+            };
+            activeHotspotsList = [
+              seismicHotspot,
+              ...activeHotspotsList.filter((h) => h.id !== seismicHotspot.id),
+            ];
+
+            // Award direct surface fragment sample + CR
+            const curS = activeSurvivalRef.current;
+            const usedUnits = Object.values(curS.cargoInventory).reduce((a, v) => a + (v ?? 0), 0);
+            const bonusQty = Math.min(
+              Math.max(0, curS.cargoCapacityUnits - usedUnits),
+              1 + Math.floor((pulseLvl - 1) * 0.6)
+            );
+            const crGain = 45 + (pulseLvl - 1) * 20;
+            const nextInv = { ...curS.cargoInventory };
+            if (bonusQty > 0) {
+              nextInv[rarestYield.resourceId] = (nextInv[rarestYield.resourceId] ?? 0) + bonusQty;
+            }
+            const nextSurv: SurvivalResourcesState = {
+              ...curS,
+              cargoInventory: nextInv,
+              totalMinedUnits: curS.totalMinedUnits + bonusQty,
+              spaceCredits: curS.spaceCredits + crGain,
+              destroyedTargetsCount: (curS.destroyedTargetsCount ?? 0) + 1,
+            };
+            activeSurvivalRef.current = nextSurv;
+            if (survivalStateRef) survivalStateRef.current = nextSurv;
+            spaceAudio.playMiningYieldChime('RARE');
+            cb.onSyncSurvivalState?.(nextSurv);
+            cb.onSeismicNotice?.(
+              `Pulso Sísmico: Veio 3× revelado em ${dominantBody.name}!${
+                bonusQty > 0 ? ` +${bonusQty}x ${rarestDef.name}` : ''
+              } (+${crGain} CR)`
+            );
+          } else if (seismicReady && (inMainBelt || inKuiperBelt)) {
+            lastSeismicRewardMs = now;
+            const burstPos = _tmpV7
+              .copy(sr7.rootGroup.position)
+              .addScaledVector(shipForward, currentShipScale * 14);
+            seismicWaveMesh.position.copy(burstPos);
+            seismicWaveMesh.lookAt(camera.position);
+            seismicWaveMaxRadius = currentShipScale * 7.5;
+            seismicWaveAge = 0;
+            seismicWaveMat.color.set(inKuiperBelt ? '#a855f7' : '#f59e0b');
+            seismicWaveMesh.visible = true;
+
+            const beltPool: MiningResourceId[] = inKuiperBelt
+              ? ['void-crystal', 'cryo-methane', 'water-ice', 'exotic-silicates']
+              : ['platinum-group', 'titanium-ilmenite', 'iron-nickel', 'exotic-silicates'];
+            const pickedRes =
+              beltPool[Math.floor(Math.abs(Math.sin(clockTime * 19.7)) * beltPool.length)] ||
+              beltPool[0];
+            const resDef = MINING_RESOURCES[pickedRes];
+            const curS = activeSurvivalRef.current;
+            const usedUnits = Object.values(curS.cargoInventory).reduce((a, v) => a + (v ?? 0), 0);
+            const bonusQty = Math.min(
+              Math.max(0, curS.cargoCapacityUnits - usedUnits),
+              2 + Math.floor((pulseLvl - 1) * 0.8)
+            );
+            const crGain = (inKuiperBelt ? 120 : 75) + (pulseLvl - 1) * 30;
+            const nextInv = { ...curS.cargoInventory };
+            if (bonusQty > 0) {
+              nextInv[pickedRes] = (nextInv[pickedRes] ?? 0) + bonusQty;
+            }
+            const nextSurv: SurvivalResourcesState = {
+              ...curS,
+              cargoInventory: nextInv,
+              totalMinedUnits: curS.totalMinedUnits + bonusQty,
+              spaceCredits: curS.spaceCredits + crGain,
+              destroyedTargetsCount: (curS.destroyedTargetsCount ?? 0) + 1,
+            };
+            activeSurvivalRef.current = nextSurv;
+            if (survivalStateRef) survivalStateRef.current = nextSurv;
+            spaceAudio.playMiningYieldChime(inKuiperBelt ? 'EXOTIC' : 'RARE');
+            cb.onSyncSurvivalState?.(nextSurv);
+            cb.onSeismicNotice?.(
+              `Fragmentador de ${inKuiperBelt ? 'Kuiper' : 'Asteroides'}: +${bonusQty}x ${resDef.name} (+${crGain} CR)!`
+            );
+          }
         }
         muzzleFlashAlpha = Math.max(0, muzzleFlashAlpha - dt * 7.5);
+
+        if (seismicWaveAge < 1.15) {
+          seismicWaveAge += dt;
+          const pWave = seismicWaveAge / 1.15;
+          seismicWaveMesh.visible = true;
+          seismicWaveMesh.scale.setScalar(
+            Math.max(0.0001, seismicWaveMaxRadius * (0.12 + pWave * 0.92))
+          );
+          seismicWaveMat.opacity = (1.0 - pWave) * 0.88;
+        } else {
+          seismicWaveMesh.visible = false;
+        }
 
         for (let i = activePulseBolts.length - 1; i >= 0; i--) {
           const bolt = activePulseBolts[i];
@@ -4692,7 +4926,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         const miningRadarAgeSec =
           sc.radarPulseTimestamp > 0 ? (now - sc.radarPulseTimestamp) / 1000 : 99;
         const miningPrevState: SurvivalResourcesState = {
-          ...liveSurv,
+          ...activeSurvivalRef.current,
           miningLaserActive: miningLaserRequested,
         };
         const miningStep = stepMiningSimulation(miningPrevState, {
@@ -4706,6 +4940,7 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
           hitNormalLocal: hitNormalLocalObj,
         });
         const postMiningSurv = miningStep.state;
+        activeSurvivalRef.current = postMiningSurv;
         if (survivalStateRef) {
           survivalStateRef.current = postMiningSurv;
         }
@@ -6315,6 +6550,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
       warpMat.dispose();
       pulseBoltGeo.dispose();
       pulseBoltMat.dispose();
+      seismicWaveGeo.dispose();
+      seismicWaveMat.dispose();
       activeSatelliteOrbitLineGeo.dispose();
       activeSatelliteOrbitLineMat.dispose();
       loadedTextures.forEach((tex) => tex.dispose());
