@@ -209,6 +209,12 @@ export interface CelestialBodyData {
     | 'moon_icy'
     | 'moon_volcanic'
     | 'moon_titan'
+    | 'exo_glacial'
+    | 'exo_crystal'
+    | 'exo_magma'
+    | 'exo_biolum'
+    | 'exo_storm_giant'
+    | 'exo_metallic'
     | 'galaxy';
 
   // Orbital mechanics

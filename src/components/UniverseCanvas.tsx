@@ -184,33 +184,32 @@ const REAL_PLANET_TEXTURE_URLS_HIGH: Record<string, PlanetTextureConfig> = {
   eris: { diffuse: '/textures/moon_4k.jpg' },
   sedna: { diffuse: '/textures/mars_4k.jpg' },
   'tyche-prime': {
-    diffuse: '/textures/earth_day_sss_4k.jpg',
+    diffuse: '/textures/venus_surface_4k.jpg',
+    aux: '/textures/moon_4k.jpg',
     clouds: '/textures/earth_clouds_sss_4k.jpg',
-    night: '/textures/earth_night_sss_4k.jpg',
-    aux: '/textures/earth_bump_roughness_clouds_4096.jpg',
-    normal: '/textures/earth_normal_2048.jpg',
   },
   'ignis-prime': {
     diffuse: '/textures/mars_4k.jpg',
+    aux: '/textures/venus_surface_4k.jpg',
   },
   'krystallos-v': {
-    diffuse: '/textures/uranus_2k.jpg',
+    diffuse: '/textures/mercury_4k.jpg',
+    aux: '/textures/venus_surface_4k.jpg',
   },
   'solaris-nova': {
     diffuse: '/textures/sun_4k.jpg',
   },
   'xylos-omega': {
-    diffuse: '/textures/earth_day_sss_4k.jpg',
+    diffuse: '/textures/venus_surface_4k.jpg',
+    aux: '/textures/mars_4k.jpg',
     clouds: '/textures/earth_clouds_sss_4k.jpg',
-    night: '/textures/earth_night_sss_4k.jpg',
-    aux: '/textures/earth_bump_roughness_clouds_4096.jpg',
-    normal: '/textures/earth_normal_2048.jpg',
   },
   'aether-ix': {
     diffuse: '/textures/jupiter_4k.jpg',
   },
   'nyx-obsidian': {
     diffuse: '/textures/mercury_4k.jpg',
+    aux: '/textures/moon_4k.jpg',
   },
   'chronos-prime': {
     diffuse: '/textures/saturn_4k.jpg',
@@ -245,24 +244,29 @@ const REAL_PLANET_TEXTURE_URLS_LOW: Record<string, PlanetTextureConfig> = {
   eris: { diffuse: '/textures/moon_2k.jpg' },
   sedna: { diffuse: '/textures/mars_2k.jpg' },
   'tyche-prime': {
-    diffuse: '/textures/earth_day_4096.jpg',
+    diffuse: '/textures/venus_surface_2k.jpg',
+    aux: '/textures/moon_2k.jpg',
     clouds: '/textures/earth_clouds_1024.png',
-    night: '/textures/earth_night_4096.jpg',
-    aux: '/textures/earth_bump_roughness_clouds_4096.jpg',
-    normal: '/textures/earth_normal_2048.jpg',
   },
-  'ignis-prime': { diffuse: '/textures/mars_2k.jpg' },
-  'krystallos-v': { diffuse: '/textures/uranus_2k.jpg' },
+  'ignis-prime': {
+    diffuse: '/textures/mars_2k.jpg',
+    aux: '/textures/venus_surface_2k.jpg',
+  },
+  'krystallos-v': {
+    diffuse: '/textures/mercury_2k.jpg',
+    aux: '/textures/venus_surface_2k.jpg',
+  },
   'solaris-nova': { diffuse: '/textures/sun_2k.jpg' },
   'xylos-omega': {
-    diffuse: '/textures/earth_day_4096.jpg',
+    diffuse: '/textures/venus_surface_2k.jpg',
+    aux: '/textures/mars_2k.jpg',
     clouds: '/textures/earth_clouds_1024.png',
-    night: '/textures/earth_night_4096.jpg',
-    aux: '/textures/earth_bump_roughness_clouds_4096.jpg',
-    normal: '/textures/earth_normal_2048.jpg',
   },
   'aether-ix': { diffuse: '/textures/jupiter_2k.jpg' },
-  'nyx-obsidian': { diffuse: '/textures/mercury_2k.jpg' },
+  'nyx-obsidian': {
+    diffuse: '/textures/mercury_2k.jpg',
+    aux: '/textures/moon_2k.jpg',
+  },
   'chronos-prime': { diffuse: '/textures/saturn_2k.jpg' },
 };
 
@@ -1307,16 +1311,45 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(ceresAsteroidCluster);
       }
 
-      // SATURN SPECIAL EXPERIENCE: High-Definition Ring Shader + Proportional Sculpted 3D Asteroid & Ice Fragments
+      // SATURN & EXOTIC RINGED WORLDS SPECIAL EXPERIENCE: High-Definition Cassini Ring Shader + Sculpted 3D Asteroid & Crystal Fragments
       let saturnRingShaderMesh: THREE.Mesh | undefined;
       let saturnRingShaderMat: THREE.ShaderMaterial | undefined;
       let saturnBouldersGroup: THREE.Group | undefined;
 
-      if (body.id === 'saturn') {
-        const innerR = 1.18;
-        const outerR = 2.42;
+      if (
+        body.id === 'saturn' ||
+        body.id === 'krystallos-v' ||
+        body.id === 'aether-ix' ||
+        body.id === 'chronos-prime'
+      ) {
+        const innerR =
+          body.id === 'krystallos-v'
+            ? 1.24
+            : body.id === 'aether-ix'
+              ? 1.28
+              : body.id === 'chronos-prime'
+                ? 1.22
+                : 1.18;
+        const outerR =
+          body.id === 'krystallos-v'
+            ? 2.38
+            : body.id === 'aether-ix'
+              ? 2.48
+              : body.id === 'chronos-prime'
+                ? 2.65
+                : 2.42;
+        const ringTintHex =
+          body.id === 'krystallos-v'
+            ? '#7dd3fc'
+            : body.id === 'aether-ix'
+              ? '#fde047'
+              : body.id === 'chronos-prime'
+                ? '#e879f9'
+                : '#ffffff';
         const ringGeo = new THREE.RingGeometry(innerR, outerR, perf.ringSegments, 10);
-        saturnRingShaderMat = createSaturnRingsShaderMaterial(1.0);
+        saturnRingShaderMat = createSaturnRingsShaderMaterial(1.0, ringTintHex);
+        saturnRingShaderMat.uniforms.uInnerRadius.value = innerR;
+        saturnRingShaderMat.uniforms.uOuterRadius.value = outerR;
         saturnRingShaderMesh = new THREE.Mesh(ringGeo, saturnRingShaderMat);
         saturnRingShaderMesh.rotation.x = Math.PI / 2;
         tiltGroup.add(saturnRingShaderMesh);
@@ -1332,48 +1365,22 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         tiltGroup.add(saturnBouldersGroup);
       }
 
-      if (
-        body.id === 'uranus' ||
-        body.id === 'neptune' ||
-        body.id === 'haumea' ||
-        body.id === 'krystallos-v' ||
-        body.id === 'aether-ix' ||
-        body.id === 'chronos-prime'
-      ) {
+      if (body.id === 'uranus' || body.id === 'neptune' || body.id === 'haumea') {
         const uRingGeo = new THREE.RingGeometry(
           body.id === 'haumea' ? 1.55 : 1.32,
-          body.id === 'chronos-prime' || body.id === 'aether-ix'
-            ? 2.25
-            : body.id === 'uranus' || body.id === 'krystallos-v'
-              ? 1.95
-              : body.id === 'haumea'
-                ? 1.82
-                : 1.78,
+          body.id === 'uranus' ? 1.95 : body.id === 'haumea' ? 1.82 : 1.78,
           perf.tier === 'low' ? 56 : 88
         );
         const uRingMat = new THREE.MeshBasicMaterial({
           color:
-            body.id === 'chronos-prime'
-              ? '#e879f9'
-              : body.id === 'aether-ix'
-                ? '#fde047'
-                : body.id === 'krystallos-v'
-                  ? '#c084fc'
-                  : body.id === 'uranus'
-                    ? '#67e8f9'
-                    : body.id === 'haumea'
-                      ? '#e2e8f0'
-                      : '#60a5fa',
+            body.id === 'uranus'
+              ? '#67e8f9'
+              : body.id === 'haumea'
+                ? '#e2e8f0'
+                : '#60a5fa',
           side: THREE.DoubleSide,
           transparent: true,
-          opacity:
-            body.id === 'chronos-prime' || body.id === 'aether-ix' || body.id === 'krystallos-v'
-              ? 0.42
-              : body.id === 'uranus'
-                ? 0.24
-                : body.id === 'haumea'
-                  ? 0.35
-                  : 0.14,
+          opacity: body.id === 'uranus' ? 0.24 : body.id === 'haumea' ? 0.35 : 0.14,
         });
         const uRingMesh = new THREE.Mesh(uRingGeo, uRingMat);
         uRingMesh.rotation.x = Math.PI / 2;
@@ -3090,21 +3097,21 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
 
         node.interiorCutawayGroup.visible = isCutaway;
 
-        // Saturn special rings & sculpted 3D boulder distance culling
-        if (body.id === 'saturn' && node.rootGroup.visible) {
-          if (node.saturnRingShaderMat) {
-            node.saturnRingShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
-            node.saturnRingShaderMat.uniforms.uPlanetRadius.value = radius;
-            node.saturnRingShaderMat.uniforms.uInnerRadius.value = 1.18;
-            node.saturnRingShaderMat.uniforms.uOuterRadius.value = 2.42;
+        // Saturn & Exotic ringed worlds special rings & sculpted 3D boulder distance culling
+        if (node.saturnRingShaderMat && node.rootGroup.visible) {
+          node.saturnRingShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
+          node.saturnRingShaderMat.uniforms.uPlanetRadius.value = radius;
+          if (body.id === 'saturn') {
+            saturnBoulderShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
+            saturnBoulderShaderMat.uniforms.uPlanetRadius.value = radius;
           }
-          saturnBoulderShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
-          saturnBoulderShaderMat.uniforms.uPlanetRadius.value = radius;
           if (node.saturnBouldersGroup) {
-            const camDistSaturn = camera.position.distanceTo(node.rootGroup.position);
-            node.saturnBouldersGroup.visible = camDistSaturn < Math.max(0.5, radius * 28);
+            const camDistRinged = camera.position.distanceTo(node.rootGroup.position);
+            node.saturnBouldersGroup.visible = camDistRinged < Math.max(0.5, radius * 28);
             if (node.saturnBouldersGroup.visible) {
               node.saturnBouldersGroup.rotation.y = clockTime * 0.028;
+              saturnBoulderShaderMat.uniforms.uPlanetPosition.value.copy(node.rootGroup.position);
+              saturnBoulderShaderMat.uniforms.uPlanetRadius.value = radius;
             }
           }
         }
@@ -6107,7 +6114,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
         if (node.saturnRingShaderMat) {
           node.saturnRingShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
-          node.saturnRingShaderMat.uniforms.uPlanetViewPosition.value.copy(_planetViewPos);
+          _tmpV1.copy(node.rootGroup.position).applyMatrix4(camera.matrixWorldInverse);
+          node.saturnRingShaderMat.uniforms.uPlanetViewPosition.value.copy(_tmpV1);
         }
       });
 
@@ -6455,7 +6463,8 @@ export const UniverseCanvas: React.FC<UniverseCanvasProps> = ({
         }
         if (node.saturnRingShaderMat) {
           node.saturnRingShaderMat.uniforms.uSunViewPosition.value.copy(_sunViewPos);
-          node.saturnRingShaderMat.uniforms.uPlanetViewPosition.value.copy(_planetViewPos);
+          _tmpV1.copy(node.rootGroup.position).applyMatrix4(camera.matrixWorldInverse);
+          node.saturnRingShaderMat.uniforms.uPlanetViewPosition.value.copy(_tmpV1);
         }
       });
 

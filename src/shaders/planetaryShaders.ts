@@ -290,7 +290,13 @@ export type PlanetShaderCodeId =
   | 'moon_rocky'
   | 'moon_icy'
   | 'moon_volcanic'
-  | 'moon_titan';
+  | 'moon_titan'
+  | 'exo_glacial'
+  | 'exo_crystal'
+  | 'exo_magma'
+  | 'exo_biolum'
+  | 'exo_storm_giant'
+  | 'exo_metallic';
 
 const SHADER_TYPE_MAP: Record<PlanetShaderCodeId, number> = {
   mercury: 1,
@@ -307,6 +313,12 @@ const SHADER_TYPE_MAP: Record<PlanetShaderCodeId, number> = {
   moon_icy: 12,
   moon_volcanic: 13,
   moon_titan: 14,
+  exo_glacial: 15,
+  exo_crystal: 16,
+  exo_magma: 17,
+  exo_biolum: 18,
+  exo_storm_giant: 19,
+  exo_metallic: 20,
 };
 
 /**
@@ -409,7 +421,13 @@ export function createPlanetSurfaceMaterial(
         vec3 sampledDiffuse = uHasDiffuseMap > 0.5 ? texture2D(uDiffuseMap, vUv).rgb : uPrimaryColor;
         vec3 sampledDiffuseRight = sampledDiffuse;
         vec3 sampledDiffuseUp = sampledDiffuse;
-        if (uHasDiffuseMap > 0.5 && (uShaderType == 1 || uShaderType == 4 || uShaderType == 11)) {
+        if (
+          uHasDiffuseMap > 0.5 &&
+          (uShaderType == 1 ||
+            uShaderType == 4 ||
+            uShaderType == 11 ||
+            (uShaderType >= 15 && uShaderType <= 20))
+        ) {
           float texStepU = 0.00035;
           float texStepV = 0.00065;
           sampledDiffuseRight = texture2D(uDiffuseMap, vUv + vec2(texStepU, 0.0)).rgb;
@@ -443,12 +461,24 @@ export function createPlanetSurfaceMaterial(
           vec3 mapN = sampledNormal * 2.0 - 1.0;
           mapN.xy *= 1.35;
           N = normalize(T * mapN.x + B * mapN.y + baseN * mapN.z);
-        } else if (uHasDiffuseMap > 0.5 && (uShaderType == 1 || uShaderType == 4 || uShaderType == 11)) {
-          // Real 4K Crater & Canyon relief derived directly from NASA 4K mosaic luminance gradients!
+        } else if (
+          uHasDiffuseMap > 0.5 &&
+          (uShaderType == 1 ||
+            uShaderType == 4 ||
+            uShaderType == 11 ||
+            (uShaderType >= 15 && uShaderType <= 20))
+        ) {
+          // Real 4K Crater, Mountain & Crystalline relief derived directly from NASA 4K mosaic luminance gradients!
           float h0 = dot(sampledDiffuse, vec3(0.333));
           float hx = dot(sampledDiffuseRight, vec3(0.333)) - h0;
           float hy = dot(sampledDiffuseUp, vec3(0.333)) - h0;
-          float bumpStrength = (uShaderType == 4) ? 2.2 : 3.2;
+          float bumpStrength = (uShaderType == 16 || uShaderType == 20)
+            ? 3.8
+            : (uShaderType == 15 || uShaderType == 17 || uShaderType == 18)
+              ? 3.2
+              : (uShaderType == 4)
+                ? 2.2
+                : 3.2;
           N = normalize(baseN - (T * hx + B * hy) * bumpStrength);
         }
 
@@ -731,6 +761,275 @@ export function createPlanetSurfaceMaterial(
           specularStrength = 0.20;
         }
 
+        // =========================================================================
+        // 15: EXO_GLACIAL — TYCHE-IX (4K ALIEN CRYOGENIC SUPER-EARTH, ZERO EARTH MAP!)
+        // =========================================================================
+        else if (uShaderType == 15) {
+          // 100% bespoke alien continental tectonic plates from 4K Magellan radar + 4K LRO relief + 3D ridgedFbm
+          float radarElev = dot(sampledDiffuse, vec3(0.333));
+          float microCrater = dot(sampledAux, vec3(0.333));
+          float tectonicWarp = fbm(p * 2.8 + vec3(0.4, -0.7, 0.2));
+          float cordillera = ridgedFbm(p * 5.6 + tectonicWarp * 0.65);
+          float alienContinentSignal = radarElev * 0.52 + tectonicWarp * 0.32 + cordillera * 0.28;
+
+          float isGlacialLand = smoothstep(0.44, 0.52, alienContinentSignal);
+          float coastalShelf = smoothstep(0.36, 0.46, alienContinentSignal) * (1.0 - isGlacialLand);
+          float isAbyssalOcean = 1.0 - isGlacialLand;
+
+          // Deep alien sub-glacial liquid ocean & turquoise ice shelves
+          vec3 abyssalNavy = vec3(0.015, 0.075, 0.22);
+          vec3 glacialCobalt = vec3(0.035, 0.26, 0.58);
+          vec3 cryoTurquoise = vec3(0.08, 0.68, 0.88);
+          vec3 oceanCol = mix(abyssalNavy, glacialCobalt, smoothstep(-0.1, 0.75, baseNdotL));
+          oceanCol = mix(oceanCol, cryoTurquoise, coastalShelf * 0.85);
+
+          // 4K Glacial Ice Continents, Blue-Ice Crevasses & Dark Nunatak Mountain Ridges
+          float mountainPeak = smoothstep(0.62, 0.88, cordillera + microCrater * 0.35);
+          float iceCrevasse = smoothstep(0.55, 0.78, ridgedFbm(p * 14.0 - tectonicWarp * 0.5));
+          vec3 pureGlacier = vec3(0.86, 0.95, 1.0) * (0.82 + 0.28 * microCrater);
+          vec3 blueCrevasseIce = vec3(0.12, 0.52, 0.86);
+          vec3 basaltNunatak = vec3(0.14, 0.19, 0.28);
+
+          vec3 landCol = mix(pureGlacier, blueCrevasseIce, iceCrevasse * 0.72);
+          landCol = mix(landCol, basaltNunatak, smoothstep(0.52, 0.75, radarElev) * (1.0 - mountainPeak) * 0.45);
+          landCol = mix(landCol, vec3(0.98, 0.99, 1.0), mountainPeak * 0.85);
+
+          albedo = mix(oceanCol, landCol, isGlacialLand);
+
+          // 4K Dynamic Polar Cyclone Clouds & Drop Shadows
+          float cloudDensity = 0.0;
+          float cloudShadow = 0.0;
+          if (uHasCloudsMap > 0.5) {
+            cloudDensity = smoothstep(0.14, 0.76, sampledClouds.r) * 0.78;
+            cloudShadow = smoothstep(0.16, 0.78, sampledCloudsShadow.r) * 0.78;
+          }
+          albedo *= (1.0 - cloudShadow * (1.0 - cloudDensity * 0.7) * 0.30 * baseDayFactor);
+          vec3 cloudCol = mix(vec3(0.94, 0.98, 1.0), vec3(0.56, 0.85, 1.0), twilightFactor * 0.5);
+          albedo = mix(albedo, cloudCol, cloudDensity);
+
+          // Triple-lobe specular sun-glint on abyssal oceans & crystalline ice sheets
+          float glintMask = (isAbyssalOcean + isGlacialLand * 0.42) * (1.0 - cloudDensity * 0.85);
+          float broadG = pow(max(dot(N, H), 0.0), 18.0) * 0.28;
+          float sharpG = pow(max(dot(N, H), 0.0), 96.0) * 0.65;
+          extraSpecular = vec3(0.72, 0.92, 1.0) * (broadG + sharpG) * glintMask * baseDayFactor;
+
+          // Night-side glowing Cherenkov Quantum Ice Fissures & Polar Auroras (NO human city lights!)
+          float nightMask = smoothstep(0.14, -0.22, baseNdotL);
+          float quantumCrack = pow(smoothstep(0.66, 0.92, ridgedFbm(p * 11.5)), 2.2);
+          float auroraBelt = exp(-pow((abs(p.y) - 0.68) * 6.5, 2.0)) * (0.5 + 0.5 * sin(p.x * 12.0 + uTime * 0.8));
+          nightEmission =
+            (vec3(0.15, 0.82, 1.0) * quantumCrack * isGlacialLand * 1.65 +
+             vec3(0.12, 0.95, 0.72) * auroraBelt * 0.65) *
+            nightMask *
+            (1.0 - cloudDensity * 0.6);
+
+          float limbScatter = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.3);
+          vec3 litTyche =
+            albedo * (0.03 + 1.02 * mix(baseDayFactor, dayFactor, 0.75)) +
+            extraSpecular +
+            vec3(0.22, 0.68, 1.0) * limbScatter * smoothstep(-0.3, 0.48, baseNdotL) * 0.85 +
+            nightEmission;
+          gl_FragColor = vec4(litTyche, 1.0);
+          return;
+        }
+
+        // =========================================================================
+        // 16: EXO_CRYSTAL — KRYSTALLOS-V (4K DIAMOND, QUANTUM QUARTZ & SILICON CARBIDE)
+        // =========================================================================
+        else if (uShaderType == 16) {
+          // 4K MESSENGER crater/ridge mosaic + 4K Magellan tectonic veins + 3D multi-facet crystal lattices
+          float texDetail = dot(sampledDiffuse, vec3(0.333));
+          float faultMap = dot(sampledAux, vec3(0.333));
+          float macroCrystal = ridgedFbm(p * 5.2 + vec3(faultMap * 0.45));
+          float microFacet1 = ridgedFbm(p * 14.5);
+          float microFacet2 = ridgedFbm(p * 28.0);
+
+          // Perturb normal with sharp geometric crystal facet planes so it glitters like real cut quartz/diamond!
+          vec3 facetGrad = normalize(vec3(
+            sin(p.x * 32.0 + macroCrystal * 4.0),
+            cos(p.y * 32.0 + microFacet1 * 4.0),
+            sin(p.z * 32.0 - macroCrystal * 4.0)
+          ));
+          N = normalize(N + (T * facetGrad.x + B * facetGrad.y) * 0.28);
+          H = normalize(L + V);
+          NdotL = dot(N, L);
+          dayFactor = smoothstep(-0.10, 0.22, NdotL);
+
+          // Deep Silicon-Carbide Obsidian matrix -> Amethyst Quartz -> Diamond-Cyan Prismatic Ridges
+          vec3 darkSiC = vec3(0.06, 0.08, 0.18);
+          vec3 amethystMatrix = vec3(0.36, 0.20, 0.64);
+          vec3 cyanQuartz = vec3(0.18, 0.72, 0.96);
+          vec3 diamondRidge = vec3(0.92, 0.97, 1.0);
+
+          float crystalHeight = clamp(texDetail * 0.45 + macroCrystal * 0.38 + microFacet1 * 0.25, 0.0, 1.0);
+          albedo = mix(darkSiC, amethystMatrix, smoothstep(0.18, 0.52, crystalHeight));
+          albedo = mix(albedo, cyanQuartz, smoothstep(0.48, 0.78, crystalHeight));
+          albedo = mix(albedo, diamondRidge, smoothstep(0.74, 0.94, crystalHeight + microFacet2 * 0.2));
+
+          // Glowing Quantum Crystalline Fault Lines (visible in deep canyons & across night hemisphere)
+          float vein1 = pow(smoothstep(0.68, 0.95, macroCrystal), 2.4);
+          float vein2 = pow(smoothstep(0.72, 0.96, microFacet1), 2.8);
+          vec3 quantumGlow =
+            vec3(0.22, 0.88, 1.0) * vein1 * 1.4 +
+            vec3(0.88, 0.35, 1.0) * vein2 * 1.2;
+
+          // Prismatic Multi-Lobe Diamond Specular Reflection
+          float specBroad = pow(max(dot(N, H), 0.0), 22.0) * 0.48;
+          float specDiamond = pow(max(dot(N, H), 0.0), 140.0) * 1.35;
+          float sparkle = pow(max(dot(N, H), 0.0), 45.0) * smoothstep(0.65, 0.92, microFacet2) * 1.2;
+          vec3 prismaticSpec =
+            mix(vec3(0.38, 0.85, 1.0), vec3(0.85, 0.48, 1.0), fresnel) * specBroad +
+            vec3(1.0, 0.99, 1.0) * (specDiamond + sparkle);
+
+          float nightMask = smoothstep(0.25, -0.20, baseNdotL);
+          vec3 litCrystal =
+            albedo * (0.04 + 1.02 * dayFactor) +
+            prismaticSpec * dayFactor +
+            quantumGlow * (0.28 + 0.85 * nightMask) +
+            mix(vec3(0.25, 0.78, 1.0), vec3(0.78, 0.35, 1.0), 0.5) * fresnel * smoothstep(-0.3, 0.5, baseNdotL) * 0.82;
+
+          gl_FragColor = vec4(litCrystal, 1.0);
+          return;
+        }
+
+        // =========================================================================
+        // 17: EXO_MAGMA — IGNIS-PRIME (4K TECTONIC OBSIDIAN & MOLTEN LAVA RIVERS)
+        // =========================================================================
+        else if (uShaderType == 17) {
+          float basaltTex = dot(sampledDiffuse, vec3(0.333));
+          float faultTex = dot(sampledAux, vec3(0.333));
+          float tectonicCrack1 = ridgedFbm(p * 5.8 + vec3(faultTex * 0.4));
+          float tectonicCrack2 = ridgedFbm(p * 13.5 - vec3(basaltTex * 0.35));
+
+          // Charred black obsidian-basalt crust & oxidized iron highlands
+          vec3 charredObsidian = vec3(0.06, 0.045, 0.04);
+          vec3 oxidizedBasalt = vec3(0.24, 0.11, 0.07);
+          albedo = mix(charredObsidian, oxidizedBasalt, smoothstep(0.25, 0.78, basaltTex));
+
+          // Branching rivers of molten lava & active volcanic calderas
+          float lavaRiver = pow(smoothstep(0.67, 0.94, tectonicCrack1), 2.2);
+          float microFissure = pow(smoothstep(0.72, 0.96, tectonicCrack2), 2.6);
+          float calderaBasin = smoothstep(0.26, 0.11, basaltTex) * smoothstep(0.45, 0.75, faultTex);
+          float totalLava = clamp(lavaRiver + microFissure * 0.75 + calderaBasin * 0.9, 0.0, 1.0);
+
+          vec3 darkRedMagma = vec3(0.75, 0.08, 0.01);
+          vec3 brightOrangeLava = vec3(0.99, 0.38, 0.03);
+          vec3 whiteHotCore = vec3(1.0, 0.95, 0.58);
+          vec3 lavaColor = mix(darkRedMagma, brightOrangeLava, smoothstep(0.15, 0.65, totalLava));
+          lavaColor = mix(lavaColor, whiteHotCore, smoothstep(0.65, 0.96, totalLava));
+
+          albedo = mix(albedo, lavaColor, smoothstep(0.12, 0.65, totalLava));
+          nightEmission = lavaColor * totalLava * 1.95;
+          specularStrength = 0.16 * (1.0 - totalLava);
+          shininess = 48.0;
+        }
+
+        // =========================================================================
+        // 18: EXO_BIOLUM — XYLOS-OMEGA (4K ALIEN ARCHIPELAGOS & BIOLUMINESCENT REEFS)
+        // =========================================================================
+        else if (uShaderType == 18) {
+          // 100% bespoke alien archipelago continents from 4K Magellan radar + 4K Mars relief + 3D FBM
+          float radarTopo = dot(sampledDiffuse, vec3(0.333));
+          float reliefDetail = dot(sampledAux, vec3(0.333));
+          float islandNoise = fbm(p * 3.4 + vec3(-0.5, 0.3, 0.8));
+          float ridgeDetail = ridgedFbm(p * 7.2 + islandNoise * 0.5);
+          float landSignal = radarTopo * 0.48 + islandNoise * 0.34 + ridgeDetail * 0.24;
+
+          float isLand = smoothstep(0.45, 0.52, landSignal);
+          float coralLagoon = smoothstep(0.36, 0.46, landSignal) * (1.0 - isLand);
+          float isOcean = 1.0 - isLand;
+
+          vec3 deepSapphire = vec3(0.015, 0.12, 0.32);
+          vec3 tropicalCobalt = vec3(0.03, 0.34, 0.58);
+          vec3 emeraldReef = vec3(0.06, 0.78, 0.72);
+          vec3 oceanCol = mix(deepSapphire, tropicalCobalt, smoothstep(-0.08, 0.75, baseNdotL));
+          oceanCol = mix(oceanCol, emeraldReef, coralLagoon * 0.88);
+
+          vec3 jungleTeal = vec3(0.04, 0.36, 0.28);
+          vec3 biolumCanopy = vec3(0.10, 0.68, 0.48);
+          vec3 goldenHighland = vec3(0.76, 0.74, 0.52);
+          vec3 landCol = mix(jungleTeal, biolumCanopy, smoothstep(0.25, 0.72, reliefDetail));
+          landCol = mix(landCol, goldenHighland, smoothstep(0.68, 0.92, ridgeDetail));
+
+          albedo = mix(oceanCol, landCol, isLand);
+
+          float cloudDensity = 0.0;
+          float cloudShadow = 0.0;
+          if (uHasCloudsMap > 0.5) {
+            cloudDensity = smoothstep(0.12, 0.75, sampledClouds.r) * 0.82;
+            cloudShadow = smoothstep(0.14, 0.76, sampledCloudsShadow.r) * 0.82;
+          }
+          albedo *= (1.0 - cloudShadow * (1.0 - cloudDensity * 0.7) * 0.30 * baseDayFactor);
+          albedo = mix(albedo, vec3(0.96, 1.0, 0.99), cloudDensity);
+
+          float oceanMask = isOcean * (1.0 - cloudDensity * 0.88);
+          float broadG = pow(max(dot(N, H), 0.0), 16.0) * 0.26;
+          float sharpG = pow(max(dot(N, H), 0.0), 110.0) * 0.75;
+          extraSpecular = vec3(0.65, 0.98, 0.92) * (broadG + sharpG) * oceanMask * baseDayFactor;
+
+          // Organic Bioluminescent Forest Deltas & Coastal Reefs on the Night Side
+          float nightMask = smoothstep(0.12, -0.20, baseNdotL);
+          float bioVein = pow(smoothstep(0.64, 0.92, ridgedFbm(p * 12.5)), 2.2);
+          vec3 bioGlow =
+            (vec3(0.10, 0.96, 0.78) * (bioVein * isLand + coralLagoon * 0.55) +
+             vec3(0.68, 0.32, 1.0) * pow(bioVein, 2.0) * isLand * 0.8);
+          nightEmission = bioGlow * nightMask * (1.0 - cloudDensity * 0.65) * 1.45;
+
+          float limbScatter = pow(clamp(1.0 - NdotV, 0.0, 1.0), 2.3);
+          vec3 litXylos =
+            albedo * (0.03 + 1.02 * mix(baseDayFactor, dayFactor, 0.72)) +
+            extraSpecular +
+            vec3(0.16, 0.85, 0.78) * limbScatter * smoothstep(-0.3, 0.48, baseNdotL) * 0.82 +
+            nightEmission;
+          gl_FragColor = vec4(litXylos, 1.0);
+          return;
+        }
+
+        // =========================================================================
+        // 19: EXO_STORM_GIANT — AETHER-IX & CHRONOS-PRIME (4K HYPER-STORM GAS GIANTS)
+        // =========================================================================
+        else if (uShaderType == 19) {
+          float warpBand = fbm(p * 4.5 + vec3(uTime * 0.015, 0.0, -uTime * 0.01));
+          vec2 stormUv = vec2(fract(vUv.x + warpBand * 0.035), clamp(vUv.y + warpBand * 0.018, 0.01, 0.99));
+          vec3 baseStorm = uHasDiffuseMap > 0.5 ? texture2D(uDiffuseMap, stormUv).rgb : uPrimaryColor;
+          float bandPattern = sin(p.y * 26.0 + warpBand * 4.2) * 0.5 + 0.5;
+          float vortexSwirl = ridgedFbm(p * 8.5 - vec3(warpBand * 0.8));
+
+          vec3 deepBelt = uSecondaryColor * 0.55;
+          vec3 brightZone = mix(uPrimaryColor, vec3(0.98, 0.97, 1.0), 0.38);
+          vec3 customBands = mix(deepBelt, brightZone, bandPattern);
+          albedo = mix(baseStorm * 1.08, customBands, 0.52);
+          albedo = mix(albedo, vec3(1.0, 0.96, 0.86), smoothstep(0.72, 0.96, vortexSwirl) * 0.45);
+
+          // Night-side electromagnetic plasma lightning clusters inside storm belts
+          float lightning = pow(smoothstep(0.78, 0.96, vortexSwirl), 3.0);
+          nightEmission = mix(uPrimaryColor, vec3(1.0, 0.88, 0.35), 0.5) * lightning * smoothstep(0.12, -0.25, baseNdotL) * 1.65;
+          specularStrength = 0.14;
+        }
+
+        // =========================================================================
+        // 20: EXO_METALLIC — NYX-OBSIDIAN (4K PLATINUM-IRIDIUM & VOLCANIC OBSIDIAN)
+        // =========================================================================
+        else if (uShaderType == 20) {
+          float metalTex = dot(sampledDiffuse, vec3(0.333));
+          float craterTex = dot(sampledAux, vec3(0.333));
+          float platinumVein = ridgedFbm(p * 8.0 + vec3(metalTex * 0.4));
+
+          vec3 obsidianMaria = vec3(0.07, 0.09, 0.15);
+          vec3 titaniumSlate = vec3(0.38, 0.44, 0.56);
+          vec3 mirrorPlatinum = vec3(0.90, 0.94, 1.0);
+
+          float metalElevation = clamp(metalTex * 0.58 + craterTex * 0.42, 0.0, 1.0);
+          albedo = mix(obsidianMaria, titaniumSlate, smoothstep(0.22, 0.55, metalElevation));
+          albedo = mix(albedo, mirrorPlatinum, smoothstep(0.54, 0.84, metalElevation + platinumVein * 0.25));
+
+          // High-metallicity specular sheen & glowing Aether-Platinum veins
+          specularStrength = 0.62;
+          shininess = 72.0;
+          float aetherFilaments = pow(smoothstep(0.72, 0.95, platinumVein), 2.5);
+          nightEmission = mix(vec3(0.20, 0.85, 0.65), vec3(0.55, 0.45, 1.0), 0.5) * aetherFilaments * 1.15;
+        }
+
         float spec = pow(max(dot(N, H), 0.0), shininess) * specularStrength * dayFactor;
         float forwardCrescent = pow(max(dot(V, -L), 0.0), 3.6) * fresnel * smoothstep(-0.42, 0.28, baseNdotL);
         vec3 atmosphereRim =
@@ -810,7 +1109,10 @@ export function createAtmosphereHaloMaterial(atmosphereHex: string): THREE.Shade
  * crystalline ice forward/back-scattering, Cassini Division, Encke & Keeler gaps,
  * and real-time shadow of Saturn cast across the ring plane in View Space (zero float32 jitter).
  */
-export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number): THREE.ShaderMaterial {
+export function createSaturnRingsShaderMaterial(
+  saturnRadiusSceneUnits: number,
+  ringTintHex = '#ffffff'
+): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uSunPosition: { value: new THREE.Vector3(0, 0, 0) },
@@ -820,6 +1122,7 @@ export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number):
       uPlanetRadius: { value: saturnRadiusSceneUnits },
       uInnerRadius: { value: saturnRadiusSceneUnits * 1.18 },
       uOuterRadius: { value: saturnRadiusSceneUnits * 2.42 },
+      uRingTint: { value: new THREE.Color(ringTintHex) },
     },
     transparent: true,
     depthWrite: false,
@@ -841,6 +1144,7 @@ export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number):
       uniform float uPlanetRadius;
       uniform float uInnerRadius;
       uniform float uOuterRadius;
+      uniform vec3 uRingTint;
 
       varying vec3 vViewPos;
       varying vec3 vLocalPos;
@@ -908,7 +1212,7 @@ export function createSaturnRingsShaderMaterial(saturnRadiusSceneUnits: number):
         vec3 viewDir = normalize(-vViewPos);
         float phaseScatter = 1.0 + 0.25 * pow(max(dot(viewDir, -toSun), 0.0), 3.0);
 
-        vec3 finalColor = ringColor * phaseScatter * (0.06 + 0.94 * shadowFactor);
+        vec3 finalColor = ringColor * uRingTint * phaseScatter * (0.06 + 0.94 * shadowFactor);
         gl_FragColor = vec4(finalColor, alpha);
       }
     `,

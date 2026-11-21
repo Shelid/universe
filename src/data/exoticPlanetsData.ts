@@ -44,7 +44,7 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     secondaryColorHex: '#0284c7',
     atmosphereColorHex: '#38bdf8',
     orbitColorHex: '#38bdf8',
-    shaderType: 'earth',
+    shaderType: 'exo_glacial',
     orbit: {
       semiMajorAxisAU: 52.4,
       eccentricity: 0.028,
@@ -149,7 +149,7 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     secondaryColorHex: '#7c2d12',
     atmosphereColorHex: '#fb923c',
     orbitColorHex: '#f97316',
-    shaderType: 'mars',
+    shaderType: 'exo_magma',
     orbit: {
       semiMajorAxisAU: 58.8,
       eccentricity: 0.031,
@@ -233,11 +233,11 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     hasRings: true,
     visualRadiusExploration: 1.35,
     explorationDistanceUnits: 172.0,
-    primaryColorHex: '#a855f7',
-    secondaryColorHex: '#38bdf8',
-    atmosphereColorHex: '#c084fc',
+    primaryColorHex: '#38bdf8',
+    secondaryColorHex: '#c084fc',
+    atmosphereColorHex: '#7dd3fc',
     orbitColorHex: '#c084fc',
-    shaderType: 'uranus',
+    shaderType: 'exo_crystal',
     orbit: {
       semiMajorAxisAU: 65.2,
       eccentricity: 0.024,
@@ -413,7 +413,7 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     secondaryColorHex: '#0284c7',
     atmosphereColorHex: '#2dd4bf',
     orbitColorHex: '#10b981',
-    shaderType: 'earth',
+    shaderType: 'exo_biolum',
     orbit: {
       semiMajorAxisAU: 94.5,
       eccentricity: 0.014,
@@ -502,7 +502,7 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     secondaryColorHex: '#f59e0b',
     atmosphereColorHex: '#60a5fa',
     orbitColorHex: '#38bdf8',
-    shaderType: 'jupiter',
+    shaderType: 'exo_storm_giant',
     orbit: {
       semiMajorAxisAU: 104.0,
       eccentricity: 0.018,
@@ -591,7 +591,7 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     secondaryColorHex: '#6366f1',
     atmosphereColorHex: '#818cf8',
     orbitColorHex: '#94a3b8',
-    shaderType: 'mercury',
+    shaderType: 'exo_metallic',
     orbit: {
       semiMajorAxisAU: 114.0,
       eccentricity: 0.015,
@@ -679,7 +679,7 @@ export const EXOTIC_4K_PLANETS: CelestialBodyData[] = [
     secondaryColorHex: '#c084fc',
     atmosphereColorHex: '#e879f9',
     orbitColorHex: '#e879f9',
-    shaderType: 'saturn',
+    shaderType: 'exo_storm_giant',
     orbit: {
       semiMajorAxisAU: 125.0,
       eccentricity: 0.012,
